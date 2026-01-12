@@ -1,9 +1,5 @@
-module FSharp.MCP.DevKit.Server.Program
+﻿module FSharp.MCP.DevKit.Server.Program
 
-open Microsoft.AspNetCore.Builder
-open Microsoft.AspNetCore.Hosting
-open Microsoft.AspNetCore.Http
-open Microsoft.AspNetCore.Http.Features
 open System
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
@@ -44,8 +40,6 @@ let main argv =
     // Configure logging to stderr (required for MCP)
     builder.Logging.AddConsole(fun consoleLogOptions -> consoleLogOptions.LogToStandardErrorThreshold <- LogLevel.Trace)
     |> ignore
-
-    builder.WebHost.UseUrls("http://localhost:5000") |> ignore
 
     // Register FSI service
     builder.Services.AddSingleton<FsiMcpService>() |> ignore

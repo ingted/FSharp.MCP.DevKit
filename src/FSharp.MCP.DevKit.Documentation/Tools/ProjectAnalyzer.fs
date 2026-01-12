@@ -43,9 +43,16 @@ module ProjectAnalyzer =
 
                 // Extract target framework
                 let targetFramework =
-                    doc.Descendants(XName.Get("TargetFramework"))
-                    |> Seq.tryHead
-                    |> Option.map (fun elem -> elem.Value)
+                    match
+                        doc.Descendants(XName.Get("TargetFramework"))
+                        |> Seq.tryHead
+                        |> Option.map (fun elem -> elem.Value)
+                    with
+                    | Some value -> Some value
+                    | None ->
+                        doc.Descendants(XName.Get("TargetFrameworks"))
+                        |> Seq.tryHead
+                        |> Option.map (fun elem -> elem.Value)
 
                 // Extract package references
                 let packageReferences =

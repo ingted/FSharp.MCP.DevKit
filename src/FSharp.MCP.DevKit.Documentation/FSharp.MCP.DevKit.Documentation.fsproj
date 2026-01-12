@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Version>0.1.0</Version>
 
@@ -35,11 +35,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NuGet.Protocol" Version="6.11.1" />
-    <PackageReference Include="NuGet.Packaging" Version="6.11.1" />
-    <PackageReference Include="NuGet.Configuration" Version="6.11.1" />
-    <PackageReference Include="NuGet.Resolver" Version="6.11.1" />
-    <PackageReference Include="NuGet.Frameworks" Version="6.11.1" />
+    <PackageReference Include="NuGet.Protocol" Version="7.0.1" />
+    <PackageReference Include="NuGet.Packaging" Version="7.0.1" />
+    <PackageReference Include="NuGet.Configuration" Version="7.0.1" />
+    <PackageReference Include="NuGet.Resolver" Version="7.0.1" />
+    <PackageReference Include="NuGet.Frameworks" Version="7.0.1" />
     <PackageReference Include="System.IO.Compression.ZipFile" Version="4.3.0" />
   </ItemGroup>
 
