@@ -1,0 +1,43 @@
+FROM ai:v0.3 AS build
+
+WORKDIR /src
+
+# Build context root is /home/sa/gemini4 on the remote host.
+COPY mcp/FSharp.MCP.DevKit/ ./FSharp.MCP.DevKit/
+COPY mcp/csharp-sdk/ ./csharp-sdk/
+
+# Force a single NuGet source mapping key (nuget.org) to avoid key mismatch
+# across repos when restoring transitive ProjectReferences.
+RUN cat > /src/NuGet.Config <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+EOF
+
+WORKDIR /src/FSharp.MCP.DevKit
+RUN dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --configfile /src/NuGet.Config
+RUN dotnet publish src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj \
+    -c Release \
+    -f net10.0 \
+    --no-restore \
+    -o /opt/fsharp-mcp
+
+FROM ai:v0.3
+
+WORKDIR /app
+COPY --from=build /opt/fsharp-mcp/ /app/
+
+ENV ASPNETCORE_URLS=http://0.0.0.0:5000
+ENV MCP_ENABLE_STDIO=false
+EXPOSE 5000
+
+ENTRYPOINT ["dotnet", "/app/FSharp.MCP.DevKit.dll"]

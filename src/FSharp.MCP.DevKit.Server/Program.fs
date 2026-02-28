@@ -45,15 +45,31 @@ let main argv =
     builder.Logging.AddConsole(fun consoleLogOptions -> consoleLogOptions.LogToStandardErrorThreshold <- LogLevel.Trace)
     |> ignore
 
-    builder.WebHost.UseUrls("http://localhost:5000") |> ignore
+    let urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+    builder.WebHost.UseUrls(if String.IsNullOrWhiteSpace(urls) then "http://0.0.0.0:5000" else urls) |> ignore
 
     // Register FSI service
     builder.Services.AddSingleton<FsiMcpService>() |> ignore
 
-    // Configure MCP server
-    //builder.Services.AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly()
-    builder.Services.AddMcpServer().WithHttpTransport().WithStdioServerTransport().WithToolsFromAssembly().WithResources<TimeResources>()
-    |> ignore
+    // Configure MCP server. Keep stdio enabled by default for local MCP clients,
+    // but allow HTTP-only hosting (e.g. container deployment) via MCP_ENABLE_STDIO=false.
+    let enableStdio =
+        let value = Environment.GetEnvironmentVariable("MCP_ENABLE_STDIO")
+        String.IsNullOrWhiteSpace(value)
+        || not (
+            value.Equals("0", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("no", StringComparison.OrdinalIgnoreCase))
+
+    let mcpBuilder =
+        builder.Services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithToolsFromAssembly()
+            .WithResources<TimeResources>()
+
+    if enableStdio then
+        mcpBuilder.WithStdioServerTransport() |> ignore
 
     let host = builder.Build()
     host.MapMcp("/mcp") |> ignore

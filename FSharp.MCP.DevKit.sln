@@ -23,11 +23,11 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FSharp.MCP.DevKit.Documenta
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FSharp.MCP.DevKit.Documentation.Tool", "src\FSharp.MCP.DevKit.Documentation.Tool\FSharp.MCP.DevKit.Documentation.Tool.fsproj", "{66666666-6666-6666-6666-666666666666}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol", "..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol\ModelContextProtocol.csproj", "{FD074651-C40E-E4AE-C975-58F15CF052D3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol", "..\csharp-sdk\src\ModelContextProtocol\ModelContextProtocol.csproj", "{FD074651-C40E-E4AE-C975-58F15CF052D3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol.AspNetCore", "..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol.AspNetCore\ModelContextProtocol.AspNetCore.csproj", "{96A99C36-6018-55AD-0C2E-DC7E0A5164BD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol.AspNetCore", "..\csharp-sdk\src\ModelContextProtocol.AspNetCore\ModelContextProtocol.AspNetCore.csproj", "{96A99C36-6018-55AD-0C2E-DC7E0A5164BD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol.Core", "..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol.Core\ModelContextProtocol.Core.csproj", "{28EAF91B-8625-5F29-3CBA-2FB91A3268CA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModelContextProtocol.Core", "..\csharp-sdk\src\ModelContextProtocol.Core\ModelContextProtocol.Core.csproj", "{28EAF91B-8625-5F29-3CBA-2FB91A3268CA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

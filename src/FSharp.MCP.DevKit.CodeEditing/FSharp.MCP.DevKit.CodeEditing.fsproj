@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Analysis\FSharp.MCP.DevKit.Analysis.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Communication\FSharp.MCP.DevKit.Communication.fsproj" />
@@ -20,8 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
-    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
   </ItemGroup>
 
 </Project>

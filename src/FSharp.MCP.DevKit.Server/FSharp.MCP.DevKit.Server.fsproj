@@ -32,9 +32,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol.AspNetCore\ModelContextProtocol.AspNetCore.csproj" />
-    <!--<ProjectReference Include="..\..\..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol.Core\ModelContextProtocol.Core.csproj" />-->
-    <ProjectReference Include="..\..\..\..\..\mcp\csharp-sdk_mine\src\ModelContextProtocol\ModelContextProtocol.csproj" />
+    <ProjectReference Include="../../../csharp-sdk/src/ModelContextProtocol.AspNetCore/ModelContextProtocol.AspNetCore.csproj" />
+    <ProjectReference Include="../../../csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Analysis\FSharp.MCP.DevKit.Analysis.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Communication\FSharp.MCP.DevKit.Communication.fsproj" />
@@ -52,7 +51,7 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.1" />
     <!--<PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.1" />-->
-    <PackageReference Include="System.Text.Json" Version="10.0.1" />
+    <PackageReference Include="System.Text.Json" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
