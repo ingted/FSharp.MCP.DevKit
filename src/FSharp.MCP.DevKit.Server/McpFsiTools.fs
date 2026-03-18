@@ -1,8 +1,10 @@
 namespace FSharp.MCP.DevKit.Server
 
 open System
+open System.Threading
 open System.ComponentModel
 open System.Threading.Tasks
+open System.Threading.Channels
 open Microsoft.Extensions.Logging
 open FSharp.MCP.DevKit.Communication.IPC
 open FSharp.MCP.DevKit.Core
@@ -24,6 +26,20 @@ open Fantomas.Core
 /// - Updated line splitting to preserve empty lines (StringSplitOptions.None)
 /// - Enhanced error handling to prevent malformed code injection
 module McpFsiTools =
+
+    type AsyncFsiExecutionRequest =
+        { AsyncId: string
+          Code: string
+          Timeout: TimeSpan
+          EnqueuedAt: DateTime }
+
+    let private createFailedFsiResult (error: string) (executionTime: TimeSpan option) =
+        { Output = ""
+          Errors = error
+          IsSuccess = false
+          Value = None
+          ExecutionTime = executionTime
+          Diagnostics = [||] }
 
     /// Helper function to format diagnostic information into readable error messages
     let private formatErrorWithDiagnostics (baseError: string) (response: PipeResponse) =
@@ -91,17 +107,109 @@ module McpFsiTools =
         let mutable fsiService: FsiService option = None
         let mutable pipeServer: PipeServer option = None
         let mutable pipeClient: PipeClient option = None
+        let asyncResultCache = AsyncFsiResultCache()
+        let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
+        let asyncProcessorGate = obj()
+        let asyncProcessorCts = new CancellationTokenSource()
+        let mutable asyncProcessor: Task option = None
         let config = FsiConfig.defaultConfig
         let pipeConfig = PipeConfig.defaultConfig
 
         /// Default timeout for FSI operations (30 seconds)
         let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
 
+        member private this.GetOrStartFsiCore() =
+            match fsiService with
+            | Some service when service.IsRunning -> service
+            | _ ->
+                this.StartFsi()
+
+                match fsiService with
+                | Some service -> service
+                | None -> failwith "FSI service failed to start"
+
+        member private this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
+            task {
+                try
+                    let service = this.GetOrStartFsiCore()
+                    use cts = new CancellationTokenSource()
+                    cts.CancelAfter(request.Timeout)
+                    let! result = service.ExecuteInteractionAsync(request.Code, cts.Token)
+                    asyncResultCache.[request.AsyncId] <- Some result
+
+                    logger.LogInformation(
+                        "Async FSI request completed. AsyncId={AsyncId} EnqueuedAt={EnqueuedAt}",
+                        request.AsyncId,
+                        request.EnqueuedAt
+                    )
+                with
+                | :? OperationCanceledException ->
+                    asyncResultCache.[request.AsyncId] <-
+                        Some(createFailedFsiResult $"Operation timed out after {request.Timeout.TotalSeconds} seconds" (Some request.Timeout))
+
+                    logger.LogWarning(
+                        "Async FSI request timed out. AsyncId={AsyncId} Timeout={TimeoutSeconds}",
+                        request.AsyncId,
+                        request.Timeout.TotalSeconds
+                    )
+                | ex ->
+                    asyncResultCache.[request.AsyncId] <- Some(createFailedFsiResult ex.Message None)
+                    logger.LogError(ex, "Async FSI request failed. AsyncId={AsyncId}", request.AsyncId)
+            }
+
+        member private this.RunAsyncProcessor(cancellationToken: CancellationToken) : Task =
+            task {
+                let reader = asyncRequestChannel.Reader
+
+                try
+                    while not cancellationToken.IsCancellationRequested do
+                        let! request = reader.ReadAsync(cancellationToken).AsTask()
+                        do! this.ProcessAsyncRequest(request)
+                with :? OperationCanceledException ->
+                    logger.LogInformation("Async FSI request processor stopped")
+            }
+
+        member private this.EnsureAsyncProcessorStarted() =
+            lock asyncProcessorGate (fun () ->
+                match asyncProcessor with
+                | Some worker when not worker.IsCompleted -> ()
+                | _ ->
+                    asyncProcessor <- Some(this.RunAsyncProcessor(asyncProcessorCts.Token))
+                    logger.LogInformation("Async FSI request processor started"))
+
         /// Set the default timeout for FSI operations
         member this.SetDefaultTimeout(timeout: TimeSpan) = defaultTimeout <- timeout
 
         /// Get the current default timeout
         member this.DefaultTimeout = defaultTimeout
+
+        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan) =
+            this.EnsureAsyncProcessorStarted()
+
+            let asyncId = Guid.NewGuid().ToString("N")
+
+            let request =
+                { AsyncId = asyncId
+                  Code = code
+                  Timeout = timeout
+                  EnqueuedAt = DateTime.UtcNow }
+
+            asyncResultCache.[asyncId] <- None
+
+            if asyncRequestChannel.Writer.TryWrite(request) then
+                logger.LogInformation("Async FSI request enqueued. AsyncId={AsyncId}", asyncId)
+                asyncId
+            else
+                asyncResultCache.TryRemove(asyncId) |> ignore
+                failwith "Failed to enqueue async FSI request"
+
+        member this.TryGetAsyncExecution(asyncId: string) =
+            match asyncResultCache.TryGetValue(asyncId) with
+            | true, result -> Some result
+            | false, _ -> None
+
+        member this.GetAsyncExecutionStatus(asyncId: string) =
+            this.TryGetAsyncExecution(asyncId) |> AsyncFsiStatus.fromCacheEntry asyncId
 
         /// Start the FSI service and pipe server
         member this.StartFsi() =
@@ -168,7 +276,10 @@ module McpFsiTools =
             | None -> false
 
         interface IDisposable with
-            member this.Dispose() = this.StopFsi()
+            member this.Dispose() =
+                asyncProcessorCts.Cancel()
+                asyncProcessorCts.Dispose()
+                this.StopFsi()
 
     /// MCP FSI Tools that provide F# Interactive functionality through named pipes
     [<McpServerToolType>]
@@ -212,6 +323,23 @@ module McpFsiTools =
                     Console.WriteLine($"FSI Execute: {code}")
                     Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
+            }
+
+        [<McpServerTool(Name = "execute_f_sharp_code_async"); Description("Enqueue F# code execution and return an async id immediately. Best flow for agents: 1. Call this tool to get asyncId. 2. Read resource fsi/async/{asyncId}. 3. Poll that resource until isCompleted becomes true.")>]
+        static member ExecuteFSharpCodeAsync
+            (
+                fsiService: FsiMcpService,
+                [<Description("F# code to execute asynchronously. After this tool returns asyncId, read resource fsi/async/{asyncId} until isCompleted is true.")>] code: string,
+                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+            ) : Task<string> =
+            task {
+                let timeout =
+                    match timeoutSeconds with
+                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
+                    | None -> fsiService.DefaultTimeout
+
+                let asyncId = fsiService.EnqueueExecuteCode(code, timeout)
+                return asyncId
             }
 
         [<McpServerTool; Description("Execute F# code in FSI and return the result with detailed error information")>]

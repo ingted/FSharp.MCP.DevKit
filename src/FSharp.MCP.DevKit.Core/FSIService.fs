@@ -1,6 +1,7 @@
 namespace FSharp.MCP.DevKit.Core
 
 open System
+open System.Collections.Concurrent
 open System.IO
 open System.Text
 open System.Threading
@@ -18,6 +19,45 @@ type FsiResult =
       Value: obj option
       ExecutionTime: TimeSpan option
       Diagnostics: FSharpDiagnostic[] }
+
+type AsyncFsiResultCache = ConcurrentDictionary<string, FsiResult option>
+
+type AsyncFsiResultDto =
+    { Output: string
+      Errors: string
+      IsSuccess: bool
+      ExecutionTimeMs: float option }
+
+type AsyncFsiStatusDto =
+    { AsyncId: string
+      Exists: bool
+      IsCompleted: bool
+      Result: AsyncFsiResultDto option }
+
+module AsyncFsiStatus =
+    let toDto (result: FsiResult) =
+        { Output = result.Output
+          Errors = result.Errors
+          IsSuccess = result.IsSuccess
+          ExecutionTimeMs = result.ExecutionTime |> Option.map (fun value -> value.TotalMilliseconds) }
+
+    let fromCacheEntry (asyncId: string) (entry: FsiResult option option) =
+        match entry with
+        | None ->
+            { AsyncId = asyncId
+              Exists = false
+              IsCompleted = false
+              Result = None }
+        | Some None ->
+            { AsyncId = asyncId
+              Exists = true
+              IsCompleted = false
+              Result = None }
+        | Some(Some result) ->
+            { AsyncId = asyncId
+              Exists = true
+              IsCompleted = true
+              Result = Some(toDto result) }
 
 /// Configuration for the FSI session
 type FsiConfig =

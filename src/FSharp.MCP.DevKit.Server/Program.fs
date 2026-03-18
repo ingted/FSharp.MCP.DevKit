@@ -5,11 +5,13 @@ open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Http
 open Microsoft.AspNetCore.Http.Features
 open System
+open System.ComponentModel
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
+open System.Text.Json
 
 [<McpServerResourceType>]
 type TimeResources() =
@@ -34,6 +36,19 @@ type TimeResources() =
         // 這裡僅示範，不做真正時區換算
         let now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
         $"{{\"tz\":\"{tz}\",\"now\":\"{now}\"}}"
+
+[<McpServerResourceType>]
+type FsiResources(fsiService: FsiMcpService) =
+
+    [<McpServerResource(
+        Name = "fsiAsyncStatus",
+        Title = "FSI Async Status",
+        MimeType = "application/json",
+        UriTemplate = "fsi/async/{asyncId}")>]
+    [<Description("Read async FSI execution status by asyncId. Best flow for agents: 1. Call execute_f_sharp_code_async to get asyncId. 2. Read fsi/async/{asyncId}. 3. Poll until isCompleted is true.")>]
+    member _.AsyncStatus(asyncId: string) =
+        let status = fsiService.GetAsyncExecutionStatus(asyncId)
+        JsonSerializer.Serialize(status)
 
 
 [<EntryPoint>]
@@ -67,12 +82,22 @@ let main argv =
             .WithHttpTransport()
             .WithToolsFromAssembly()
             .WithResources<TimeResources>()
+            .WithResources<FsiResources>()
 
     if enableStdio then
         mcpBuilder.WithStdioServerTransport() |> ignore
 
     let host = builder.Build()
     host.MapMcp("/mcp") |> ignore
+
+    host.MapGet(
+        "/fsi/async/{asyncId}",
+        Func<string, FsiMcpService, IResult>(fun asyncId fsiService ->
+            let status = fsiService.GetAsyncExecutionStatus(asyncId)
+            Results.Json(status))
+    )
+    |> ignore
+
     // Run the host
     host.RunAsync().GetAwaiter().GetResult()
     0
