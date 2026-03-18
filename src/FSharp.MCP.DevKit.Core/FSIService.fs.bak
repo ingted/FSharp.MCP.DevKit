@@ -11,6 +11,13 @@ open FSharp.Compiler.Diagnostics
 
 
 /// Represents the result of an FSI evaluation
+type FsiResult =
+    { Output: string
+      Errors: string
+      IsSuccess: bool
+      Value: obj option
+      ExecutionTime: TimeSpan option
+      Diagnostics: FSharpDiagnostic[] }
 
 /// Configuration for the FSI session
 type FsiConfig =

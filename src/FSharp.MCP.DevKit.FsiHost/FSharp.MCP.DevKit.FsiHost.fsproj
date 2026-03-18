@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+    <None Include="akka.conf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+  </ItemGroup>
+</Project>
