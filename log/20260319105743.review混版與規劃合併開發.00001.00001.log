@@ -1,0 +1,42 @@
+背景
+- 使用者要求 review `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製`，並將合併版於 `FSharp.MCP.DevKit - Async` 開發。
+- 已依 `E:\dk\AGENTS.md` 確認需先完成 SA / SD / WBS，再按 schedule 開發。
+- `check.fsx` 已補入 `E:\dk\check.fsx`，本輪收尾需執行一致性稽核。
+
+目標
+- 建立三個 repo 的結構、build、差異與風險基線。
+- 產出 `doc/SA.md`、`doc/SD.md`、`doc/WBS.md`、`doc/Test.md`、`doc/DevLog.md`、`doc/Policy.md`、`doc/Action.md`。
+- 在 `FSharp.MCP.DevKit - Async` 實作可整合 .NET mixed FSI host 與 .NET 10 async incremental execution 的合併版。
+
+計畫步驟（planned steps）
+1. 檢查三個 repo 現況、solution / project 結構與 git dirty 狀態。
+2. 執行基線 build，留存 `.op_log`，確認目前可編譯性與主要失敗點。
+3. 比對 `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製` 的核心差異，聚焦 FSI host、Akka、MCP server/client 通訊、async incremental queue execution。
+4. 於 `FSharp.MCP.DevKit - Async` 更新 SA / SD / WBS / Test / Policy / Action / DevLog。
+5. 依 WBS schedule 實作與驗證。
+6. 執行 `check.fsx` 稽核，補齊缺失後收尾。
+
+執行命令/參數
+- 尚未開始本輪 build / diff / test；操作命令將另記於 `.op_log`。
+
+結果（成功/失敗）
+- in-progress
+
+根因判讀
+- 尚未完成分析。
+
+下一步
+- 執行三個 repo 的基線 build 與檔案差異分析。
+
+關聯文件/工單/PR
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/DevLog.md`
+- `doc/Policy.md`
+- `doc/Action.md`
+- `MCP.KM.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者說明 `FSharp.MCP.DevKit` 是 netfx/.NET 9 mixed 版本，`FSharp.MCP.DevKit - Async - 複製` 是 .NET 10 並帶 incremental code snippet execution / queue-request-then-async-exec，要求 review 兩者後在 `FSharp.MCP.DevKit - Async` 合併開發。

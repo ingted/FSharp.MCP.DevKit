@@ -1,0 +1,41 @@
+﻿背景
+- 使用者要求 review `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製`，並把 mixed-runtime + async queue 合併到 `FSharp.MCP.DevKit - Async`。
+
+目標
+- 完成 mixed-runtime backend 收斂、保留 async queue/polling、補齊 SA/SD/WBS/Test/Action/DevLog/KM，並執行 check 收尾。
+
+計畫步驟
+1. 重新驗證 build 與 mixed-runtime smoke。
+2. 同步文件到實作現況。
+3. 執行 visibility 檢查與 check.fsx。
+
+執行命令/參數
+- `dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false`
+- 啟動 `src/FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe`
+- `dotnet run --project E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj -p:NuGetAudit=false`
+- 後續執行 `rg -n "\bprivate\b|\binternal\b|\bfile\b" ...` 與 `dotnet fsi --exec E:\dk\check.fsx -- ...`
+
+結果
+- build success。
+- sync execute / async queue / polling / package reference / reset smoke success。
+- 文件已更新到實作現況。
+
+根因判讀
+- 先前 `Microsoft.Extensions.ObjectPool` 缺失是因為用 `dotnet fsi #r` 直接載入 ASP.NET Core app DLL，沒有正確套用 `runtimeconfig/deps`。
+- host / server 的 `akka*.conf` 若依賴 cwd 會造成啟動風險，因此改為從輸出目錄解析。
+
+下一步
+- 執行 visibility 檢查。
+- 執行 `check.fsx`，若有 FAIL 或與本輪相關的 WARN，先補齊再結束。
+
+關聯文件/工單/PR
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Action.md`
+- `doc/DevLog.md`
+- GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+
+prompt/上下文摘要
+- 使用者要求依 `AGENTS.md` SOP 先做 SA/SD/WBS，再在 `FSharp.MCP.DevKit - Async` 合併 mixed-runtime 與 async queue 功能，並允許在 target repo 進行 git 操作。

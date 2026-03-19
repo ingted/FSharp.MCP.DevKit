@@ -1,0 +1,12 @@
+[INFO][03/19/2026 03:30:05.297Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Starting remoting
+[INFO][03/19/2026 03:30:05.417Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Remoting started; listening on addresses : [akka.tcp://FsiExecutionSystem@localhost:8081]
+[INFO][03/19/2026 03:30:05.417Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Remoting now listens on addresses: [akka.tcp://FsiExecutionSystem@localhost:8081]
+FSI Execution Host started on port 8081...
+FSI Command line arguments: [|"fsi.exe"; "--noninteractive"; "--nologo"; "--compilertool:paket";
+  "--define:FSI_PRINTSIZE=1000000"; "--define:FSI_PRINTLENGTH=10000000"|]
+FSI Command line arguments: [|"fsi.exe"; "--noninteractive"; "--nologo"; "--compilertool:paket";
+  "--define:FSI_PRINTSIZE=1000000"; "--define:FSI_PRINTLENGTH=10000000"|]
+[INFO][03/19/2026 03:30:57.678Z][Thread 0003][akka.tcp://FsiExecutionSystem@localhost:8081/system/endpointManager/reliableEndpointWriter-akka.tcp%3A%2F%2FMcpClientSystem%40localhost%3A64853-1] Removing receive buffers for [akka.tcp://FsiExecutionSystem@localhost:8081]->[akka.tcp://McpClientSystem@localhost:64853]
+FSI Command line arguments: [|"fsi.exe"; "--noninteractive"; "--nologo"; "--compilertool:paket";
+  "--define:FSI_PRINTSIZE=1000000"; "--define:FSI_PRINTLENGTH=10000000"|]
+[INFO][03/19/2026 03:32:13.759Z][Thread 0003][akka.tcp://FsiExecutionSystem@localhost:8081/system/endpointManager/reliableEndpointWriter-akka.tcp%3A%2F%2FMcpClientSystem%40localhost%3A64891-2] Removing receive buffers for [akka.tcp://FsiExecutionSystem@localhost:8081]->[akka.tcp://McpClientSystem@localhost:64891]

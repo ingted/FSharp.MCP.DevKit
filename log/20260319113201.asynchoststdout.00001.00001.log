@@ -1,0 +1,30 @@
+[INFO][03/19/2026 03:32:02.038Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Starting remoting
+[ERROR][03/19/2026 03:32:02.141Z][Thread 0003][TcpTransport (akka://FsiExecutionSystem)] Failed to bind to Unspecified/localhost:8081; shutting down DotNetty transport.
+Cause: Akka.Remote.RemoteTransportException: Failed to bind to [127.0.0.1:8081]. See InnerException for details. ---> System.Net.Sockets.SocketException: 一次只能用一個通訊端位址 (通訊協定/網路位址/連接埠)。
+   於 System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+   於 System.Net.Sockets.Socket.Bind(EndPoint localEP)
+   於 DotNetty.Transport.Channels.Sockets.TcpServerSocketChannel.DoBind(EndPoint localAddress)
+   於 DotNetty.Transport.Channels.AbstractChannel.AbstractUnsafe.BindAsync(EndPoint localAddress)
+--- 先前擲回例外狀況之位置中的堆疊追蹤結尾 ---
+   於 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   於 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   於 DotNetty.Transport.Bootstrapping.AbstractBootstrap`2.<DoBindAsync>d__26.MoveNext()
+--- 先前擲回例外狀況之位置中的堆疊追蹤結尾 ---
+   於 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   於 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   於 Akka.Remote.Transport.DotNetty.DotNettyTransport.<NewServer>d__20.MoveNext()
+   --- 內部例外狀況堆疊追蹤的結尾 ---
+   於 Akka.Remote.Transport.DotNetty.DotNettyTransport.<NewServer>d__20.MoveNext()
+--- 先前擲回例外狀況之位置中的堆疊追蹤結尾 ---
+   於 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   於 System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   於 Akka.Remote.Transport.DotNetty.DotNettyTransport.<Listen>d__21.MoveNext()
+--- 先前擲回例外狀況之位置中的堆疊追蹤結尾 ---
+   於 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   於 Akka.Remote.Transport.DotNetty.DotNettyTransport.<Listen>d__21.MoveNext()
+[ERROR][03/19/2026 03:32:02.148Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Remoting error: [Startup failed] []
+[INFO][03/19/2026 03:32:02.179Z][Thread 0016][remoting-terminator] Shutting down remote daemon.
+[INFO][03/19/2026 03:32:02.181Z][Thread 0016][remoting-terminator] Remote daemon shut down; proceeding with flushing remote transports.
+[INFO][03/19/2026 03:32:02.184Z][Thread 0004][remoting (akka://FsiExecutionSystem)] Remoting shut down
+[INFO][03/19/2026 03:32:02.184Z][Thread 0009][remoting-terminator] Remoting shut down.
+[ERROR][03/19/2026 03:32:02.184Z][Thread 0005][remoting (akka://FsiExecutionSystem)] Remoting system has been terminated abruptly. Attempting to shut down transports

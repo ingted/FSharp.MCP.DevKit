@@ -1,101 +1,155 @@
 # SD
 
-## 設計概覽
+## 設計目標
 
-### 1. Cache 型別
+- 統一 `FSharp.MCP.DevKit - Async` 的 FSI session backend。
+- 保留 net472 `FsiHost` 作為實際 FSI session 執行者。
+- 讓 sync tool、async queue、status polling 都落在同一個遠端 session 上。
+- 修正 target framework 與 actor/message compile path。
 
-- 在 [FSIService.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSIService.fs) 新增共用型別別名與 DTO：
-  - `type AsyncFsiResultCache = ConcurrentDictionary<string, FsiResult option>`
-  - `type AsyncFsiStatusDto = { AsyncId: string; Exists: bool; IsCompleted: bool; Result: AsyncFsiResultDto option }`
-  - `type AsyncFsiResultDto = { Output: string; Errors: string; IsSuccess: bool; ExecutionTimeMs: float option }`
+## 設計決策
 
-### 2. Queue 與 Scheduler
+### 1. Backend 單一路徑
 
-- 在 [McpFsiTools.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs) 的 `FsiMcpService` 內加入：
-  - `Channel<AsyncFsiExecutionRequest>`
-  - `AsyncFsiResultCache`
-  - 單一 background worker `Task`
-- enqueue 時序：
-  1. 產生 `asyncId`
-  2. `cache[asyncId] <- None`
-  3. request 寫入 channel
-  4. 立即回 `asyncId`
-- worker 時序：
-  1. 依序讀取 request
-  2. 確保 FSI 已啟動
-  3. 直接呼叫底層 `FsiService.ExecuteInteractionAsync(...)`
-  4. `cache[asyncId] <- Some result`
+- `FsiHost` 維持 `net472`，持有唯一 FSI session。
+- `Server` 維持 `net9.0;net10.0`，不再在 process 內自啟第二個 `FsiService`。
+- `Server` 透過 Akka remote actor 對 `FsiHost` 發送 command request。
+- `async queue` 只負責排程與快取，不直接持有 FSI session。
 
-### 3. 為什麼不直接沿用 PipeClient 做 async queue
+### 2. Remote Command DTO
 
-- `PipeClient` 只保證單次 request-response，不保證整體 FIFO scheduling。
-- `PipeServer` 目前可接受多 connection slot，若 queue 只放在 client 端，仍可能有別的同步請求同時進來。
-- 放在 `FsiMcpService` 可以把 async queue 與 HTTP status 查詢收斂到同一個 singleton service。
+- 在 `Messages` 專案新增可序列化的 remote command / response DTO。
+- 不直接跨 Akka remote 傳 `obj option` 或 `FSharpDiagnostic[]`。
+- response 使用 transport-safe DTO：
+  - `Output`
+  - `Errors`
+  - `IsSuccess`
+  - `ExecutionTimeMs`
+  - `Diagnostics`（轉成純 record DTO）
 
-## 新增資料結構
+### 3. Remote Client Adapter
 
-```fsharp
-type AsyncFsiExecutionRequest =
-    { AsyncId: string
-      Code: string
-      Timeout: TimeSpan
-      EnqueuedAt: DateTime }
-```
+- 在 `Server/McpFsiTools.fs` 建立 `RemoteFsiClient`，對上模擬既有 `PipeClient` 風格方法：
+  - `ExecuteCode`
+  - `EvaluateExpression`
+  - `LoadScript`
+  - `ParseAndCheck`
+  - `ReferenceNugetPackage`
+  - `ReferenceAssembly`
+  - `AddSearchPath`
+  - `Reset`
+  - `Restart`
+  - `GetState`
+  - `IsServerAvailable`
+- 這樣大部分 MCP tool 實作可維持既有 calling shape，不需要全面重寫工具層。
 
-## 新增方法
+### 4. Async Queue 位置
 
-### FsiMcpService
+- async queue 放在 `FsiMcpService`。
+- queue item 至少包含：
+  - `AsyncId`
+  - `Code`
+  - `Timeout`
+  - `EnqueuedAt`
+- queue worker 逐筆取出後，呼叫 `RemoteFsiClient.ExecuteCode` 到遠端 host。
+- 執行結果轉回 `FsiResult` 後寫入 `AsyncFsiResultCache`。
 
-- `member EnqueueExecuteCode(code: string, timeout: TimeSpan) : string`
-- `member TryGetAsyncExecution(asyncId: string) : FsiResult option option`
-- `member GetAsyncExecutionStatus(asyncId: string) : AsyncFsiStatusDto`
+### 5. Target Framework 策略
 
-## HTTP Endpoint
+- `Core` 保留 shared API 與 `FsiService`，目前 target `netstandard2.0;net10.0`。
+- `FsiActor.fs` 雖然實體檔案放在 `src/FSharp.MCP.DevKit.Core`，但 compile owner 改成 `FsiHost`，用 linked source 方式編入。
+- Akka package reference 與 `Messages` project reference 只放在 `FsiHost`，避免 shared library 背上 host-only 依賴。
+- `Server` 保持 `net9.0;net10.0`。
+- `Messages` 保持 `netstandard2.0`。
+- 其他 library 維持 target repo 現況的 multi-target，避免再把 `Async - 複製` 的 `NU1201` 問題帶回來。
 
-- Route: `GET /fsi/async/{asyncId}`
-- Response:
+### 6. Runtime Config 解析策略
 
-```json
-{
-  "asyncId": "string",
-  "exists": true,
-  "isCompleted": false,
-  "result": null
-}
-```
+- `FsiHost` 讀 `akka.conf` 改為從輸出目錄解析。
+- `FsiMcpService` 讀 `akka.server.conf` 改為從輸出目錄解析。
+- 目的不是美化程式，而是消除「從非輸出目錄啟動就找不到 Akka config」的實際部署風險。
 
-- endpoint 一律回 `200 OK`。
-- 未知 `asyncId` 以 `exists = false` 表示，而不是 `404`。
-- 完成後 `result` 會帶出簡化版結果摘要。
+## 元件責任
 
-## MCP Tool
+### `src/FSharp.MCP.DevKit.Messages`
 
-- F# 方法：`ExecuteFSharpCodeAsync`
-- MCP tool name：`execute_f_sharp_code_async`
-- 描述：enqueue F# code execution and return async id immediately，並在 agent-facing description 明示最佳流程：
-  1. 呼叫 `execute_f_sharp_code_async` 取得 `asyncId`
-  2. 讀取 MCP resource `fsi/async/{asyncId}`
-  3. 持續輪詢直到 `isCompleted = true`
-- 回傳：`asyncId`
+- 定義 Akka remote transport DTO。
+- 不持有 FSI session 邏輯。
 
-## MCP Resource Template
+### `src/FSharp.MCP.DevKit.Core`
 
-- 名稱：`fsiAsyncStatus`
-- UriTemplate：`fsi/async/{asyncId}`
-- 用途：把原本的 HTTP status 查詢包成 MCP resource，讓 agent 不必跳出 MCP transport。
-- 回傳 payload 與 HTTP endpoint 對齊：
+- 提供 `FsiService`。
+- 提供 async status shared model。
+- 保存 `FsiActor.fs` 原始碼，由 `FsiHost` linked compile 後將 remote command 轉成對 `FsiService` 的實際呼叫。
 
-```json
-{
-  "asyncId": "string",
-  "exists": true,
-  "isCompleted": false,
-  "result": null
-}
-```
+### `src/FSharp.MCP.DevKit.FsiHost`
 
-## 失敗處理
+- 啟動 Akka actor system。
+- 啟動單一 `fsiActor`。
+- 使用 `akka.conf` 的固定 port 作為 server 端連入點。
 
-- enqueue 失敗：直接回 exception 訊息。
-- worker 執行例外：將 `Some failedResult` 寫回 cache，而不是留在 `None`。
-- 查詢未知 `asyncId`：`exists = false`，HTTP 維持 `200 + status payload`。
+### `src/FSharp.MCP.DevKit.Server`
+
+- `FsiMcpService`：
+  - 建立 actor system / actor selection
+  - 封裝 remote client adapter
+  - 維護 async queue / cache
+- `Program.fs`：
+  - MCP tool registration
+  - `fsi/async/{asyncId}` resource
+  - HTTP GET `/fsi/async/{asyncId}`
+
+## 資料流
+
+### Sync execution
+
+1. MCP tool 進入 `FSharpInteractiveTools.ExecuteFSharpCode`
+2. tool 取用 `FsiMcpService.GetClient()`
+3. `RemoteFsiClient.ExecuteCode` 送出 Akka remote command
+4. `FsiHost` 的 `FsiActor` 呼叫 `FsiService.ExecuteInteraction`
+5. transport-safe response 回到 server
+6. tool 回傳 output 或 formatted error
+
+### Async execution
+
+1. MCP tool `execute_f_sharp_code_async` 建立 `asyncId`
+2. `FsiMcpService.EnqueueExecuteCode` 把 request 寫入 channel
+3. background worker 依 FIFO 取出 request
+4. worker 透過 `RemoteFsiClient.ExecuteCode` 呼叫遠端 host
+5. result 寫入 `AsyncFsiResultCache`
+6. MCP resource / HTTP endpoint 透過 `GetAsyncExecutionStatus` 查詢 cache
+
+## 關鍵相容性修正
+
+1. `remoteActorPath` 與 `FsiHost/akka.conf` 必須統一為同一個 port。
+2. `EnqueueExecuteCode` 的 timeout 參數型別要收斂為 `TimeSpan`，不可留下 `TimeSpan option -> TimeSpan` 的錯誤指派。
+3. `FsiActor.fs` 必須有明確 compile path；本輪選擇由 `FsiHost` linked compile，而不是把 Akka / Messages dependency 塞回 `Core`。
+4. remote response 不可攜帶非 transport-safe 型別。
+5. host / server 的 Akka config 不可再依賴 current working directory。
+
+## 驗證策略
+
+- 第一層：`dotnet build` with local restore workaround，確認 merge 後真正的編譯錯誤。
+- 第二層：至少驗證下列操作可在同一個遠端 session 連續成功：
+  - `ReferenceNugetPackage`
+  - `ExecuteFSharpCode`
+  - `execute_f_sharp_code_async`
+  - `fsi/async/{asyncId}` polling
+- 第三層：確認 `Reset` / `Restart` 後 state 變化合理。
+
+## 已驗證結果
+
+- Build：`dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false` 成功。
+- Smoke：
+  - net472 `FsiHost` 成功監聽 `akka.tcp://FsiExecutionSystem@localhost:8081`
+  - sync execute / async enqueue / polling / eval / reset 全部成功
+  - `ReferenceNugetPackage("Newtonsoft.Json, 13.0.3")` 成功，後續程式碼可使用該 package
+- 補充判讀：
+  - 先前用 `dotnet fsi #r FSharp.MCP.DevKit.dll` 的 smoke 失敗，是 ASP.NET Core app 直接被 FSI 載入時無法正確套用 `runtimeconfig/deps`，不是 merged backend 本身壞掉。
+
+## 回退策略
+
+- 若 remote command 泛化後導致大面積 regression：
+  - 保留 `McpFsiTools.fs.bak` 作為比對基線
+  - 先恢復 sync execute / async queue 核心路徑
+  - 其餘低頻工具延後到下一個 WBS phase 收斂

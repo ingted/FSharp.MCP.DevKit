@@ -1,0 +1,6 @@
+[INFO][03/19/2026 03:20:43.942Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Starting remoting
+[INFO][03/19/2026 03:20:44.062Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Remoting started; listening on addresses : [akka.tcp://FsiExecutionSystem@localhost:8081]
+[INFO][03/19/2026 03:20:44.062Z][Thread 0001][remoting (akka://FsiExecutionSystem)] Remoting now listens on addresses: [akka.tcp://FsiExecutionSystem@localhost:8081]
+FSI Execution Host started on port 8081...
+FSI Command line arguments: [|"fsi.exe"; "--noninteractive"; "--nologo"; "--compilertool:paket";
+  "--define:FSI_PRINTSIZE=1000000"; "--define:FSI_PRINTLENGTH=10000000"|]

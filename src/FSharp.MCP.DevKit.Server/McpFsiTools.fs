@@ -1,13 +1,17 @@
 namespace FSharp.MCP.DevKit.Server
 
 open System
+open System.IO
 open System.Threading
 open System.ComponentModel
 open System.Threading.Tasks
 open System.Threading.Channels
 open Microsoft.Extensions.Logging
+open Akka.Actor
+open Akka.Configuration
 open FSharp.MCP.DevKit.Communication.IPC
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Analysis
 open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
 open ModelContextProtocol.Server
@@ -102,62 +106,146 @@ module McpFsiTools =
                 Error("Cannot insert code in the middle of a record definition")
             | _ -> Ok()
 
-    /// Service that manages the FSI pipe server and client
+    let toPipeDiagnostic (diagnostic: FsiRemoteDiagnostic) : PipeDiagnostic =
+        { FileName = diagnostic.FileName
+          StartLine = diagnostic.StartLine
+          EndLine = diagnostic.EndLine
+          StartColumn = diagnostic.StartColumn
+          EndColumn = diagnostic.EndColumn
+          Severity = diagnostic.Severity
+          Message = diagnostic.Message }
+
+    let toPipeResponse (requestId: string) (result: FsiRemoteResult) : PipeResponse =
+        let diagnostics =
+            if Array.isEmpty result.Diagnostics then
+                None
+            else
+                result.Diagnostics |> Array.map toPipeDiagnostic |> Some
+
+        { RequestId = requestId
+          IsSuccess = result.IsSuccess
+          Output = result.Output
+          Errors = result.Errors
+          Diagnostics = diagnostics
+          Value = None
+          ExecutionTime = result.ExecutionTimeMs |> Option.map TimeSpan.FromMilliseconds
+          Timestamp = DateTime.UtcNow }
+
+    let toCachedFsiResult (response: PipeResponse) : FsiResult =
+        { Output = response.Output
+          Errors = response.Errors
+          IsSuccess = response.IsSuccess
+          Value = None
+          ExecutionTime = response.ExecutionTime
+          Diagnostics = [||] }
+
+    type RemoteFsiClient(remoteActor: ActorSelection, logger: ILogger) =
+        member this.SendCommand(commandType: string, payload: string, ?usePackageTargets: bool, ?timeout: TimeSpan) : Task<PipeResponse> =
+            let effectiveTimeout = defaultArg timeout (TimeSpan.FromSeconds(30.0))
+            let requestId = Guid.NewGuid().ToString("N")
+
+            task {
+                try
+                    let request =
+                        { RequestId = requestId
+                          CommandType = commandType
+                          Payload = payload
+                          UsePackageTargets = usePackageTargets }
+
+                    let! response = remoteActor.Ask<FsiRemoteCommandResponse>(request, effectiveTimeout)
+                    return toPipeResponse response.RequestId response.Result
+                with ex ->
+                    logger.LogError(ex, "Failed to execute remote FSI command {CommandType}", commandType)
+
+                    return
+                        { RequestId = requestId
+                          IsSuccess = false
+                          Output = ""
+                          Errors = ex.Message
+                          Diagnostics = None
+                          Value = None
+                          ExecutionTime = None
+                          Timestamp = DateTime.UtcNow }
+            }
+
+        member this.ExecuteCode(code: string, ?timeout: TimeSpan) =
+            this.SendCommand("EXEC", code, ?timeout = timeout)
+
+        member this.EvaluateExpression(expression: string, ?timeout: TimeSpan) =
+            this.SendCommand("EVAL", expression, ?timeout = timeout)
+
+        member this.LoadScript(scriptPath: string, ?timeout: TimeSpan) =
+            this.SendCommand("LOAD", scriptPath, ?timeout = timeout)
+
+        member this.ParseAndCheck(code: string, ?timeout: TimeSpan) =
+            this.SendCommand("PARSE", code, ?timeout = timeout)
+
+        member this.ReferenceNugetPackage(packageName: string, ?timeout: TimeSpan) =
+            this.SendCommand("REFERENCE_NUGET", packageName, ?timeout = timeout)
+
+        member this.ReferenceAssembly(assemblyPath: string, ?timeout: TimeSpan) =
+            this.SendCommand("REFERENCE_ASSEMBLY", assemblyPath, ?timeout = timeout)
+
+        member this.AddSearchPath(path: string, ?timeout: TimeSpan) =
+            this.SendCommand("ADD_PATH", path, ?timeout = timeout)
+
+        member this.Reset(?timeout: TimeSpan) =
+            this.SendCommand("RESET", "", ?timeout = timeout)
+
+        member this.Restart(?timeout: TimeSpan) =
+            this.SendCommand("RESTART", "", ?timeout = timeout)
+
+        member this.GetState(?timeout: TimeSpan) =
+            this.SendCommand("STATE", "", ?timeout = timeout)
+
+        member this.IsServerAvailable() =
+            try
+                let response =
+                    this.SendCommand("PING", "", timeout = TimeSpan.FromSeconds(1.0))
+                        .GetAwaiter()
+                        .GetResult()
+
+                response.IsSuccess
+            with _ ->
+                false
+
+    /// Service that manages remote FSI access and async queue
     type FsiMcpService(logger: ILogger<FsiMcpService>) =
-        let mutable fsiService: FsiService option = None
-        let mutable pipeServer: PipeServer option = None
-        let mutable pipeClient: PipeClient option = None
+        let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+        let configContent = File.ReadAllText(configPath)
+        let akkaConfig = ConfigurationFactory.ParseString(configContent)
+        let system = ActorSystem.Create("McpClientSystem", akkaConfig)
+        let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor"
+        let remoteActor = system.ActorSelection(remoteActorPath)
+        let remoteClient = new RemoteFsiClient(remoteActor, logger)
         let asyncResultCache = AsyncFsiResultCache()
         let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
         let asyncProcessorGate = obj()
         let asyncProcessorCts = new CancellationTokenSource()
         let mutable asyncProcessor: Task option = None
-        let config = FsiConfig.defaultConfig
-        let pipeConfig = PipeConfig.defaultConfig
-
-        /// Default timeout for FSI operations (30 seconds)
         let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
 
-        member private this.GetOrStartFsiCore() =
-            match fsiService with
-            | Some service when service.IsRunning -> service
-            | _ ->
-                this.StartFsi()
-
-                match fsiService with
-                | Some service -> service
-                | None -> failwith "FSI service failed to start"
-
-        member private this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
+        member this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
             task {
-                try
-                    let service = this.GetOrStartFsiCore()
-                    use cts = new CancellationTokenSource()
-                    cts.CancelAfter(request.Timeout)
-                    let! result = service.ExecuteInteractionAsync(request.Code, cts.Token)
-                    asyncResultCache.[request.AsyncId] <- Some result
+                let! response = remoteClient.ExecuteCode(request.Code, request.Timeout)
+                let result = toCachedFsiResult response
+                asyncResultCache.[request.AsyncId] <- Some result
 
+                if response.IsSuccess then
                     logger.LogInformation(
                         "Async FSI request completed. AsyncId={AsyncId} EnqueuedAt={EnqueuedAt}",
                         request.AsyncId,
                         request.EnqueuedAt
                     )
-                with
-                | :? OperationCanceledException ->
-                    asyncResultCache.[request.AsyncId] <-
-                        Some(createFailedFsiResult $"Operation timed out after {request.Timeout.TotalSeconds} seconds" (Some request.Timeout))
-
+                else
                     logger.LogWarning(
-                        "Async FSI request timed out. AsyncId={AsyncId} Timeout={TimeoutSeconds}",
+                        "Async FSI request failed. AsyncId={AsyncId} Error={Error}",
                         request.AsyncId,
-                        request.Timeout.TotalSeconds
+                        response.Errors
                     )
-                | ex ->
-                    asyncResultCache.[request.AsyncId] <- Some(createFailedFsiResult ex.Message None)
-                    logger.LogError(ex, "Async FSI request failed. AsyncId={AsyncId}", request.AsyncId)
             }
 
-        member private this.RunAsyncProcessor(cancellationToken: CancellationToken) : Task =
+        member this.RunAsyncProcessor(cancellationToken: CancellationToken) : Task =
             task {
                 let reader = asyncRequestChannel.Reader
 
@@ -169,7 +257,7 @@ module McpFsiTools =
                     logger.LogInformation("Async FSI request processor stopped")
             }
 
-        member private this.EnsureAsyncProcessorStarted() =
+        member this.EnsureAsyncProcessorStarted() =
             lock asyncProcessorGate (fun () ->
                 match asyncProcessor with
                 | Some worker when not worker.IsCompleted -> ()
@@ -211,75 +299,15 @@ module McpFsiTools =
         member this.GetAsyncExecutionStatus(asyncId: string) =
             this.TryGetAsyncExecution(asyncId) |> AsyncFsiStatus.fromCacheEntry asyncId
 
-        /// Start the FSI service and pipe server
-        member this.StartFsi() =
-            try
-                if fsiService.IsNone then
-                    let fsi = new FsiService(config)
-                    fsi.Start()
+        member this.GetClient() = remoteClient
 
-                    // Initialize with common namespaces
-                    fsi.ExecuteInteraction("open System") |> ignore
-                    fsi.ExecuteInteraction("open System.IO") |> ignore
-                    fsi.ExecuteInteraction("open System.Collections.Generic") |> ignore
-
-                    let server = new PipeServer(pipeConfig, fsi)
-                    server.Start()
-
-                    let client = new PipeClient(pipeConfig)
-
-                    fsiService <- Some fsi
-                    pipeServer <- Some server
-                    pipeClient <- Some client
-
-                    logger.LogInformation(
-                        "FSI service started successfully with pipe name: {PipeName}",
-                        pipeConfig.PipeName
-                    )
-            with ex ->
-                logger.LogError(ex, "Failed to start FSI service")
-                reraise ()
-
-        /// Stop the FSI service and pipe server
-        member this.StopFsi() =
-            try
-                match pipeServer with
-                | Some server ->
-                    server.Stop()
-                    (server :> IDisposable).Dispose()
-                | None -> ()
-
-                match fsiService with
-                | Some fsi -> fsi.Stop()
-                | None -> ()
-
-                pipeServer <- None
-                pipeClient <- None
-                fsiService <- None
-
-                logger.LogInformation("FSI service stopped")
-            with ex ->
-                logger.LogError(ex, "Error stopping FSI service")
-
-        /// Get the pipe client for executing commands
-        member this.GetClient() =
-            match pipeClient with
-            | Some client -> client
-            | None ->
-                this.StartFsi()
-                pipeClient.Value
-
-        /// Check if FSI is running
-        member this.IsRunning =
-            match fsiService with
-            | Some fsi -> fsi.IsRunning
-            | None -> false
+        member this.IsRunning = remoteClient.IsServerAvailable()
 
         interface IDisposable with
-            member this.Dispose() =
+            member _.Dispose() =
                 asyncProcessorCts.Cancel()
                 asyncProcessorCts.Dispose()
-                this.StopFsi()
+                system.Dispose()
 
     /// MCP FSI Tools that provide F# Interactive functionality through named pipes
     [<McpServerToolType>]

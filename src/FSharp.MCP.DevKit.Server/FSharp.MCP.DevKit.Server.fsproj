@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <Compile Include="McpFsiTools.fs" />
+    <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="McpDocumentationTools.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
@@ -39,9 +40,12 @@
     <ProjectReference Include="..\FSharp.MCP.DevKit.Communication\FSharp.MCP.DevKit.Communication.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.CodeEditing\FSharp.MCP.DevKit.CodeEditing.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Documentation\FSharp.MCP.DevKit.Documentation.fsproj" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Akka" Version="1.5.30" />
+    <PackageReference Include="Akka.Remote" Version="1.5.30" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />
