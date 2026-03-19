@@ -1,0 +1,55 @@
+背景
+- 使用者要求：
+  - 將 `FsiActor.fs` 實體移到 `FsiHost`
+  - 完成可用的遠端部署腳本
+  - 檢查並評估 `scripts/` 目錄內既有腳本是否需要調整
+
+目標
+- 讓 `fsihost`（net472）與 `fsharp-devkit`（.NET 10）可作為 Windows services 部署。
+- 讓部署腳本可 publish 或重用既有 artifact、複製到遠端、註冊服務並做健康檢查。
+- 讓 `scripts/` 內的 placeholder 腳本不再偽裝成可直接使用的 MCP client 工具。
+
+計畫步驟
+1. 搬移 `FsiActor.fs` 到 `src/FSharp.MCP.DevKit.FsiHost/`
+2. 更新 `FsiHost` / `Server` entry point，加入 Windows service name 支援
+3. 完成 `scripts/deploy-remote-services.ps1`
+4. 盤點 `scripts/` 既有腳本並標示 placeholder
+5. 補齊 `doc/Deployment.md`、`doc/Runbook.md` 與 SA/SD/WBS/Test/Action/DevLog/KM
+6. 執行 build / publish / script syntax / WhatIf 驗證
+
+執行命令/參數
+- `dotnet build FSharp.MCP.DevKit.Async.sln -m:1 -v minimal`
+- `dotnet publish src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj -c Release -f net472 -m:1 -p:BuildInParallel=false -o artifacts\deploy-check\fsihost`
+- `dotnet publish src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 -r win-x64 --self-contained true -m:1 -p:BuildInParallel=false -p:UseSharedCompilation=false -o artifacts\deploy-check\fsharp-devkit`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 ... -WhatIf`
+
+結果
+- 成功將 `FsiActor.fs` 移入 `FsiHost`
+- 成功加入 `fsihost` / `fsharp-devkit` service name 支援
+- 成功建立 deployment script 並通過 parse / `-WhatIf`
+- 成功完成 `FsiHost` 與 `Server` 的 Release publish
+- 成功將 `scripts/` 內 placeholder 腳本改為 fail-fast 並補上 `scripts/README.md`
+
+根因判讀
+- 原本把 `FsiActor.fs` 放在 `Core` 路徑會模糊 actor transport 與 shared core 的責任邊界。
+- 原本 `scripts/` 內多數 `fsi-*` 腳本只是 demo，若不明確標示，會造成使用者誤判其可用性。
+- 驗證若平行跑 solution build 與雙 publish，容易造成本機 `dotnet` / `csc` 資源競爭；改用單工序列後即可穩定完成。
+
+下一步
+- 執行 `check.fsx`
+- 整理 git staging，包含 doc / scripts / log / KM
+- commit + push
+
+關聯文件/工單/PR
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Deployment.md`
+- `doc/Runbook.md`
+- `doc/DevLog.md`
+- `MCP.KM.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者關注 mixed-runtime MCP server 的實際可部署性，而不只是在本機 build / smoke。
+- 部署目標是遠端 Windows 主機，且明確要求兩個服務名稱：`fsihost`、`fsharp-devkit`。

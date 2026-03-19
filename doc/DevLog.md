@@ -80,3 +80,43 @@
   - `doc/Test.md`
   - `doc/Action.md`
   - `log/*async-smoke-app*.op_log`
+
+## 2026-03-19 14:05:23
+
+- 背景：使用者要求兩件事同步完成：
+  - 把 `FsiActor.fs` 從「放在 Core 路徑、由 FsiHost link compile」改成直接移入 `FsiHost`
+  - 提供可直接部署到遠端 Windows 主機的腳本，能自動複製 artifact、註冊 `fsihost` 與 `fsharp-devkit` 兩個服務
+- 動作：
+  - 將 `src/FSharp.MCP.DevKit.Core/FsiActor.fs` 實體移到 `src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs`
+  - 更新 `FSharp.MCP.DevKit.FsiHost.fsproj`，改為正常 `Compile Include="FsiActor.fs"`
+  - 更新 `FsiHost/Program.fs`，加入 `--service-name` 解析與 Windows service mode
+  - 更新 `Server/Program.fs`，加入 `UseWindowsService` service name 設定與 `/healthz` 回傳 `serviceName`
+  - 建立 `scripts/deploy-remote-services.ps1`
+  - 盤點 `scripts/` 既有腳本，將 placeholder 改為 fail-fast，並新增 `scripts/README.md`
+  - 補齊 `doc/Deployment.md`、`doc/Runbook.md`
+- 驗證：
+  - 初次平行驗證時，同時執行 solution build 與兩個 publish，導致本機出現 `Stack overflow`、`MSB6006`、分頁檔不足；此為驗證方式造成的資源競爭，不是部署腳本本身的邏輯錯誤
+  - 關閉殘留 `dotnet` process 與 build server 後，改為單工序列驗證：
+    - `dotnet build FSharp.MCP.DevKit.Async.sln -m:1`
+    - `dotnet publish ...FsiHost... -c Release -f net472`
+    - `dotnet publish ...Server... -c Release -f net10.0 -r win-x64 --self-contained true`
+    - `deploy-remote-services.ps1` PowerShell parse
+    - `deploy-remote-services.ps1 ... -WhatIf`
+- 結果：
+  - `FsiActor.fs` 路徑與 compile ownership 已一致
+  - `fsihost` / `fsharp-devkit` service name 可由程式本身正確對應
+  - deploy script 可成功 parse，`-WhatIf` 可正確顯示目標主機與遠端路徑
+  - `scripts/` 既有 demo 腳本已不再偽裝成可直接執行 MCP
+- 風險：
+  - 本輪未持有可直接操作的遠端部署主機，因此尚未實做真正的 remote copy / service start end-to-end 驗證
+  - `FsiHost` 的 .NET Framework reference warnings 仍存在，屬既有 packaging / reference 整理議題
+- 關聯：
+  - `doc/Deployment.md`
+  - `doc/Runbook.md`
+  - `scripts/deploy-remote-services.ps1`
+  - `scripts/README.md`
+  - `log/20260319140523.deploy-build.op_log`
+  - `log/20260319140523.fsihost-publish.op_log`
+  - `log/20260319140523.server-publish.op_log`
+  - `log/20260319140523.deploy-script-syntax.op_log`
+  - `log/20260319140523.deploy-script-whatif.op_log`

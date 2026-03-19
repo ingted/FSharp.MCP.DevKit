@@ -1,4 +1,4 @@
-module FSharp.MCP.DevKit.Core.Actors
+module FSharp.MCP.DevKit.FsiHost.Actors
 
 open System
 open Akka.Actor
@@ -37,7 +37,7 @@ let failureResult (error: string) : FsiRemoteResult =
 
 type FsiActor(config: FsiConfig) =
     inherit ActorBase()
-    
+
     let fsi = new FsiService(config)
     do fsi.Start()
 

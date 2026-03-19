@@ -57,7 +57,7 @@
 ### 5. Target Framework 策略
 
 - `Core` 保留 shared API 與 `FsiService`，目前 target `netstandard2.0;net10.0`。
-- `FsiActor.fs` 雖然實體檔案放在 `src/FSharp.MCP.DevKit.Core`，但 compile owner 改成 `FsiHost`，用 linked source 方式編入。
+- `FsiActor.fs` 已實體移到 `src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs`，路徑與 compile owner 一致。
 - Akka package reference 與 `Messages` project reference 只放在 `FsiHost`，避免 shared library 背上 host-only 依賴。
 - `Server` 保持 `net9.0;net10.0`。
 - `Messages` 保持 `netstandard2.0`。
@@ -80,13 +80,14 @@
 
 - 提供 `FsiService`。
 - 提供 async status shared model。
-- 保存 `FsiActor.fs` 原始碼，由 `FsiHost` linked compile 後將 remote command 轉成對 `FsiService` 的實際呼叫。
+- 不再承擔 Akka actor source；只保留可被 host / server 共用的核心邏輯。
 
 ### `src/FSharp.MCP.DevKit.FsiHost`
 
 - 啟動 Akka actor system。
 - 啟動單一 `fsiActor`。
 - 使用 `akka.conf` 的固定 port 作為 server 端連入點。
+- 以 Windows service 或 console mode 啟動，同一份 binary 可供 SCM 與本機 smoke 共用。
 
 ### `src/FSharp.MCP.DevKit.Server`
 
@@ -98,6 +99,8 @@
   - MCP tool registration
   - `fsi/async/{asyncId}` resource
   - HTTP GET `/fsi/async/{asyncId}`
+  - HTTP GET `/healthz`
+  - Windows service hosting (`UseWindowsService`)
 
 ## 資料流
 
@@ -123,9 +126,30 @@
 
 1. `remoteActorPath` 與 `FsiHost/akka.conf` 必須統一為同一個 port。
 2. `EnqueueExecuteCode` 的 timeout 參數型別要收斂為 `TimeSpan`，不可留下 `TimeSpan option -> TimeSpan` 的錯誤指派。
-3. `FsiActor.fs` 必須有明確 compile path；本輪選擇由 `FsiHost` linked compile，而不是把 Akka / Messages dependency 塞回 `Core`。
+3. `FsiActor.fs` 必須有明確 compile ownership；本輪直接移到 `FsiHost`，而不是把 Akka / Messages dependency 塞回 `Core`。
 4. remote response 不可攜帶非 transport-safe 型別。
 5. host / server 的 Akka config 不可再依賴 current working directory。
+
+### 8. 部署與服務化策略
+
+- `FsiHost`：
+  - 支援 `--service` 與 `--service-name <name>`
+  - 預設 service name 為 `fsihost`
+  - console mode 仍可保留給本機 smoke 與除錯
+- `Server`：
+  - 支援 `--service-name <name>`
+  - 預設 service name 為 `fsharp-devkit`
+  - 在 Windows service 模式下，若 `MCP_ENABLE_STDIO` 未指定，預設關閉 stdio transport，只保留 HTTP
+- `scripts/deploy-remote-services.ps1`：
+  - 可直接 publish：
+    - `FsiHost` -> `net472`
+    - `Server` -> `net10.0` self-contained `win-x64`
+  - 也可用 `-SkipPublish` 搭配既有 artifact 目錄重用輸出
+  - 透過 PowerShell remoting 把檔案部署到：
+    - `<RemoteRoot>\fsihost`
+    - `<RemoteRoot>\fsharp-devkit`
+  - 以 `sc.exe` 建立或更新兩個 Windows services，並讓 `fsharp-devkit` 相依 `fsihost`
+  - 啟動後以 `/healthz` 驗證服務可用
 
 ## 驗證策略
 

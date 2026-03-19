@@ -30,6 +30,10 @@
 | TC12 | Regression | ParseAndCheck | 呼叫 parse/check tool | 有正確 diagnostics，無 backend crash |
 | TC13 | Security | Audit-enabled solution build | `dotnet build FSharp.MCP.DevKit.Async.sln` | 不再出現 `Akka.Remote` `NU1904` |
 | TC14 | Security | Project vulnerability audit | 對 `FsiHost` / `Server` 執行 `dotnet list package --vulnerable --include-transitive --no-restore` | 兩個專案皆無 vulnerable packages |
+| TC15 | Deploy | Release publish for `FsiHost` | `dotnet publish ...FsiHost... -c Release -f net472` | 可產出可部署的 net472 artifact |
+| TC16 | Deploy | Release publish for `Server` | `dotnet publish ...Server... -c Release -f net10.0 -r win-x64 --self-contained true` | 可產出可部署的 self-contained artifact |
+| TC17 | Deploy | deploy script syntax | 以 PowerShell 解析 `scripts/deploy-remote-services.ps1` | 腳本可成功 parse，無 syntax error |
+| TC18 | Deploy | deploy script dry-run | `deploy-remote-services.ps1 ... -WhatIf` | 不連遠端也能成功走到 WhatIf，顯示目標機與路徑 |
 
 ## 本輪最低驗收
 
@@ -57,11 +61,16 @@
 | TC11 | pass | host / server 全程使用 `8081` |
 | TC13 | pass | `log/20260319130030.build-after-akka-update.op_log` 無 `NU1904` |
 | TC14 | pass | `log/20260319130033.fsihost-vulnerable.op_log`、`log/20260319130034.server-vulnerable.op_log` |
+| TC15 | pass | `log/20260319140523.fsihost-publish.op_log` |
+| TC16 | pass | `log/20260319140523.server-publish.op_log` |
+| TC17 | pass | `log/20260319140523.deploy-script-syntax.op_log` |
+| TC18 | pass | `log/20260319140523.deploy-script-whatif.op_log` |
 
 ## 測試方法補充
 
 - 為避免 `dotnet fsi #r webapp.dll` 對 ASP.NET Core app 的 shared framework 載入偏差，本輪 smoke 採「啟動真實 net472 host + 臨時 .NET app ProjectReference server project」方式驗證。
 - 這個 smoke harness 是驗證工具，不屬於 target repo 交付物。
+- deploy 驗證採「本機 publish + 腳本 parse + `-WhatIf`」三層確認；由於本輪未持有可操作的遠端服務主機，未直接執行真正的 remote copy / service start。
 
 ## 風險註記
 

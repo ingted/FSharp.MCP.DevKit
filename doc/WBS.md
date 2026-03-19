@@ -7,6 +7,7 @@
 | M1 | 完成 SA/SD/WBS/Test/Policy/Action/DevLog | `doc/*.md` | done |
 | M2 | 收斂 mixed-runtime backend | server / core / host / messages code | done |
 | M3 | 完成 build / smoke test / check | build log / test log / check result | done |
+| M4 | 完成 service hosting / deployment / scripts 盤點 | deployment script / docs / verification log | done |
 
 ## Schedule
 
@@ -19,6 +20,7 @@
 | W05 | 2026-03-19 PM | 修正 async queue 型別與 polling 路徑 | `execute_f_sharp_code_async` 能回傳 `asyncId` 並查狀態 |
 | W06 | 2026-03-19 PM | 執行 build / smoke test / check | 有 `.op_log`、`DevLog`、`check.fsx` 結果 |
 | W07 | 2026-03-19 PM | 更新上游套件相依並重新執行 audit | `Akka.Remote` critical warning 消失，build 不再依賴該 workaround |
+| W08 | 2026-03-19 PM | 完成 Windows service hosting、部署腳本與 scripts 盤點 | 可 publish / 可 `-WhatIf` / 有 Deployment / Runbook |
 
 ## Work Items
 
@@ -42,10 +44,17 @@
 | T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | done |
 | T17 | 升級 `Akka` / `Akka.Remote` 到安全版本 | T16 | `dotnet build` 不再出現 `NU1904` | done |
 | T18 | 重新執行 vulnerability audit 與文件同步 | T17 | project-level audit 無 vulnerable packages | done |
+| T19 | 將 `FsiActor.fs` 實體移入 `FsiHost` | T11 | compile ownership 與實體路徑一致 | done |
+| T20 | 讓 `FsiHost` / `Server` 支援 Windows service 名稱設定 | T19 | `fsihost` / `fsharp-devkit` 可由 SCM 正確啟動 | done |
+| T21 | 建立 `scripts/deploy-remote-services.ps1` | T20 | 可 publish、複製、註冊、健康檢查 | done |
+| T22 | 盤點 `scripts/` 既有腳本並標示 placeholder | T21 | 不再有 demo 腳本假裝成功 | done |
+| T23 | 補齊 `doc/Deployment.md` 與 `doc/Runbook.md` | T21-T22 | 部署方式、回滾與驗證步驟可追溯 | done |
 
 ## 完成定義
 
 - `FSharp.MCP.DevKit - Async` 的 sync / async FSI tools 不再混用 local FSI 與 remote FSI 兩條 backend。
 - net472 host 與 .NET 9/10 server 的責任邊界恢復清楚。
 - async queue / polling 可在單一遠端 session 上工作。
+- `fsihost` 與 `fsharp-devkit` 可作為 Windows services 部署。
+- `scripts/` 內的正式部署腳本與 placeholder 腳本界線清楚。
 - 文件、log、DevLog、check 皆可追溯。

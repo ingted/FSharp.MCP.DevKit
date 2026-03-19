@@ -33,7 +33,7 @@
   1. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 同時保留 remote actor 與本地 `FsiService + PipeServer + PipeClient` 兩套路徑，session backend 未收斂。
   2. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 第 195-205 行附近的 `EnqueueExecuteCode` 將 `TimeSpan option` 指派到 `Timeout: TimeSpan`，是明顯型別錯誤。
   3. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 的 remote actor path 仍是 `18081`，與 `src/FSharp.MCP.DevKit.FsiHost/akka.conf` 的 `8081` 不一致。
-  4. `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 與 `FsiActor.fs` 的責任邊界混亂；本輪改為 `Core` 只保留 shared API，`FsiHost` 以 linked source compile `FsiActor.fs`，避免把 Akka host 依賴帶回 shared library。
+  4. `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 與 `FsiActor.fs` 的責任邊界混亂；本輪改為 `Core` 只保留 shared API，`FsiActor.fs` 直接移入 `FsiHost` 專案，避免把 Akka host 依賴帶回 shared library。
   5. 三個 repo 的 baseline build 都先被 `csharp-sdk` 的 `NU1903` 卡住，target repo 還伴隨 mixed merge 本身的型別/target framework 問題。
 
 ## 問題定義
@@ -92,7 +92,7 @@
 ## 本輪落地結果
 
 - `src/FSharp.MCP.DevKit.Messages` 已建立 transport-safe DTO，避免直接跨 runtime 傳 `obj` / `FSharpDiagnostic`。
-- `src/FSharp.MCP.DevKit.FsiHost` 已成為 `FsiActor.fs` 的實際 compile owner，並維持 net472 單一 FSI session。
+- `src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs` 已成為 actor 的唯一實體與 compile owner，並維持 net472 單一 FSI session。
 - `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 已收斂成 `RemoteFsiClient + async queue/cache`，不再在 server 內自啟本地 `FsiService`。
 - `remoteActorPath` 已與 host 固定為 `8081`。
 - host / server 讀取 `akka.conf`、`akka.server.conf` 已改為從輸出目錄解析，避免工作目錄漂移。
@@ -119,6 +119,21 @@
   - `FSharp.MCP.DevKit.FsiHost` 無 vulnerable packages
   - `FSharp.MCP.DevKit.Server` 無 vulnerable packages
 - solution-level `dotnet list ... package --vulnerable` 在本 repo 仍可能因 NuGet source mapping / restore 行為差異報 `NU1100`；這是工具鏈檢查路徑差異，不是升版後 package 真正無法 restore，因為同 repo `dotnet restore` 與 `dotnet build` 已成功。
+
+## 2026-03-19 部署與腳本盤點補充
+
+- 使用者要求的部署形態是「給定一台可 PowerShell Remoting 的 Windows 主機與一個程式放置根目錄，腳本自動複製正確 artifact 並註冊兩個服務」。
+- 這代表 deployable runtime 邊界必須明確：
+  - `fsihost`：`net472` Windows service，負責唯一 FSI session。
+  - `fsharp-devkit`：`.NET 10` MCP server Windows service，負責 `/mcp`、`/fsi/async/{asyncId}`、`/healthz`。
+- 為讓 SCM 啟動與註冊名稱一致，程式本身也必須支援 service name 設定，不能只靠 `sc.exe create`。
+- `scripts/` 目錄盤點結果：
+  - `deploy-remote-services.ps1` 是本輪要補齊的正式部署入口。
+  - 既有 `fsi-*` 與 `build-packages.sh` 大多是 placeholder / demo，不能視為可直接使用的 MCP client 工具。
+- 本輪決策：
+  - `FsiHost` 與 `Server` 均支援由命令列傳入 service name。
+  - 新增 `scripts/deploy-remote-services.ps1`，支援 publish 或重用既有 artifact、遠端複製、服務註冊、啟動與健康檢查。
+  - 將 `scripts/` 既有 placeholder 明確標示為 stub，避免假裝成功導致誤用。
 
 ## 關聯追溯
 

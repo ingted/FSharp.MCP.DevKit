@@ -24,7 +24,5 @@ Set-Alias -Name "fs" -Value "Invoke-FSharpCode"
 Set-Alias -Name "fsd" -Value "Invoke-FSharpCodeDetailed"
 Set-Alias -Name "fss" -Value "Invoke-FSharpCodeWithState"
 
-Write-Host "F# MCP DevKit aliases loaded:" -ForegroundColor Green
-Write-Host "  fs  - Execute F# code" -ForegroundColor Cyan
-Write-Host "  fsd - Execute F# code (detailed)" -ForegroundColor Cyan
-Write-Host "  fss - Execute F# code (with state)" -ForegroundColor Cyan
+Write-Host "F# MCP DevKit aliases loaded." -ForegroundColor Green
+Write-Host "Underlying fsi-* scripts are placeholders until a real MCP client wrapper is implemented." -ForegroundColor Yellow

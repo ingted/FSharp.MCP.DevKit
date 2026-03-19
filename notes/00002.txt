@@ -1,0 +1,206 @@
+那為什麼你會說 "那個輸出目錄是不是我這輪 build 的" ?
+
+因為我在分辨兩件事：
+
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\ 這個目錄裡「有 artifact」
+這個目錄裡的 artifact「是不是全部都由我這一輪產生」
+bin\Debug 是共用 build 輸出目錄，不會天然附帶 provenance。它可能混有：
+
+你先前 build 的檔
+其他 agent / 工具先前 build 的檔
+我這輪重新 build 後覆蓋的新檔
+所以在我重新 dotnet build 並確認輸出之前，嚴格來說我只能說「那是目前本機的輸出目錄」，不能一開始就武斷說「整個目錄都是我這輪建立的」。
+
+更精確的說法應該是：
+
+那個路徑本身不是我新建的專用目錄
+但我後來有重新 build，所以該目錄內目前的 net472 輸出，至少已被我這輪 build 更新過
+前一句如果讓你聽起來像我在閃躲來源，這是我表達不夠精確。我要表達的是「我有驗證目前內容是可由我這輪 build 重現的」，不是「那個資料夾從頭到尾只屬於我這輪」。
+
+
+但是我可以編譯對吧? E:\dk\FSharp.MCP.DevKit - Async\src 下的程式碼是最新的?
+
+
+Worked for 32s
+可以。
+
+我剛剛重新核對後，結論是：
+
+E:\dk\FSharp.MCP.DevKit - Async\src 目前沒有未提交變更，git diff --name-only HEAD -- src 是空的。
+目前 branch 的 HEAD 是 3b260299ef9fc58de55b64f821593e244d7a4608。
+repo 目前只有根目錄 notes/ 是 untracked，src 不受影響。
+我也重新跑了 build：
+
+dotnet build "FSharp.MCP.DevKit.Async.sln" -p:NuGetAudit=false -v minimal
+結果是：
+
+Build succeeded
+0 Error(s)
+23 Warning(s)
+所以你現在可以編譯，但有一個已知前提：
+
+建議照我上面這個方式加 -p:NuGetAudit=false
+否則可能又被上游 csharp-sdk 的 NU1903 restore/audit 問題卡住，不是 src 這份程式碼本身壞掉
+這次重跑後的證據在：
+
+[20260319125530.build-recheck.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319125530.build-recheck.op_log)
+如果你要，我下一步可以開始做你前面要的 deployment 腳本。
+
+
+上游的 dependency 請更新
+
+
+Worked for 16m 37s
+已更新。
+
+FSharp.MCP.DevKit - Async 內直接引用的 Akka / Akka.Remote 已從 1.5.30 升到 1.5.62，修改在 [FSharp.MCP.DevKit.FsiHost.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj) 和 [FSharp.MCP.DevKit.Server.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj)。dotnet build FSharp.MCP.DevKit.Async.sln -v minimal 已不再出現 Akka.Remote 的 NU1904，證據在 [20260319130030.build-after-akka-update.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319130030.build-after-akka-update.op_log)。兩個 Akka consumer 專案的 vulnerability audit 也都是 clean，證據在 [20260319130033.fsihost-vulnerable.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319130033.fsihost-vulnerable.op_log) 和 [20260319130034.server-vulnerable.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319130034.server-vulnerable.op_log)。
+
+SA/SD/WBS/Test/Action/DevLog 與 KM 都已同步更新，最終 check.fsx 結果是 PASS=24 WARN=0 FAIL=0，證據在 [20260319131830.dependency-check-pass3.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319131830.dependency-check-pass3.op_log)。branch 已 push，最新 HEAD 是 2c8a21a。另外我順手修了本機 check.fsx 的 Windows git 偵測 fallback，不然它會誤判 git_not_repo；這是 workspace 工具修正，不在 repo 內容裡。殘留的非安全性 warning 還有 NU1701、NU1510、MSB3245/MSB3243，如果你要，我下一輪就接著清。
+
+
+13 files changed
++287
+-8
+Undo
+
+Review
+MCP.KM.md
+check.fsx
+doc/Action.md
+doc/DevLog.md
+doc/SA.md
+doc/SD.md
+doc/Test.md
+doc/WBS.md
+log/20260319125735.上游相依更新與稽核.00001.00001.log
+log/20260319130100.上游相依更新結果.00001.00001.log
+log/20260319130312.Akka安全更新收尾.00001.00001.log
+src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj
+src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+ˊFSIHOST 專案有 Link CORE 專案的 FsiActor.fs，但是它不是有參考 CORE 嗎?這樣還需要 LINK?
+
+
+Worked for 51s
+需要。
+
+關鍵點是：ProjectReference 只會引用對方「編譯出來的 DLL」，不會自動把 source file 帶進來。現在 [FSharp.MCP.DevKit.Core.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj) 的 <Compile> 只有 FileUtils.fs 和 FSIService.fs，沒有 FsiActor.fs。所以 FsiHost 參考 Core，拿到的是 Core.dll 裡的型別，不包含 [FsiActor.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FsiActor.fs)。
+
+現在 [FSharp.MCP.DevKit.FsiHost.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj) 用這行：
+
+<Compile Include="..\FSharp.MCP.DevKit.Core\FsiActor.fs" Link="FsiActor.fs" />
+意思是「實體檔案放在 Core 目錄，但編譯 ownership 在 FsiHost」。這樣做的原因是：
+
+FsiActor.fs 依賴 Akka.Actor 和 FSharp.MCP.DevKit.Messages
+我們不想把 Akka / remote actor 依賴塞回 Core
+Core 目前是 shared library，FsiHost 才是 host-specific runtime 邊界
+所以現在的結論是：
+
+ProjectReference Core：拿 FsiService / FsiConfig 等 shared code
+Link FsiActor.fs：把 actor source 真正編進 FsiHost
+如果你願意把 FsiActor 也正式移進 Core 的 compile graph，並接受 Core 多背 Akka / Messages 相依，那 Link 才可以拿掉。現在這個設計下，Link 是必要的。
+
+
+可是 CORE 專案沒有 COMPILE FsiActor.fs 那為什麼不直接把 FsiActor.fs 移到 FSIHOST 專案就好?
+
+可以，技術上完全可以，而且其實會更直觀。
+
+現在把 [FsiActor.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FsiActor.fs) 留在 Core 路徑、再由 [FSharp.MCP.DevKit.FsiHost.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj) 用 Link 編進來，主要不是「必要」，而是我當時做 mixed-runtime merge 時的折衷：
+
+不想讓 [FSharp.MCP.DevKit.Core.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj) 背上 Akka / Messages 依賴
+也不想在同一輪 merge 裡再做實體搬檔，避免 diff 變大、追差異變難
+FsiActor 本質上又確實是包 FsiService 的 thin adapter，所以暫時保留在 Core 旁邊
+但你這個質疑是對的：從維護角度看，既然 compile owner 已經是 FsiHost，那把檔案實體搬到 FsiHost 會更乾淨，因為：
+
+路徑和編譯責任一致
+不會讓人誤以為 Core 有編它
+新人讀專案時比較不會被 Link 搞混
+所以結論是：
+
+「為什麼不直接移到 FsiHost？」可以，而且結構上更合理
+「現在用 Link 是不是必須？」不是必須，只是當時為了降低 merge 風險先這樣做
+如果你要，我下一步可以直接把它移成：
+
+src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs
+然後把 [FSharp.MCP.DevKit.FsiHost.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj) 改成正常 Compile Include="FsiActor.fs"，把這個結構債清掉。
+
+
+1. 請處理
+2. 繼續完成部署腳本
+
+我先把兩件事一起收斂：一是把 FsiActor.fs 實體移到 FsiHost，讓路徑和 compile owner 一致；二是把 FsiHost / Server 補成可被 SCM 正確管理的服務，再交付遠端部署腳本。之後我會補 Deployment/Runbook、重跑 build/publish/check，最後再 commit/push。
+
+我先記錄這一輪的 planned steps，再讀目前 Program.fs、既有 nuget.config、部署相關檔案缺口。接著就直接改專案結構與 entry point。
+
+Ran Get-Date -Format yyyyMMddHHmmss
+
+
+Ran git status --short
+
+
+Ran Get-ChildItem -Force "E:\dk\FSharp.MCP.DevKit - Async\scripts"
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\Program.fs"
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\Program.fs"
+
+
+我先確認這個未提交差異是什麼；如果是我上一輪留下的，不影響就直接一併收掉，若是外部變更才停下來。
+
+Ran git log -1 --stat -- "src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj"
+
+
+Ran git diff -- "src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj"
+
+
+git diff 是空的，但 status 還顯示 modified，像是 line-ending / index metadata 這種非內容差異。我用 porcelain v2 看一下實際原因，再開始改檔。
+
+Ran git status --porcelain=v2
+
+
+Ran git diff --cached -- "src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj"
+
+
+我需要先問一下，不是說 MCP SERVER 功能部分是 .NET 10，只有 FSI SESSION SERVICE是用 .NET FX 跑，兩者中間的溝通用 AKKA， SERVER 專案參考 CORE 專案，但是 CORE 專案現在沒有跟 AKKA ACTOR 有關的東西了，那怎麼敲 FSI SESSION SERIVCE ?
+
+
+我先把目前「Server 怎麼敲到 netfx FSI host」這條路徑對一下，然後直接回答你現在的架構是不是還符合你原本要的 mixed-runtime 切分。
+
+Ran rg -n "ActorSystem|ActorSelection|RemoteFsiClient|FsiRemoteCommandRequest|akka\.tcp|FsiExecutionSystem|fsiActor|FSharp.MCP.DevKit.Messages|Akka" "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\McpFsiTools.fs"
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FsiActor.fs" -TotalCount 120
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs"
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj"
+
+
+Ran Get-Content -Encoding UTF8 "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj"
+
+
+Worked for 49s
+對，現在的通訊路徑不是靠 Core 裡有 actor，而是靠 Server 自己就是 Akka client。
+
+目前切分其實是這樣：
+
+Server 端在 [McpFsiTools.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\McpFsiTools.fs) 自己 open Akka.Actor、建立 ActorSystem、ActorSelection，直接連到 akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor。
+Server 專案本身也直接引用了 Akka / Akka.Remote，你可以在 [FSharp.MCP.DevKit.Server.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj) 看到。
+跨 runtime 的通訊 contract 放在 [McpActorMessages.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs)，也就是 FsiRemoteCommandRequest / FsiRemoteCommandResponse 這些 DTO。
+FsiHost 端才是 Akka server，FsiActor 收到這些 DTO 後，去呼叫 Core 裡的 FsiService。這個 actor source 目前雖然實體檔還放在 [FsiActor.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FsiActor.fs)，但 compile owner 是 [FSharp.MCP.DevKit.FsiHost.fsproj](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj)。
+所以：
+
+Core：放 FSI 核心邏輯與 shared model
+Messages：放 Akka remoting DTO
+Server：放 Akka client + MCP tool/queue
+FsiHost：放 Akka server + 真正持有 session 的 actor
+也就是說，Server 參考 Core 並不是為了「拿 actor 去敲 host」，而是拿 shared types / FSI core 邏輯周邊；真正的敲法是：
+
+Server(Akka client) -> Messages DTO -> FsiHost(FsiActor) -> Core.FsiService
+
+你會覺得怪，是因為 FsiActor.fs 實體檔還躺在 Core 目錄，讓結構看起來像「actor 還屬於 Core」。這也是我剛剛同意要處理的點：把它實體搬到 FsiHost 後，這條責任線就會清楚很多。
+
+

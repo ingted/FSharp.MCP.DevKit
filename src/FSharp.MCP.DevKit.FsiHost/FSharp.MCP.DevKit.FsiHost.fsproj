@@ -5,7 +5,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\FSharp.MCP.DevKit.Core\FsiActor.fs" Link="FsiActor.fs" />
+    <Compile Include="FsiActor.fs" />
     <Compile Include="Program.fs" />
     <None Include="akka.conf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -14,6 +14,7 @@
     <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="System.ServiceProcess" />
     <PackageReference Include="Akka" Version="1.5.62" />
     <PackageReference Include="Akka.Remote" Version="1.5.62" />
   </ItemGroup>

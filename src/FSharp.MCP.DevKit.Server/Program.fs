@@ -9,6 +9,7 @@ open System.ComponentModel
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
+open Microsoft.Extensions.Hosting.WindowsServices
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open System.Text.Json
@@ -50,11 +51,34 @@ type FsiResources(fsiService: FsiMcpService) =
         let status = fsiService.GetAsyncExecutionStatus(asyncId)
         JsonSerializer.Serialize(status)
 
+let tryGetCommandLineValue (name: string) (argv: string array) =
+    argv
+    |> Array.tryFindIndex (fun arg -> arg.Equals(name, StringComparison.OrdinalIgnoreCase))
+    |> Option.bind (fun index ->
+        let valueIndex = index + 1
+        if valueIndex < argv.Length then
+            Some argv.[valueIndex]
+        else
+            None)
+
+let getServiceName (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("DEVKIT_SERVICE_NAME")
+    let argValue = tryGetCommandLineValue "--service-name" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
+    |> List.choose id
+    |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
+    |> Option.defaultValue "fsharp-devkit"
+
 
 [<EntryPoint>]
 let main argv =
     //let builder = Host.CreateApplicationBuilder(argv)
     let builder = WebApplication.CreateBuilder(argv)
+    let isWindowsService = WindowsServiceHelpers.IsWindowsService()
+    let serviceName = getServiceName argv
+
+    builder.Host.UseWindowsService(fun options -> options.ServiceName <- serviceName) |> ignore
 
     // Configure logging to stderr (required for MCP)
     builder.Logging.AddConsole(fun consoleLogOptions -> consoleLogOptions.LogToStandardErrorThreshold <- LogLevel.Trace)
@@ -70,11 +94,13 @@ let main argv =
     // but allow HTTP-only hosting (e.g. container deployment) via MCP_ENABLE_STDIO=false.
     let enableStdio =
         let value = Environment.GetEnvironmentVariable("MCP_ENABLE_STDIO")
-        String.IsNullOrWhiteSpace(value)
-        || not (
-            value.Equals("0", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("no", StringComparison.OrdinalIgnoreCase))
+        if String.IsNullOrWhiteSpace(value) then
+            not isWindowsService
+        else
+            not (
+                value.Equals("0", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("no", StringComparison.OrdinalIgnoreCase))
 
     let mcpBuilder =
         builder.Services
@@ -95,6 +121,17 @@ let main argv =
         Func<string, FsiMcpService, IResult>(fun asyncId fsiService ->
             let status = fsiService.GetAsyncExecutionStatus(asyncId)
             Results.Json(status))
+    )
+    |> ignore
+
+    host.MapGet(
+        "/healthz",
+        Func<IResult>(fun () ->
+            Results.Json(
+                {| status = "ok"
+                   transport = if enableStdio then "http+stdio-or-http" else "http-only"
+                   isWindowsService = isWindowsService
+                   serviceName = serviceName |}))
     )
     |> ignore
 

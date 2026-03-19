@@ -1,0 +1,80 @@
+# Deployment
+
+## 目標拓樸
+
+- `fsihost`
+  - runtime: `net472`
+  - role: 持有唯一 FSI session，提供 Akka remote actor
+- `fsharp-devkit`
+  - runtime: `.NET 10`
+  - role: 提供 MCP server、async queue、HTTP `/mcp`、`/healthz`
+
+## 正式部署腳本
+
+- 位置：`scripts/deploy-remote-services.ps1`
+- 前提：
+  - 本機可 `Invoke-Command -ComputerName <target> { hostname }`
+  - 遠端主機為 64-bit Windows
+  - 遠端已安裝 .NET Framework 4.7.2 以上
+  - 執行帳號具備遠端檔案複製與 Windows service 註冊權限
+
+## 預設安裝路徑
+
+給定 `-RemoteRoot <path>` 後，腳本會部署到：
+
+- `<RemoteRoot>\fsihost`
+- `<RemoteRoot>\fsharp-devkit`
+
+## 預設服務名稱
+
+- `fsihost`
+- `fsharp-devkit`
+
+## 常用指令
+
+### 1. 由原始碼直接 publish 並部署
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ServerPort 5000
+```
+
+### 2. 重用既有 artifact 目錄部署
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -SkipPublish `
+  -FsiHostArtifactPath .\artifacts\deploy-check\fsihost `
+  -ServerArtifactPath .\artifacts\deploy-check\fsharp-devkit
+```
+
+### 3. 先做 dry-run
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -SkipPublish `
+  -FsiHostArtifactPath .\artifacts\deploy-check\fsihost `
+  -ServerArtifactPath .\artifacts\deploy-check\fsharp-devkit `
+  -WhatIf
+```
+
+## 驗證
+
+- 服務啟動後，腳本會驗證：
+  - `fsihost` service 狀態為 `Running`
+  - `fsharp-devkit` service 狀態為 `Running`
+  - `http://localhost:<ServerPort>/healthz` 可回應 JSON
+
+## 本輪驗證證據
+
+- `log/20260319140523.fsihost-publish.op_log`
+- `log/20260319140523.server-publish.op_log`
+- `log/20260319140523.deploy-script-syntax.op_log`
+- `log/20260319140523.deploy-script-whatif.op_log`
