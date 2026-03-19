@@ -4,6 +4,7 @@
 
 - `deploy-remote-services.ps1`
   - Publishes or reuses artifacts, copies them to a remote Windows machine over PowerShell remoting, registers `fsihost` and `fsharp-devkit` as Windows services, and verifies `/healthz`.
+  - `RemoteRoot` must be a writable local fixed disk on the target machine, for example `C:\services\FSharp.MCP.DevKit.Async`.
 
 ## Placeholder / demo only
 

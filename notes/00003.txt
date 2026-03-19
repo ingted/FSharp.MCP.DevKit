@@ -1,0 +1,12 @@
+部署腳本已完成，在 [deploy-remote-services.ps1](E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1)。它會把 fsihost 部署到 <RemoteRoot>\fsihost，把 fsharp-devkit 部署到 <RemoteRoot>\fsharp-devkit，支援直接 publish 或用 -SkipPublish 重用既有 artifact，並會註冊 fsihost / fsharp-devkit 兩個 Windows services、啟動後驗證 /healthz。部署說明在 [Deployment.md](E:\dk\FSharp.MCP.DevKit - Async\doc\Deployment.md)，維運手冊在 [Runbook.md](E:\dk\FSharp.MCP.DevKit - Async\doc\Runbook.md)。
+
+可直接這樣用：
+
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ServerPort 5000
+scripts 目錄我已檢查過。結論是：原本大多數 fsi-* 和 build-packages.sh 都只是 placeholder，其中 fsi-exec-advanced.ps1 還有實際語法問題。我已把這些腳本改成 fail-fast，避免假裝成功，並在 [scripts/README.md](E:\dk\FSharp.MCP.DevKit - Async\scripts\README.md) 明確標示只有部署腳本是正式可用入口。另，FsiActor.fs 已實體移到 [FsiActor.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FsiActor.fs)，FsiHost / Server 也都補了 service name 支援。
+
+驗證已完成：solution build、FsiHost release publish、Server self-contained publish、部署腳本 parse、-WhatIf dry-run 都通過。最終 check.fsx 是 PASS=26 WARN=8 FAIL=0；WARN 都是同一 session 連續跑 check 的 unchanged 提示，沒有阻塞項。branch 20260319_001.async-merge 已 push，最新 commit 是 63322ff。

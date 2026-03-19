@@ -87,6 +87,18 @@ function Resolve-ArtifactDirectory {
     return $item.FullName
 }
 
+function Get-DirectorySizeBytes {
+    param([string]$Path)
+
+    $files = Get-ChildItem -LiteralPath $Path -Recurse -Force -File
+
+    if (-not $files) {
+        return [int64]0
+    }
+
+    return [int64](($files | Measure-Object -Property Length -Sum).Sum)
+}
+
 function Copy-DirectoryContentsToSession {
     param(
         [System.Management.Automation.Runspaces.PSSession]$Session,
@@ -114,6 +126,8 @@ $remoteFsiHostDir = Join-Path $RemoteRoot "fsihost"
 $remoteServerDir = Join-Path $RemoteRoot "fsharp-devkit"
 $serverUrls = "http://0.0.0.0:$ServerPort"
 $remoteHealthUrl = "http://localhost:$ServerPort/healthz"
+$requiredRemoteBytes = [int64]0
+$skipStartFlag = if ($SkipStart.IsPresent) { "true" } else { "false" }
 
 if (-not $PSCmdlet.ShouldProcess("${ComputerName}:$RemoteRoot", "Deploy fsihost and fsharp-devkit services")) {
     return
@@ -143,6 +157,10 @@ else {
     )
 }
 
+$requiredRemoteBytes =
+    (Get-DirectorySizeBytes -Path $localFsiHostDir) +
+    (Get-DirectorySizeBytes -Path $localServerDir)
+
 $session = $null
 
 try {
@@ -155,7 +173,9 @@ try {
             $RemoteFsiHostDir,
             $RemoteServerDir,
             $FsiHostServiceName,
-            $ServerServiceName
+            $ServerServiceName,
+            $RequiredRemoteBytes,
+            $ServerPort
         )
 
         function Clear-DirectoryContents {
@@ -171,6 +191,64 @@ try {
             }
         }
 
+        function Assert-DeployRootReady {
+            param(
+                [string]$Path,
+                [int64]$RequiredBytes
+            )
+
+            if ([string]::IsNullOrWhiteSpace($Path)) {
+                throw "RemoteRoot cannot be empty."
+            }
+
+            if (-not [System.IO.Path]::IsPathRooted($Path)) {
+                throw "RemoteRoot must be an absolute local path: $Path"
+            }
+
+            $root = [System.IO.Path]::GetPathRoot($Path)
+
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                throw "Unable to determine the drive root for RemoteRoot: $Path"
+            }
+
+            if ($root.StartsWith("\\")) {
+                throw "RemoteRoot must target a local drive, not a UNC path: $Path"
+            }
+
+            $driveInfo = [System.IO.DriveInfo]::new($root)
+
+            if (-not $driveInfo.IsReady) {
+                throw "RemoteRoot drive is not ready: $root"
+            }
+
+            if ($driveInfo.DriveType -ne [System.IO.DriveType]::Fixed) {
+                throw "RemoteRoot drive must be a fixed local disk. Actual type for $root is $($driveInfo.DriveType)."
+            }
+
+            if ($driveInfo.TotalSize -le 0) {
+                throw "RemoteRoot drive reports an invalid size for $root."
+            }
+
+            if ($RequiredBytes -gt 0 -and $driveInfo.AvailableFreeSpace -lt $RequiredBytes) {
+                throw "RemoteRoot drive does not have enough free space. Required=$RequiredBytes bytes, Available=$($driveInfo.AvailableFreeSpace) bytes, Drive=$root"
+            }
+        }
+
+        function Assert-ServerPortAvailable {
+            param([int]$Port)
+
+            $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
+
+            if (-not $listener) {
+                return
+            }
+
+            $process = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+            $processName = if ($process) { $process.ProcessName } else { "unknown" }
+
+            throw "ServerPort $Port is already in use by PID $($listener.OwningProcess) ($processName). Choose another -ServerPort."
+        }
+
         $netRelease = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -Name Release).Release
         if ($netRelease -lt 461808) {
             throw ".NET Framework 4.7.2 or later is required on the remote machine."
@@ -179,6 +257,8 @@ try {
         if (-not [Environment]::Is64BitOperatingSystem) {
             throw "The remote machine must be 64-bit because the server publish is win-x64."
         }
+
+        Assert-DeployRootReady -Path $RemoteRoot -RequiredBytes $RequiredRemoteBytes
 
         New-Item -ItemType Directory -Force -Path $RemoteRoot | Out-Null
 
@@ -191,9 +271,11 @@ try {
             }
         }
 
+        Assert-ServerPortAvailable -Port $ServerPort
+
         Clear-DirectoryContents -Path $RemoteFsiHostDir
         Clear-DirectoryContents -Path $RemoteServerDir
-    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes, $ServerPort
 
     Write-Step "Copying fsihost artifacts to $remoteFsiHostDir"
     Copy-DirectoryContentsToSession -Session $session -LocalPath $localFsiHostDir -RemotePath $remoteFsiHostDir
@@ -211,16 +293,16 @@ try {
             $ServerDisplayName,
             $ServerUrls,
             $RemoteHealthUrl,
-            $SkipStart
+            $SkipStartFlag
         )
 
         function Invoke-ServiceCommand {
             param([string[]]$Arguments)
 
-            & sc.exe @Arguments | Out-Null
+            $output = & sc.exe @Arguments 2>&1 | Out-String
 
             if ($LASTEXITCODE -ne 0) {
-                throw "sc.exe failed: $($Arguments -join ' ')"
+                throw "sc.exe failed: $($Arguments -join ' ')`n$output"
             }
         }
 
@@ -241,14 +323,14 @@ try {
             $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
             $arguments =
                 if ($service) {
-                    @("config", $Name, "binPath= $BinaryPath", "start= auto", "DisplayName= $DisplayName")
+                    @("config", $Name, "binPath=", $BinaryPath, "start=", "auto", "DisplayName=", $DisplayName)
                 }
                 else {
-                    @("create", $Name, "binPath= $BinaryPath", "start= auto", "DisplayName= $DisplayName")
+                    @("create", $Name, "binPath=", $BinaryPath, "start=", "auto", "DisplayName=", $DisplayName)
                 }
 
             if ($dependencySpec) {
-                $arguments += "depend= $dependencySpec"
+                $arguments += @("depend=", $dependencySpec)
             }
 
             Invoke-ServiceCommand -Arguments $arguments
@@ -311,7 +393,7 @@ try {
             -DependsOn @($FsiHostServiceName) `
             -Description "MCP server for FSharp.MCP.DevKit"
 
-        if (-not $SkipStart) {
+        if (-not $shouldSkipStart) {
             Start-Service -Name $FsiHostServiceName
             Wait-ServiceRunning -Name $FsiHostServiceName
 
@@ -332,7 +414,7 @@ try {
             HealthUrl = $RemoteHealthUrl
             HealthResponse = $healthResponse | ConvertTo-Json -Compress
         }
-    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $FsiHostDisplayName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, [bool]$SkipStart
+    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $FsiHostDisplayName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, $skipStartFlag
 
     Write-Step "Deployment completed."
     $remoteSummary | Format-List | Out-Host
@@ -346,3 +428,4 @@ finally {
         Remove-Item -LiteralPath $localArtifactRoot -Recurse -Force
     }
 }
+        $shouldSkipStart = [string]::Equals($SkipStartFlag, "true", [System.StringComparison]::OrdinalIgnoreCase)

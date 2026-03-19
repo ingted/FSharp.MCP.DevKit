@@ -24,6 +24,8 @@
 
 - `<RemoteRoot>\fsihost`
 - `<RemoteRoot>\fsharp-devkit`
+- `RemoteRoot` 必須是遠端主機上的本機固定磁碟路徑，例如 `C:\services\FSharp.MCP.DevKit.Async`
+- `ServerPort` 必須是遠端主機上尚未被占用的 TCP port
 
 ## 預設服務名稱
 
@@ -37,7 +39,7 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
   -ComputerName 10.36.205.160 `
-  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
   -Configuration Release `
   -ServerPort 5000
 ```
@@ -47,7 +49,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
   -ComputerName 10.36.205.160 `
-  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
   -SkipPublish `
   -FsiHostArtifactPath .\artifacts\deploy-check\fsihost `
   -ServerArtifactPath .\artifacts\deploy-check\fsharp-devkit
@@ -58,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
   -ComputerName 10.36.205.160 `
-  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
   -SkipPublish `
   -FsiHostArtifactPath .\artifacts\deploy-check\fsihost `
   -ServerArtifactPath .\artifacts\deploy-check\fsharp-devkit `

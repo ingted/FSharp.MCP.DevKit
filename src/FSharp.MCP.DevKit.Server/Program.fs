@@ -70,6 +70,15 @@ let getServiceName (argv: string array) =
     |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
     |> Option.defaultValue "fsharp-devkit"
 
+let getServerUrls (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+    let argValue = tryGetCommandLineValue "--urls" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
+    |> List.choose id
+    |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
+    |> Option.defaultValue "http://0.0.0.0:5000"
+
 
 [<EntryPoint>]
 let main argv =
@@ -84,8 +93,7 @@ let main argv =
     builder.Logging.AddConsole(fun consoleLogOptions -> consoleLogOptions.LogToStandardErrorThreshold <- LogLevel.Trace)
     |> ignore
 
-    let urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
-    builder.WebHost.UseUrls(if String.IsNullOrWhiteSpace(urls) then "http://0.0.0.0:5000" else urls) |> ignore
+    builder.WebHost.UseUrls(getServerUrls argv) |> ignore
 
     // Register FSI service
     builder.Services.AddSingleton<FsiMcpService>() |> ignore
