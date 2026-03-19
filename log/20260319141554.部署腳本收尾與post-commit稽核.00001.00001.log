@@ -1,0 +1,36 @@
+背景
+- 已完成 Windows service deployment workflow 的 source / docs / scripts / log 變更，並完成 commit + push。
+- `check.fsx` 第二次檢查顯示唯一 FAIL 為 `latest_log_not_advanced`，表示需要再補一筆收尾 log。
+
+目標
+- 補齊 post-commit 收尾 log 與對應 op_log。
+- 再次執行 `check.fsx`，確認本輪作業符合 AGENTS 稽核要求。
+
+計畫步驟
+1. 新增 post-commit 收尾 log
+2. 產生對應 op_log 作為最新操作證據
+3. 重新執行 `check.fsx`
+
+執行命令/參數
+- `git status --short`
+- `dotnet fsi --exec E:\dk\check.fsx -- ...`
+
+結果
+- commit 已完成：`098b6f1 Add Windows service deployment workflow`
+- branch 已 push：`origin/20260319_001.async-merge`
+- 目前只待最終 `check.fsx` 收尾結果
+
+根因判讀
+- `check.fsx` 會以同一 session state 比較「上次檢查之後是否又有新的 log」；單純 commit / push 不足以滿足這條規則，需再補一筆收尾 log。
+
+下一步
+- 新增對應 op_log
+- 執行最終 `check.fsx`
+
+關聯文件/工單/PR
+- `doc/DevLog.md`
+- `log/20260319141243.FsiHost服務化部署腳本與scripts盤點.00001.00001.log`
+- `log/20260319141524.check-post-commit.op_log`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要求的是可實際部署的 mixed-runtime MCP server，而不是只停在 build success。
