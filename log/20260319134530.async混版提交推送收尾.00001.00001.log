@@ -1,0 +1,38 @@
+﻿背景
+- 第一輪 `check.fsx` 已確認文件/追溯/命名大致符合規範，只剩 `git_dirty` WARN。
+
+目標
+- 將本輪 mixed-runtime async merge 以 commit + push 收尾，並在 clean git 狀態下重跑最終檢查。
+
+計畫步驟
+1. 更新 WBS / Action 到 completed 狀態。
+2. 提交本地 commit。
+3. push branch 到 origin。
+4. 以 final session id 重跑 `check.fsx`。
+
+執行命令/參數
+- `git commit -m "Merge mixed-runtime async FSI backend"`
+- `git push -u origin 20260319_001.async-merge`
+- `dotnet fsi --exec E:\dk\check.fsx -- --session-id 20260319_async_merge_final ...`
+
+結果
+- 本地 commit 成功，HEAD 為 `9595364`。
+- branch 已 push 到 `origin/20260319_001.async-merge`。
+- 準備執行 final `check.fsx`。
+
+根因判讀
+- `git_dirty` WARN 屬於預期的收尾項目，不是功能缺陷；在 commit/push 後應可消除。
+
+下一步
+- 執行 final `check.fsx`。
+- 若無 FAIL 與本輪衝突 WARN，即完成交付。
+
+關聯文件/工單/PR
+- `doc/WBS.md`
+- `doc/Action.md`
+- `doc/DevLog.md`
+- GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+- Branch PR URL: https://github.com/ingted/FSharp.MCP.DevKit/pull/new/20260319_001.async-merge
+
+prompt/上下文摘要
+- 使用者要求依 `AGENTS.md` SOP 完成 review、merge、文件、驗證與 git 收尾；target repo 允許任意 git 操作。
