@@ -1,0 +1,605 @@
+Build succeeded with 16 warning(s) in 10.8s
+[deploy] Opening PowerShell remoting session to 10.36.205.160
+[deploy] Copying fsihost artifacts to E:\services\FSharp.MCP.DevKit.Async\fsihost
+Copy-Item : 裝置未就緒。
+位於 E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1:100 字元:9
++         Copy-Item -LiteralPath $item.FullName -Destination $RemotePat ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : WriteError: (E:\services\FSh...t.Async\fsihost:String) [New-Item], IOException
+    + FullyQualifiedErrorId : CreateDirectoryIOError,Microsoft.PowerShell.Commands.NewItemCommand
+
+PS E:\dk\FSharp.MCP.DevKit - Async>
+
+你有執行過嗎?
+
+我先直接驗證遠端主機在 WinRM session 內看到的 E: 狀態，確認這是不是腳本邏輯問題還是遠端路徑本身不可用。接著我會回你一個精確結論，不用靠猜。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { hostname; Get-PSDrive -PSProvider FileSystem | Select-Object Name,Root,Description,DisplayRoot,Used,Free } }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $path = 'E:\services\FSharp.MCP.DevKit.Async'; [pscustomobject]@{ TestPath = Test-Path $path; ServicesTest = Test-Path 'E:\services'; DriveEExists = [bool](Get-PSDrive E -ErrorAction SilentlyContinue) } }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { try { Get-Volume -DriveLetter E | Select-Object DriveLetter,DriveType,HealthStatus,OperationalStatus,FileSystemLabel,SizeRemaining,Size } catch { $_.Exception.Message } } for 2s
+
+
+遠端資訊已經抓到重點了：E: 在 10.36.205.160 的 WinRM session 裡確實存在，但它是 Removable，而且 Size=0 / SizeRemaining=0。也就是說這不是我本地 publish 的問題，而是我前一版腳本沒有先把「遠端目標磁碟是不是可寫的固定磁碟」檢查清楚。再補一個 drive 列表我就能把結論講完整。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { hostname; Get-PSDrive -PSProvider FileSystem | Select-Object Name,Root,Description,DisplayRoot,Used,Free }
+
+
+Context automatically compacted
+我先直接核對部署腳本與遠端主機狀態，確認這次錯誤是不是腳本漏做 preflight。然後我會把檢查補進去，避免再跑到 Copy-Item 才炸。
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -TotalCount 260
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $root = 'E:\services\FSharp.MCP.DevKit.Async' $drive = [System.IO.Path]::GetPathRoot($root) $ps = Get-PSDrive -Name ($drive.TrimEnd(':\\')) -PSProvider FileSystem -ErrorAction SilentlyContinue $vol = try { Get-Volume -DriveLetter ($drive.TrimEnd(':\\')) -ErrorAction Stop } catch { $null } [pscustomobject]@{ Hostname = $env:COMPUTERNAME RemoteRoot = $root Drive = $drive DriveExists = [bool]$ps RootExists = Test-Path $root ParentExists = Test-Path ([System.IO.Path]::GetDirectoryName($root)) PDriveUsed = if ($ps) { $ps.Used } else { $null } PDriveFree = if ($ps) { $ps.Free } else { $null } VolumeDriveType = if ($vol) { $vol.DriveType } else { $null } VolumeSize = if ($vol) { $vol.Size } else { $null } VolumeSizeRemaining = if ($vol) { $vol.SizeRemaining } else { $null } VolumeOperationalStatus = if ($vol) { ($vol.OperationalStatus -join ',') } else { $null } } } | Format-List * for 1s
+
+
+我已確認這次不是 build 問題，而是遠端 E: 本身不可用。接著我把部署腳本補上遠端磁碟 preflight，並把文件範例改成可用的 C:\services\...。
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Deployment.md' -TotalCount 220
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' | Select-Object -Skip 260 -First 260
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Runbook.md' -TotalCount 220
+
+
+我先把所有文件裡的 E:\services\... 範例找出來，一次改成安全的預設值，避免還有同樣的坑。
+
+Ran rg -n "E:\\services|RemoteRoot .*services|10\.36\.205\.160" 'E:\dk\FSharp.MCP.DevKit - Async\doc' 'E:\dk\FSharp.MCP.DevKit - Async\scripts'
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\README.md' -TotalCount 220
+
+
+我現在直接改腳本本體。這次會把遠端路徑檢查移到停服務和複製之前，讓 E: 這種不可用磁碟在前面就明確失敗。
+
+Edited file
+deploy-remote-services.ps1
++65
+-2
+
+
+function Get-DirectorySizeBytes {
+    param([string]$Path)
+
+    $files = Get-ChildItem -LiteralPath $Path -Recurse -Force -File
+
+    if (-not $files) {
+        return [int64]0
+    }
+
+    return [int64](($files | Measure-Object -Property Length -Sum).Sum)
+}
+
+function Copy-DirectoryContentsToSession {
+$remoteHealthUrl = "http://localhost:$ServerPort/healthz"
+$requiredRemoteBytes = [int64]0
+
+
+$requiredRemoteBytes =
+    (Get-DirectorySizeBytes -Path $localFsiHostDir) +
+    (Get-DirectorySizeBytes -Path $localServerDir)
+
+$session = $null
+            $FsiHostServiceName,
+            $ServerServiceName
+            $ServerServiceName,
+            $RequiredRemoteBytes
+        )
+
+        function Assert-DeployRootReady {
+            param(
+                [string]$Path,
+                [int64]$RequiredBytes
+            )
+
+            if ([string]::IsNullOrWhiteSpace($Path)) {
+                throw "RemoteRoot cannot be empty."
+            }
+
+            if (-not [System.IO.Path]::IsPathRooted($Path)) {
+                throw "RemoteRoot must be an absolute local path: $Path"
+            }
+
+            $root = [System.IO.Path]::GetPathRoot($Path)
+
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                throw "Unable to determine the drive root for RemoteRoot: $Path"
+            }
+
+            if ($root.StartsWith("\\")) {
+                throw "RemoteRoot must target a local drive, not a UNC path: $Path"
+            }
+
+            $driveInfo = [System.IO.DriveInfo]::new($root)
+
+            if (-not $driveInfo.IsReady) {
+                throw "RemoteRoot drive is not ready: $root"
+            }
+
+            if ($driveInfo.DriveType -ne [System.IO.DriveType]::Fixed) {
+                throw "RemoteRoot drive must be a fixed local disk. Actual type for $root is $($driveInfo.DriveType)."
+            }
+
+            if ($driveInfo.TotalSize -le 0) {
+                throw "RemoteRoot drive reports an invalid size for $root."
+            }
+
+            if ($RequiredBytes -gt 0 -and $driveInfo.AvailableFreeSpace -lt $RequiredBytes) {
+                throw "RemoteRoot drive does not have enough free space. Required=$RequiredBytes bytes, Available=$($driveInfo.AvailableFreeSpace) bytes, Drive=$root"
+            }
+        }
+
+        $netRelease = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -Name Release).Release
+
+        Assert-DeployRootReady -Path $RemoteRoot -RequiredBytes $RequiredRemoteBytes
+
+        New-Item -ItemType Directory -Force -Path $RemoteRoot | Out-Null
+        Clear-DirectoryContents -Path $RemoteServerDir
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes
+
+腳本 preflight 已補進去。接著把文件範例從 E:\services 換成 C:\services，並明寫 RemoteRoot 要用本機固定磁碟。
+
+Ran Select-String -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Deployment.md' -Pattern 'RemoteRoot|C:|E:\\services|fsihost|fsharp-devkit' -Context 1,1 | ForEach-Object { $_.Context.PreContext; $_.Line; $_.Context.PostContext; '---' }
+
+
+Ran Select-String -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Runbook.md' -Pattern 'RemoteRoot|C:|E:\\services|fsihost|fsharp-devkit' -Context 1,1 | ForEach-Object { $_.Context.PreContext; $_.Line; $_.Context.PostContext; '---' }
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Deployment.md' -Encoding UTF8 | Select-Object -First 120
+
+
+Edited file
+Deployment.md
++4
+-3
+
+- `<RemoteRoot>\fsharp-devkit`
+- `RemoteRoot` 必須是遠端主機上的本機固定磁碟路徑，例如 `C:\services\FSharp.MCP.DevKit.Async`
+
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -SkipPublish `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot E:\services\FSharp.MCP.DevKit.Async `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -SkipPublish `
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\doc\Runbook.md' -Encoding UTF8 | Select-Object -First 140
+
+
+Edited file
+Runbook.md
++2
+-0
+
+
+- `RemoteRoot` 必須放在遠端主機可寫入的本機固定磁碟，例如 `C:\services\FSharp.MCP.DevKit.Async`
+- 若目標磁碟是 `Removable`、`IsReady = False` 或容量為 `0`，部署腳本會在複製前直接失敗
+- 先用 `-WhatIf` 確認參數組合
+Edited file
+README.md
++1
+-0
+
+  - Publishes or reuses artifacts, copies them to a remote Windows machine over PowerShell remoting, registers `fsihost` and `fsharp-devkit` as Windows services, and verifies `/healthz`.
+  - `RemoteRoot` must be a writable local fixed disk on the target machine, for example `C:\services\FSharp.MCP.DevKit.Async`.
+
+我現在用同一台 10.36.205.160 做一次安全驗證，只驗前置檢查是否會在複製前攔住 E:。這一步不會動到遠端服務或目錄。
+
+Ran $p='E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost'; if(Test-Path $p){Get-Item $p | Select-Object FullName} else {'missing'}
+
+
+Ran $p='E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit'; if(Test-Path $p){Get-Item $p | Select-Object FullName} else {'missing'}
+
+
+Ran [System.Management.Automation.Language.Parser]::ParseFile('E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1',[ref]$null,[ref]$null) | Out-Null; 'syntax-ok'
+
+
+Ran & 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -ComputerName 10.36.205.160 -RemoteRoot 'E:\services\FSharp.MCP.DevKit.Async' -SkipPublish -FsiHostArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost' -ServerArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit'
+
+
+前置檢查已在實機上驗到會提前擋下 E:。我再補一個 C: 可用性的確認，讓建議路徑不是猜的。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $root = 'C:\services\FSharp.MCP.DevKit.Async' $driveInfo = [System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot($root)) [pscustomobject]@{ Hostname = $env:COMPUTERNAME Root = $root Drive = $driveInfo.Name IsReady = $driveInfo.IsReady DriveType = $driveInfo.DriveType TotalSize = $driveInfo.TotalSize AvailableFreeSpace = $driveInfo.AvailableFreeSpace } } | Format-List *
+
+
+Ran $lines = Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -Encoding UTF8; for($i=0;$i -lt $lines.Length;$i++){ if($lines[$i] -match 'Get-DirectorySizeBytes|Assert-DeployRootReady|RemoteRoot drive is not ready|requiredRemoteBytes'){ '{0}:{1}' -f ($i+1), $lines[$i] } }
+
+
+Ran git -C 'E:\dk\FSharp.MCP.DevKit - Async' status --short
+
+
+Ran $files = 'E:\dk\FSharp.MCP.DevKit - Async\doc\Deployment.md','E:\dk\FSharp.MCP.DevKit - Async\doc\Runbook.md','E:\dk\FSharp.MCP.DevKit - Async\scripts\README.md'; foreach($f in $files){ $lines = Get-Content -Path $f -Encoding UTF8; for($i=0;$i -lt $lines.Length;$i++){ if($lines[$i] -match 'RemoteRoot.*C:\\services|RemoteRoot.*fixed disk|RemoteRoot.*本機固定磁碟|Removable|C:\\services\\FSharp.MCP.DevKit.Async'){ '{0}:{1}:{2}' -f $f, ($i+1), $lines[$i] } } }
+
+
+4 files changed
++72
+-5
+Undo
+
+Review
+doc/Deployment.md
+doc/Runbook.md
+scripts/README.md
+scripts/deploy-remote-services.ps1
+PS E:\dk\FSharp.MCP.DevKit - Async> powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 
+>>   -ComputerName 10.36.205.160 
+>>   -RemoteRoot c:\services\FSharp.MCP.DevKit.Async 
+>>   -Configuration Release 
+>>   -ServerPort 5000
+[deploy] dotnet publish E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj -c Release -f net472 -o C:\Users\Administrator\AppData\Local\Temp\2\fsharp-mcp-devkit-deploy-20260319143351\fsihost
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Configuration 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.                             E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Frameworks 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.                                E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Packaging 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.                                 E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Versioning 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+  FSharp.MCP.DevKit.Core netstandard2.0 succeeded with 5 warning(s) (0.2s) → src\FSharp.MCP.DevKit.Core\bin\Release\netstandard2.0\FSharp.MCP.DevKit.Core.dll
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Configuration 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Frameworks 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Packaging 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Versioning 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+  FSharp.MCP.DevKit.Messages netstandard2.0 succeeded (0.1s) → src\FSharp.MCP.DevKit.Messages\bin\Release\netstandard2.0\FSharp.MCP.DevKit.Messages.dll
+  FSharp.MCP.DevKit.FsiHost net472 win-x86 succeeded with 4 warning(s) (0.1s) → C:\Users\Administrator\AppData\Local\Temp\2\fsharp-mcp-devkit-deploy-20260319143351\fsihost\
+    C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3245: Could not resolve this reference. Could not locate the assembly "System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089". Check to make sure the assembly exists on disk. If this reference is required by your code, you may get compilation errors.
+    C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3245: Could not resolve this reference. Could not locate the assembly "System.Net.Http, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a". Check to make sure the assembly exists on disk. If this reference is required by your code, you may get compilation errors.
+    C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3243: No way to resolve conflict between "System.IO.Compression, Version=4.2.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" and "System.IO.Compression, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089". Choosing "System.IO.Compression, Version=4.2.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" arbitrarily.
+    C:\Program Files\dotnet\sdk\10.0.201\Microsoft.Common.CurrentVersion.targets(2451,5): warning MSB3243: No way to resolve conflict between "System.Net.Http, Version=4.2.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" and "System.Net.Http, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a". Choosing "System.Net.Http, Version=4.2.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" arbitrarily.
+
+Build succeeded with 9 warning(s) in 0.6s
+[deploy] dotnet publish E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 -r win-x64 --self-contained true -o C:\Users\Administrator\AppData\Local\Temp\2\fsharp-mcp-devkit-deploy-20260319143351\fsharp-devkit
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Documentation\FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Configuration 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Frameworks 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Packaging 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Versioning 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+  ModelContextProtocol.Analyzers netstandard2.0 succeeded (0.2s) → E:\dk\csharp-sdk\artifacts\bin\ModelContextProtocol.Analyzers\Release\netstandard2.0\ModelContextProtocol.Analyzers.dll
+  FSharp.MCP.DevKit.Core net10.0 succeeded with 5 warning(s) (0.3s) → src\FSharp.MCP.DevKit.Core\bin\Release\net10.0\FSharp.MCP.DevKit.Core.dll
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Configuration 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Frameworks 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Packaging 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Versioning 7.3.0' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework '.NETStandard,Version=v2.0'. This package may not be fully compatible with your project.
+  ModelContextProtocol.Core net10.0 succeeded (0.2s) → E:\dk\csharp-sdk\artifacts\bin\ModelContextProtocol.Core\Release\net10.0\ModelContextProtocol.Core.dll
+  FSharp.MCP.DevKit.Documentation net10.0 succeeded with 1 warning(s) (0.1s) → src\FSharp.MCP.DevKit.Documentation\bin\Release\net10.0\FSharp.MCP.DevKit.Documentation.dll
+    E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Documentation\FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.
+  FSharp.MCP.DevKit.Communication net10.0 succeeded (0.2s) → src\FSharp.MCP.DevKit.Communication\bin\Release\net10.0\FSharp.MCP.DevKit.Communication.dll
+  FSharp.MCP.DevKit.Analysis net10.0 succeeded (0.2s) → src\FSharp.MCP.DevKit.Analysis\bin\Release\net10.0\FSharp.MCP.DevKit.Analysis.dll
+  ModelContextProtocol net10.0 succeeded (0.2s) → E:\dk\csharp-sdk\artifacts\bin\ModelContextProtocol\Release\net10.0\ModelContextProtocol.dll
+  ModelContextProtocol.AspNetCore net10.0 succeeded (0.2s) → E:\dk\csharp-sdk\artifacts\bin\ModelContextProtocol.AspNetCore\Release\net10.0\ModelContextProtocol.AspNetCore.dll
+  FSharp.MCP.DevKit.CodeEditing net10.0 succeeded (0.2s) → src\FSharp.MCP.DevKit.CodeEditing\bin\Release\net10.0\FSharp.MCP.DevKit.CodeEditing.dll
+  FSharp.MCP.DevKit.Messages netstandard2.0 succeeded (0.2s) → src\FSharp.MCP.DevKit.Messages\bin\Release\netstandard2.0\FSharp.MCP.DevKit.Messages.dll
+  FSharp.MCP.DevKit.Server net10.0 win-x64 succeeded (0.7s) → C:\Users\Administrator\AppData\Local\Temp\2\fsharp-mcp-devkit-deploy-20260319143351\fsharp-devkit\
+
+Build succeeded with 6 warning(s) in 1.9s
+[deploy] Opening PowerShell remoting session to 10.36.205.160
+[deploy] Copying fsihost artifacts to c:\services\FSharp.MCP.DevKit.Async\fsihost
+[deploy] Copying server artifacts to c:\services\FSharp.MCP.DevKit.Async\fsharp-devkit
+sc.exe failed: create fsihost binPath= "c:\services\FSharp.MCP.DevKit.Async\fsihost\FSharp.MCP.DevKit.FsiHost.exe" --service --service-name "fsihost" start= auto DisplayName= F# MCP DevKit FsiHost
+位於 E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1:204 字元:5
++     $remoteSummary = Invoke-Command -Session $session -ScriptBlock {
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (sc.exe failed: ... DevKit FsiHost:String) [], RuntimeException
+    + FullyQualifiedErrorId : sc.exe failed: create fsihost binPath= "c:\services\FSharp.MCP.DevKit.Async\fsihost\FSharp.MCP.DevKit.FsiHost.exe" --service --service-name "fsihost" start= auto DisplayName= F# MCP DevKit FsiHost
+
+PS E:\dk\FSharp.MCP.DevKit - Async>
+
+
+問題已經縮小到 sc.exe create 這一段，不是複製或 publish。我要把遠端 sc.exe 的實際回應抓出來，確認是參數組裝還是 quoting 問題，然後直接修腳本。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $fsiHostExe = 'c:\services\FSharp.MCP.DevKit.Async\fsihost\FSharp.MCP.DevKit.FsiHost.exe' $serverExe = 'c:\services\FSharp.MCP.DevKit.Async\fsharp-devkit\FSharp.MCP.DevKit.exe' [pscustomobject]@{ FsiHostExists = Test-Path $fsiHostExe ServerExists = Test-Path $serverExe } } | Format-List *
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-Service -Name fsihost,fsharp-devkit -ErrorAction SilentlyContinue | Select-Object Name,Status }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $name = 'fsihost' $displayName = 'F# MCP DevKit FsiHost' $binaryPath = '"c:\services\FSharp.MCP.DevKit.Async\fsihost\FSharp.MCP.DevKit.FsiHost.exe" --service --service-name "fsihost"' & sc.exe create $name "binPath= $binaryPath" "start= auto" "DisplayName= $displayName" 2>&1 }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $name = 'fsihost' $displayName = 'F# MCP DevKit FsiHost' $binaryPath = '"c:\services\FSharp.MCP.DevKit.Async\fsihost\FSharp.MCP.DevKit.FsiHost.exe" --service --service-name "fsihost"' & sc.exe create $name binPath= $binaryPath start= auto DisplayName= $displayName 2>&1 }
+
+
+sc.exe 的問題抓到了：目前腳本把 binPath= / start= / DisplayName= 組成單一參數，sc.exe 在 PowerShell remoting 下會誤解。我要改成真正分開的 token，再直接實跑一次。
+
+Edited file
+deploy-remote-services.ps1
++5
+-5
+
+
+            & sc.exe @Arguments | Out-Null
+            $output = & sc.exe @Arguments 2>&1 | Out-String
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "sc.exe failed: $($Arguments -join ' ')"
+                throw "sc.exe failed: $($Arguments -join ' ')`n$output"
+            }
+                if ($service) {
+                    @("config", $Name, "binPath= $BinaryPath", "start= auto", "DisplayName= $DisplayName")
+                    @("config", $Name, "binPath=", $BinaryPath, "start=", "auto", "DisplayName=", $DisplayName)
+                }
+                else {
+                    @("create", $Name, "binPath= $BinaryPath", "start= auto", "DisplayName= $DisplayName")
+                    @("create", $Name, "binPath=", $BinaryPath, "start=", "auto", "DisplayName=", $DisplayName)
+                }
+            if ($dependencySpec) {
+                $arguments += "depend= $dependencySpec"
+                $arguments += @("depend=", $dependencySpec)
+            }
+sc.exe 參數已改。現在我直接對 10.36.205.160 重跑部署，用既有 artifact 先把服務裝起來，確認不是只修到表面。
+
+Ran & 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -ComputerName 10.36.205.160 -RemoteRoot 'C:\services\FSharp.MCP.DevKit.Async' -SkipPublish -FsiHostArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost' -ServerArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' -ServerPort 5000 for 1m 13s
+
+
+部署已經跑完，但我發現腳本回報成 start skipped，這表示 SkipStart 在 remoting 傳遞上又有一個型別問題。我先查遠端服務實際狀態，再把這個 bug 補掉。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { try { Invoke-RestMethod 'http://localhost:5000/healthz' -TimeoutSec 10 | ConvertTo-Json -Compress } catch { $_.Exception.Message } } for 1s
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-Service -Name fsihost,fsharp-devkit | Select-Object Name,Status,StartType } | Format-Table -AutoSize
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -Encoding UTF8 | Select-Object -Index (250..340)
+
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -Encoding UTF8 | Select-Object -Index (340..420)
+
+
+SkipStart 也確認了，是 remoting 把它當成字串 "False" 傳過去，結果被當成 truthy。這個我一起改掉，讓腳本真的會自動啟服務。
+
+Edited file
+deploy-remote-services.ps1
++5
+-3
+
+$requiredRemoteBytes = [int64]0
+$skipStartFlag = if ($SkipStart.IsPresent) { "true" } else { "false" }
+
+            $RemoteHealthUrl,
+            $SkipStart
+            $SkipStartFlag
+        )
+
+        if (-not $SkipStart) {
+        if (-not $shouldSkipStart) {
+            Start-Service -Name $FsiHostServiceName
+        }
+    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $FsiHostDisplayName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, [bool]$SkipStart
+    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $FsiHostDisplayName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, $skipStartFlag
+
+}
+        $shouldSkipStart = [string]::Equals($SkipStartFlag, "true", [System.StringComparison]::OrdinalIgnoreCase)
+我重跑一次完整部署，這次要看到 fsihost / fsharp-devkit 都啟動，且 /healthz 有成功回應。
+
+Ran & 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -ComputerName 10.36.205.160 -RemoteRoot 'C:\services\FSharp.MCP.DevKit.Async' -SkipPublish -FsiHostArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost' -ServerArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' -ServerPort 5000 for 2m 17s
+
+
+服務啟動流程已經走到最後一段，現在卡的是 /healthz 回 400，不是服務註冊失敗。我先查 5000 port 是不是已經被別的程序佔用，以及兩個服務目前實際狀態。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-Service -Name fsihost,fsharp-devkit | Select-Object Name,Status,StartType } | Format-Table -AutoSize
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { netstat -ano | Select-String ':5000' }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { try { $r = Invoke-WebRequest 'http://localhost:5000/healthz' -TimeoutSec 10 -UseBasicParsing [pscustomobject]@{ StatusCode = [int]$r.StatusCode; Content = $r.Content } } catch { if ($_.Exception.Response) { $resp = $_.Exception.Response $stream = $resp.GetResponseStream() $reader = New-Object System.IO.StreamReader($stream) $body = $reader.ReadToEnd() [pscustomobject]@{ StatusCode = [int]$resp.StatusCode; Content = $body } } else { $_.Exception.Message } } } | Format-List * for 1s
+
+
+根因出來了：5000 上已經有一個 HTTPS listener，不是空的 HTTP port，所以 health check 才會打到別的東西。我要再查是誰佔了 5000，順便看 fsharp-devkit 為什麼停掉，然後把腳本補上 port preflight。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-NetTCPConnection -State Listen -LocalPort 5000 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess,@{n='ProcessName';e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} } | Format-List * for 1s
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { sc.exe queryex fsharp-devkit 2>&1 }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-WinEvent -LogName Application -MaxEvents 50 | Where-Object { $_.ProviderName -match 'Service Control Manager|.NET Runtime|Application Error' -or $_.Message -match 'fsharp-devkit|FSharp.MCP.DevKit|5000|Kestrel|Unable to start Kestrel' } | Select-Object -First 10 TimeCreated,ProviderName,Id,LevelDisplayName,Message | Format-List * }
+
+
+真正的服務啟動失敗原因也找到了：10.36.205.160 的 5000 已被 svchost 佔住，fsharp-devkit 是因為 bind 失敗而 crash。我要把「port 是否可用」也加進部署 preflight，然後用一個空的 port 實跑成功一次。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { foreach($p in 5001,5010,5500){ [pscustomobject]@{ Port=$p; InUse=[bool](Get-NetTCPConnection -State Listen -LocalPort $p -ErrorAction SilentlyContinue) } } } | Format-Table -AutoSize
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-CimInstance Win32_Service | Where-Object { $_.ProcessId -eq 2256 } | Select-Object Name,DisplayName,State,StartName } | Format-Table -AutoSize
+
+
+我把 port 檢查也拉進 preflight。這樣之後如果像這台機器一樣 5000 已被 iphlpsvc 佔用，腳本會在清目錄前就直接報清楚。
+
+Edited file
+deploy-remote-services.ps1
++20
+-2
+
+            $ServerServiceName,
+            $RequiredRemoteBytes
+            $RequiredRemoteBytes,
+            $ServerPort
+        )
+
+        function Assert-ServerPortAvailable {
+            param([int]$Port)
+
+            $listener = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1
+
+            if (-not $listener) {
+                return
+            }
+
+            $process = Get-Process -Id $listener.OwningProcess -ErrorAction SilentlyContinue
+            $processName = if ($process) { $process.ProcessName } else { "unknown" }
+
+            throw "ServerPort $Port is already in use by PID $($listener.OwningProcess) ($processName). Choose another -ServerPort."
+        }
+
+        $netRelease = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -Name Release).Release
+
+        Assert-ServerPortAvailable -Port $ServerPort
+
+        Clear-DirectoryContents -Path $RemoteFsiHostDir
+        Clear-DirectoryContents -Path $RemoteServerDir
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes, $ServerPort
+
+Edited file
+Deployment.md
++1
+-0
+
+- `RemoteRoot` 必須是遠端主機上的本機固定磁碟路徑，例如 `C:\services\FSharp.MCP.DevKit.Async`
+- `ServerPort` 必須是遠端主機上尚未被占用的 TCP port
+
+Edited file
+Runbook.md
++1
+-0
+
+- 若目標磁碟是 `Removable`、`IsReady = False` 或容量為 `0`，部署腳本會在複製前直接失敗
+- `ServerPort` 若已被其他程序占用，部署腳本會在清空目錄前直接失敗，需改用其他 port
+- 先用 `-WhatIf` 確認參數組合
+我用 5010 實跑一次，這次會驗證整個部署腳本從複製、註冊、啟動到 /healthz 都能走完。
+
+Ran & 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -ComputerName 10.36.205.160 -RemoteRoot 'C:\services\FSharp.MCP.DevKit.Async' -SkipPublish -FsiHostArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost' -ServerArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' -ServerPort 5010 for 2m 18s
+
+
+Ran [System.Management.Automation.Language.Parser]::ParseFile('E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1',[ref]$null,[ref]$null) | Out-Null; 'syntax-ok'
+
+
+5000 的埠衝突已避開，但 5010 啟動後 health 連不上，表示 server 本身又有第二個啟動問題。我先抓服務狀態和最新事件，定位是 crash 還是根本沒 listen。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-Service -Name fsihost,fsharp-devkit | Select-Object Name,Status,StartType } | Format-Table -AutoSize
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-NetTCPConnection -State Listen -LocalPort 5010 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess,@{n='ProcessName';e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} } | Format-List *
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-WinEvent -LogName Application -MaxEvents 20 | Where-Object { $_.Message -match 'FSharp.MCP.DevKit|5010|Unable to start Kestrel|No service for type|Exception' } | Select-Object -First 8 TimeCreated,ProviderName,Id,LevelDisplayName,Message | Format-List * }
+
+
+現在不是 5010 不通，而是服務實際上還在用 5000。我先把 fsharp-devkit 的 service BINARY_PATH_NAME 讀出來，看是 sc config 沒改進去，還是 Windows service 對參數解析有別的限制。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { sc.exe qc fsharp-devkit 2>&1 }
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { sc.exe qc fsihost 2>&1 }
+
+
+sc qc 顯示服務參數其實已經是 --urls http://0.0.0.0:5010，所以問題轉成 server 程式沒有在 Windows service 模式下吃到這個參數。我直接看 [Program.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\Program.fs) 的啟動路徑。
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\Program.fs' -Encoding UTF8 | Select-Object -First 260
+
+
+Ran rg -n "UseWindowsService|--urls|urls|ServerPort|MCP_SERVER_URLS|healthz|args" 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server'
+
+
+找到程式碼根因了：server 在 service 模式下完全沒吃 --urls，因為 [Program.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\Program.fs) 只看 ASPNETCORE_URLS，沒看 command line。我直接修掉並重新 publish/deploy。
+
+Edited file
+Program.fs
++11
+-3
+
+
+let getServerUrls (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+    let argValue = tryGetCommandLineValue "--urls" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
+    |> List.choose id
+    |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
+    |> Option.defaultValue "http://0.0.0.0:5000"
+
+
+    |> ignore
+
+    let urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+    builder.WebHost.UseUrls(if String.IsNullOrWhiteSpace(urls) then "http://0.0.0.0:5000" else urls) |> ignore
+
+    builder.WebHost.UseUrls(getServerUrls argv) |> ignore
+
+我現在重發 Server artifact，因為剛修的是 server 啟動參數解析。之後會再部署到 5010 驗證整條路徑。
+
+Ran dotnet build 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj' -c Release -f net10.0 -v minimal for 15s
+
+
+Ran dotnet publish 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj' -c Release -f net10.0 -r win-x64 --self-contained true -o 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' for 8s
+
+
+build 已過，但剛剛 publish 和 build 併跑時又踩到這個 repo 常見的 restore/obj 競態，publish 因為 assets target 被另一個 process 佔著而失敗。這不是程式錯；我現在改成單線重發 artifact。
+
+Ran dotnet publish 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj' -c Release -f net10.0 -r win-x64 --self-contained true -o 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' for 6s
+
+
+server artifact 已更新，現在再次部署到 5010。這次如果還失敗，就只會剩下遠端環境問題，不會是同一個參數 bug。
+
+Ran & 'E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1' -ComputerName 10.36.205.160 -RemoteRoot 'C:\services\FSharp.MCP.DevKit.Async' -SkipPublish -FsiHostArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsihost' -ServerArtifactPath 'E:\dk\FSharp.MCP.DevKit - Async\artifacts\deploy-check\fsharp-devkit' -ServerPort 5010 for 1m 20s
+
+
+部署已經在 5010 成功起來。我再做最後一個現場確認，把兩個服務的狀態和 endpoint 一起收斂。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-Service -Name fsihost,fsharp-devkit | Select-Object Name,Status,StartType } | Format-Table -AutoSize
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Invoke-RestMethod 'http://localhost:5010/healthz' -TimeoutSec 10 | ConvertTo-Json -Compress } for 1s
+
+
+Ran git -C 'E:\dk\FSharp.MCP.DevKit - Async' status --short
+
+
+我現在只差收尾。先看一下 notes/00003.txt 是不是這輪流程產生的，再決定要不要一起入版，避免留下不乾淨狀態。
+
+Ran Get-Content -Path 'E:\dk\FSharp.MCP.DevKit - Async\notes\00003.txt' -Encoding UTF8 -TotalCount 200
+
+
+Ran $f='E:\dk\FSharp.MCP.DevKit - Async\scripts\deploy-remote-services.ps1'; $lines=Get-Content -Path $f -Encoding UTF8; 1..$lines.Length | ForEach-Object { if($_ -ge 90 -and $_ -le 320){ '{0}:{1}' -f $_,$lines[$_-1] } } | Select-String 'Get-DirectorySizeBytes|Assert-DeployRootReady|Assert-ServerPortAvailable|SkipStartFlag|sc.exe failed|binPath=|Deployment completed'
+
+
+Ran $f='E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\Program.fs'; $lines=Get-Content -Path $f -Encoding UTF8; 1..$lines.Length | ForEach-Object { '{0}:{1}' -f $_,$lines[$_-1] } | Select-String 'getServerUrls|UseUrls|getServiceName|serviceName'
+
+
+這輪修正已經驗到遠端可用。我把腳本、server hotfix 和文件一起 commit，避免留半套變更。
+
+Ran git -C 'E:\dk\FSharp.MCP.DevKit - Async' add -- 'scripts/deploy-remote-services.ps1' 'src/FSharp.MCP.DevKit.Server/Program.fs' 'doc/Deployment.md' 'doc/Runbook.md' 'scripts/README.md' 'notes/00003.txt'; git -C 'E:\dk\FSharp.MCP.DevKit - Async' commit -m "Fix remote service deployment flow"
+
+
+commit 已落地。我再推上去，讓這版部署修正跟遠端驗證結果都對得上 branch 狀態。
+
+Ran git -C 'E:\dk\FSharp.MCP.DevKit - Async' status --short
+
+
+Ran git -C 'E:\dk\FSharp.MCP.DevKit - Async' push origin 20260319_001.async-merge for 2s
+
+
+Worked for 15m 47s
+一開始沒有對 10.36.205.160 做完整實機部署；那時我只驗了 local publish、腳本 syntax 和 -WhatIf。你貼出錯誤後，我已經實際在這台機器上跑過，並把部署流程修到能成功落地。
+
+現在已驗證成功的部署是：
+
+路徑：C:\services\FSharp.MCP.DevKit.Async
+服務：fsihost、fsharp-devkit
+port：5010
+/healthz 回應：{"isWindowsService":true,"serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+這次實機上抓到並修掉的問題有：
+
+deploy-remote-services.ps1 現在會先檢查 RemoteRoot 是否在可用的本機固定磁碟，避免再踩 E: 那種 Removable/Size=0。
+同一支腳本也補了 ServerPort preflight，像這台的 5000 被 iphlpsvc 佔用時，會提早失敗，不會等到 service crash。
+sc.exe 的 create/config 參數拆法修正了，不會再因為 quoting/tokenization 失敗。
+Program.fs 已修正，Windows service 模式下會正確吃 --urls，不會再無視 5010 而硬綁 5000。
+文件也改成用 C:\services\... 和 free port 的前提說明，在 Deployment.md 和 Runbook.md。
+你在這台機器上應該用這個命令：
+
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ServerPort 5010
+如果要重用已 publish 的 artifact，就改用 -SkipPublish。這批修正已 commit/push 到 branch 20260319_001.async-merge，最新 commit 是 4d15692

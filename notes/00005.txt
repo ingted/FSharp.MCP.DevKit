@@ -1,0 +1,157 @@
+sc 安裝的 service 重跑時候會先砍再重部署嗎?
+
+不會。現在的 deploy-remote-services.ps1 是「原地更新」，不是先刪 service 再重建。
+
+實際流程是：
+
+先停掉既有的 fsharp-devkit / fsihost
+清空 <RemoteRoot>\fsihost 和 <RemoteRoot>\fsharp-devkit
+複製新的 artifact
+如果 service 已存在，用 sc config 更新
+如果 service 不存在，才用 sc create
+最後再啟動並做 health check
+所以：
+
+不會先 sc delete
+會保留同一個 service name 的註冊項
+但 deployment 目錄內容會先被清掉再覆蓋
+一個要注意的點是：如果「清目錄之後、重啟之前」中途失敗，service 註冊還在，但服務會停著，直到下一次部署成功或手動修復。
+
+如果你要的是更乾淨的「每次重跑都先 sc delete 再 sc create」，我可以再加一個 -RecreateServices 選項。
+
+
+加 -RecreateServices
+
+
+Worked for 1m 44s
+已加上 -RecreateServices，在 deploy-remote-services.ps1。啟用後流程會變成：先停 fsharp-devkit / fsihost，再 sc delete 既有 service registration，接著複製 artifact，最後重新 create 並啟動。文件也同步更新在 Deployment.md、Runbook.md、README.md。
+
+用法就是：
+
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ServerPort 5010 `
+  -RecreateServices
+我只做了非破壞驗證：腳本 syntax pass，且 -WhatIf -RecreateServices 可正常進入流程；沒有替你在遠端實機直接跑刪服務。變更已 push 到 20260319_001.async-merge，最新 commit 是 556925d。目前 repo 只剩未追蹤的 notes/00004.txt，我沒有動它。
+
+
+4 files changed
++57
+-2
+Undo
+
+Review
+doc/Deployment.md
+doc/Runbook.md
+scripts/README.md
+scripts/deploy-remote-services.ps1
+我已經在  160 把服務都起起來了，請使用 codex mcp add 加入
+
+
+Worked for 1m 1s
+已加入，全域名稱是 fsharp-devkit-160，指向 http://10.36.205.160:5010/mcp。
+
+我實際用的是：
+
+codex -c 'model_reasoning_effort="high"' mcp add --url http://10.36.205.160:5010/mcp fsharp-devkit-160
+目前查到的設定是：
+
+transport: streamable_http
+url: http://10.36.205.160:5010/mcp
+另外有一個本機 Codex CLI 設定問題要注意：config.toml 裡的 model_reasoning_effort = "xhigh" 會讓 codex mcp list/get/add 直接報錯，所以我這次是用 -c 'model_reasoning_effort="high"' 暫時繞過。MCP entry 已經成功寫進去了，但你之後如果直接跑 codex mcp list 又報同樣錯，我可以順手把這個 config 一起修掉。
+
+
+列出 mcp server 的 tools
+
+
+Worked for 54s
+我直接對 http://10.36.205.160:5010/mcp 跑了 live tools/list，目前共有 37 個 tools。
+
+FSI
+
+add_search_path
+check_fsi_server_status
+evaluate_f_sharp_expression
+execute_f_sharp_code
+execute_f_sharp_code_async
+execute_f_sharp_code_detailed
+get_fsi_state
+kill_all
+load_f_sharp_script
+parse_and_check_f_sharp_code
+reference_assembly
+reference_nu_get_package
+reset_fsi_session
+restart_fsi_session
+Code / File
+
+analyze_code_structure
+count_lines
+delete_lines
+format_file
+get_all_symbols
+get_lines
+get_symbol_at_position
+get_symbol_signature_at_position
+insert_code
+move_code_block
+parse_source_to_ast
+preview_code_injection
+replace_text_range
+search_and_replace
+search_in_file
+what_is_at_position
+Documentation / Package
+
+generate_package_documentation
+generate_project_documentation
+list_cached_packages
+search_documentation
+set_documentation_output_directory
+show_documentation_config
+show_package_info
+如果你要，我下一步可以直接把這 37 個 tools 的 inputSchema 也整理成一份簡表。
+
+
+1. 使用 execute_f_sharp_code_async 取 let a = System.DateTime.Now 然後讓它睡 30 秒
+2. 使用 status resouce 取 asyncId 對應的執行狀態
+3. 每 5秒 pooling ，一旦完成，printfn "%A %A" a (System.DateTime.Now)
+
+我直接用 10.36.205.160:5010/mcp 跑這個流程：先 execute_f_sharp_code_async 建立 a 並 sleep 30 秒，再每 5 秒讀一次 fsi/async/{asyncId}，完成後在同一個 FSI session 裡執行 printfn "%A %A" a (System.DateTime.Now)。
+
+我先做一個很小的協議檢查，確認 tools/call 和 resources/read 的回應格式，再跑你要的 30 秒 async + polling，不會額外動到服務設定。
+
+Ran $ErrorActionPreference = 'Stop' $baseUrl = 'http://10.36.205.160:5010/mcp' function Get-SseJson { param([string]$Content) $dataLines = @() foreach ($line in ($Content -split "`r?`n")) { if ($line.StartsWith('data: ')) { $dataLines += $line.Substring(6) } } if ($dataLines.Count -eq 0) { return $null } return (($dataLines -join "`n") | ConvertFrom-Json -Depth 50) } $initPayload = @{ jsonrpc='2.0'; id=1; method='initialize'; params=@{ protocolVersion='2025-03-26'; capabilities=@{}; clientInfo=@{ name='codex-local'; version='1.0' } } } | ConvertTo-Json -Depth 20 -Compress $initResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers @{ Accept='application/json, text/event-stream' } -Body $initPayload -UseBasicParsing $sessionId = $initResp.Headers['Mcp-Session-Id'] $headers = @{ Accept='application/json, text/event-stream'; 'Mcp-Session-Id'=$sessionId } $initializedPayload = @{ jsonrpc='2.0'; method='notifications/initialized'; params=@{} } | ConvertTo-Json -Depth 10 -Compress Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $initializedPayload -UseBasicParsing | Out-Null $toolPayload = @{ jsonrpc='2.0'; id=2; method='tools/call'; params=@{ name='check_fsi_server_status'; arguments=@{} } } | ConvertTo-Json -Depth 20 -Compress $toolResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $toolPayload -UseBasicParsing $toolJson = Get-SseJson $toolResp.Content $resPayload = @{ jsonrpc='2.0'; id=3; method='resources/read'; params=@{ uri='fsi/async/nonexistent' } } | ConvertTo-Json -Depth 20 -Compress try { $resResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $resPayload -UseBasicParsing $resJson = Get-SseJson $resResp.Content } catch { if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()) $resJson = $reader.ReadToEnd() } else { $resJson = $_.Exception.Message } } [pscustomobject]@{ SessionId = $sessionId ToolResult = $toolJson ResourceResult = $resJson } | ConvertTo-Json -Depth 50 for 1s
+
+
+這台 PowerShell 是 5.1，ConvertFrom-Json -Depth 不能用。我改成相容寫法後直接跑完整流程，不再先拆成小測試。
+
+Ran $ErrorActionPreference = 'Stop' $baseUrl = 'http://10.36.205.160:5010/mcp' function Get-SseJson { param([string]$Content) $dataLines = @() foreach ($line in ($Content -split "`r?`n")) { if ($line.StartsWith('data: ')) { $dataLines += $line.Substring(6) } } if ($dataLines.Count -eq 0) { return $null } return (($dataLines -join "`n") | ConvertFrom-Json) } function Invoke-McpRequest { param( [hashtable]$Headers, [string]$Method, [object]$Params, [Nullable[int]]$Id = $null ) $payload = @{ jsonrpc = '2.0'; method = $Method } if ($null -ne $Id) { $payload.id = $Id.Value } if ($null -ne $Params) { $payload.params = $Params } $body = $payload | ConvertTo-Json -Depth 20 -Compress $resp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $Headers -Body $body -UseBasicParsing return Get-SseJson $resp.Content } $initPayload = @{ jsonrpc='2.0'; id=1; method='initialize'; params=@{ protocolVersion='2025-03-26'; capabilities=@{}; clientInfo=@{ name='codex-local'; version='1.0' } } } | ConvertTo-Json -Depth 20 -Compress $initResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers @{ Accept='application/json, text/event-stream' } -Body $initPayload -UseBasicParsing $sessionId = $initResp.Headers['Mcp-Session-Id'] $headers = @{ Accept='application/json, text/event-stream'; 'Mcp-Session-Id'=$sessionId } $initializedPayload = @{ jsonrpc='2.0'; method='notifications/initialized'; params=@{} } | ConvertTo-Json -Depth 10 -Compress Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $initializedPayload -UseBasicParsing | Out-Null $code = @' let run () = let a = System.DateTime.Now System.Threading.Thread.Sleep(30000) printfn "%A %A" a (System.DateTime.Now) run () '@ $asyncCall = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 2 -Params @{ name='execute_f_sharp_code_async'; arguments=@{ code=$code; timeoutSeconds=90 } } $asyncText = $asyncCall.result.content[0].text $asyncInfo = $asyncText | ConvertFrom-Json $asyncId = $asyncInfo.asyncId $polls = New-Object System.Collections.ArrayList $finalStatus = $null for ($i = 0; $i -lt 20; $i++) { $statusResp = Invoke-McpRequest -Headers $headers -Method 'resources/read' -Id (3 + $i) -Params @{ uri = "fsi/async/$asyncId" } $statusText = $statusResp.result.contents[0].text $status = $statusText | ConvertFrom-Json [void]$polls.Add([pscustomobject]@{ polledAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') isCompleted = $status.isCompleted hasResult = ($null -ne $status.result) hasError = ($null -ne $status.error) resultPreview = if ($status.result) { [string]$status.result } else { $null } errorPreview = if ($status.error) { [string]$status.error } else { $null } }) if ($status.isCompleted) { $finalStatus = $status break } Start-Sleep -Seconds 5 } if ($null -eq $finalStatus) { throw "Async execution did not complete within polling window. asyncId=$asyncId" } $printCall = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 99 -Params @{ name='execute_f_sharp_code'; arguments=@{ code='printfn "%A %A" a (System.DateTime.Now)'; timeoutSeconds=30 } } [pscustomobject]@{ sessionId = $sessionId asyncId = $asyncId asyncCall = $asyncInfo polls = $polls finalStatus = $finalStatus printCall = $printCall } | ConvertTo-Json -Depth 20
+
+
+我拿到的是 server 端 500，不是網路問題。下一步我會把每一個 MCP request 的回應 body 抓出來，定位是 tools/call 還是 resources/read 哪一步炸。
+
+Ran $ErrorActionPreference = 'Stop' $baseUrl = 'http://10.36.205.160:5010/mcp' function Get-SseJson { param([string]$Content) $dataLines = @() foreach ($line in ($Content -split "`r?`n")) { if ($line.StartsWith('data: ')) { $dataLines += $line.Substring(6) } } if ($dataLines.Count -eq 0) { return $null } return (($dataLines -join "`n") | ConvertFrom-Json) } function Invoke-McpRequest { param( [hashtable]$Headers, [string]$Method, [object]$Params, [Nullable[int]]$Id = $null ) $payload = @{ jsonrpc = '2.0'; method = $Method } if ($null -ne $Id) { $payload.id = $Id.Value } if ($null -ne $Params) { $payload.params = $Params } $body = $payload | ConvertTo-Json -Depth 20 -Compress try { $resp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $Headers -Body $body -UseBasicParsing return [pscustomobject]@{ ok = $true; body = $resp.Content; json = Get-SseJson $resp.Content; payload = $body } } catch { $responseBody = $null if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()) $responseBody = $reader.ReadToEnd() } return [pscustomobject]@{ ok = $false; body = $responseBody; error = $_.Exception.Message; payload = $body } } } $initPayload = @{ jsonrpc='2.0'; id=1; method='initialize'; params=@{ protocolVersion='2025-03-26'; capabilities=@{}; clientInfo=@{ name='codex-local'; version='1.0' } } } | ConvertTo-Json -Depth 20 -Compress $initResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers @{ Accept='application/json, text/event-stream' } -Body $initPayload -UseBasicParsing $sessionId = $initResp.Headers['Mcp-Session-Id'] $headers = @{ Accept='application/json, text/event-stream'; 'Mcp-Session-Id'=$sessionId } $initializedPayload = @{ jsonrpc='2.0'; method='notifications/initialized'; params=@{} } | ConvertTo-Json -Depth 10 -Compress Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $initializedPayload -UseBasicParsing | Out-Null $code = @' let run () = let a = System.DateTime.Now System.Threading.Thread.Sleep(30000) printfn "%A %A" a (System.DateTime.Now) run () '@ $call1 = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 2 -Params @{ name='execute_f_sharp_code_async'; arguments=@{ code=$code; timeoutSeconds=90 } } $call2 = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 3 -Params @{ name='execute_f_sharp_code'; arguments=@{ code='let x = 1'; timeoutSeconds=30 } } [pscustomobject]@{ sessionId=$sessionId; asyncCall=$call1; simpleCall=$call2 } | ConvertTo-Json -Depth 20
+
+
+我抓到一個本地請求組裝 bug：PowerShell 把 id 發成了 null，這本身就會讓 MCP server 吃到壞 JSON-RPC request。先修這個，再重跑真正的 async 流程。
+
+Ran $ErrorActionPreference = 'Stop' $baseUrl = 'http://10.36.205.160:5010/mcp' function Get-SseJson { param([string]$Content) $dataLines = @() foreach ($line in ($Content -split "`r?`n")) { if ($line.StartsWith('data: ')) { $dataLines += $line.Substring(6) } } if ($dataLines.Count -eq 0) { return $null } return (($dataLines -join "`n") | ConvertFrom-Json) } function Invoke-McpRequest { param( [hashtable]$Headers, [string]$Method, [object]$Params, [object]$Id = $null ) $payload = @{ jsonrpc = '2.0'; method = $Method } if ($null -ne $Id) { $payload.id = $Id } if ($null -ne $Params) { $payload.params = $Params } $body = $payload | ConvertTo-Json -Depth 20 -Compress try { $resp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $Headers -Body $body -UseBasicParsing return [pscustomobject]@{ ok = $true; body = $resp.Content; json = Get-SseJson $resp.Content; payload = $body } } catch { $responseBody = $null if ($_.Exception.Response) { $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream()) $responseBody = $reader.ReadToEnd() } return [pscustomobject]@{ ok = $false; body = $responseBody; error = $_.Exception.Message; payload = $body } } } $initPayload = @{ jsonrpc='2.0'; id=1; method='initialize'; params=@{ protocolVersion='2025-03-26'; capabilities=@{}; clientInfo=@{ name='codex-local'; version='1.0' } } } | ConvertTo-Json -Depth 20 -Compress $initResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers @{ Accept='application/json, text/event-stream' } -Body $initPayload -UseBasicParsing $sessionId = $initResp.Headers['Mcp-Session-Id'] $headers = @{ Accept='application/json, text/event-stream'; 'Mcp-Session-Id'=$sessionId } $initializedPayload = @{ jsonrpc='2.0'; method='notifications/initialized'; params=@{} } | ConvertTo-Json -Depth 10 -Compress Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $initializedPayload -UseBasicParsing | Out-Null $call = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 2 -Params @{ name='check_fsi_server_status'; arguments=@{} } $call | ConvertTo-Json -Depth 20
+
+
+請求格式確認好了。現在我直接跑你指定的 async + status resource polling，並把每次 5 秒的狀態一起記下來。
+
+Ran $ErrorActionPreference = 'Stop' $baseUrl = 'http://10.36.205.160:5010/mcp' function Get-SseJson { param([string]$Content) $dataLines = @() foreach ($line in ($Content -split "`r?`n")) { if ($line.StartsWith('data: ')) { $dataLines += $line.Substring(6) } } if ($dataLines.Count -eq 0) { return $null } return (($dataLines -join "`n") | ConvertFrom-Json) } function Invoke-McpRequest { param( [hashtable]$Headers, [string]$Method, [object]$Params, [object]$Id = $null ) $payload = @{ jsonrpc = '2.0'; method = $Method } if ($null -ne $Id) { $payload.id = $Id } if ($null -ne $Params) { $payload.params = $Params } $body = $payload | ConvertTo-Json -Depth 20 -Compress $resp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $Headers -Body $body -UseBasicParsing return Get-SseJson $resp.Content } $initPayload = @{ jsonrpc='2.0'; id=1; method='initialize'; params=@{ protocolVersion='2025-03-26'; capabilities=@{}; clientInfo=@{ name='codex-local'; version='1.0' } } } | ConvertTo-Json -Depth 20 -Compress $initResp = Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers @{ Accept='application/json, text/event-stream' } -Body $initPayload -UseBasicParsing $sessionId = $initResp.Headers['Mcp-Session-Id'] $headers = @{ Accept='application/json, text/event-stream'; 'Mcp-Session-Id'=$sessionId } $initializedPayload = @{ jsonrpc='2.0'; method='notifications/initialized'; params=@{} } | ConvertTo-Json -Depth 10 -Compress Invoke-WebRequest -Uri $baseUrl -Method Post -ContentType 'application/json' -Headers $headers -Body $initializedPayload -UseBasicParsing | Out-Null $asyncCode = @' let a = System.DateTime.Now System.Threading.Thread.Sleep(30000) '@ $asyncCall = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 2 -Params @{ name='execute_f_sharp_code_async'; arguments=@{ code=$asyncCode; timeoutSeconds=90 } } $asyncText = $asyncCall.result.content[0].text $asyncId = $null if ($asyncText -match '([0-9a-fA-F\-]{8,})') { $asyncId = $matches[1] } else { try { $maybeJson = $asyncText | ConvertFrom-Json if ($maybeJson.asyncId) { $asyncId = [string]$maybeJson.asyncId } } catch {} } if ([string]::IsNullOrWhiteSpace($asyncId)) { throw "Unable to parse asyncId from response: $asyncText" } $polls = New-Object System.Collections.ArrayList $finalStatus = $null for ($i = 0; $i -lt 20; $i++) { $statusResp = Invoke-McpRequest -Headers $headers -Method 'resources/read' -Id (10 + $i) -Params @{ uri = "fsi/async/$asyncId" } $statusText = $statusResp.result.contents[0].text $status = $statusText | ConvertFrom-Json [void]$polls.Add([pscustomobject]@{ polledAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') isCompleted = [bool]$status.isCompleted raw = $statusText }) if ($status.isCompleted) { $finalStatus = $status break } Start-Sleep -Seconds 5 } if ($null -eq $finalStatus) { throw "Async execution did not complete within polling window. asyncId=$asyncId" } $printCall = Invoke-McpRequest -Headers $headers -Method 'tools/call' -Id 99 -Params @{ name='execute_f_sharp_code'; arguments=@{ code='printfn "%A %A" a (System.DateTime.Now)'; timeoutSeconds=30 } } [pscustomobject]@{ sessionId = $sessionId asyncId = $asyncId asyncResponseText = $asyncText polls = $polls finalStatus = $finalStatus printResponseText = $printCall.result.content[0].text } | ConvertTo-Json -Depth 20 for 5s
+
+
+這次實際跑到的是 server 端執行失敗，不是 polling 邏輯失敗。我要先看 160 上 System.dll / System.Numerics.dll 的實際位置，確認能不能用 search path / reference 補救。
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { $paths = @( 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5\System.dll', 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.dll', 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\System.dll', 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.dll', 'C:\Windows\Microsoft.NET\Framework\v4.0.30319\System.Numerics.dll', 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Numerics.dll' ) foreach($p in $paths){ [pscustomobject]@{ Path=$p; Exists=Test-Path $p } } } | Format-Table -AutoSize
+
+
+Ran Invoke-Command -ComputerName 10.36.205.160 { Get-ChildItem 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework' -Directory -ErrorAction SilentlyContinue | Select-Object FullName } | Format-Table -AutoSize
+
+
+遠端主機沒有安裝 .NET Framework reference assemblies，但 runtime assemblies 在 C:\Windows\Microsoft.NET\Framework\v4.0.30319 存在。我先試同一個 MCP session 裡用 add_search_path / reference_assembly 補路徑，看能不能把 FSI 跑起來。
