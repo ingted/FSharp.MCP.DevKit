@@ -18,6 +18,7 @@
 | W04 | 2026-03-19 PM | 導入 remote client adapter，移除 server 內本地 FSI backend 依賴 | sync / async tools 共用單一 backend |
 | W05 | 2026-03-19 PM | 修正 async queue 型別與 polling 路徑 | `execute_f_sharp_code_async` 能回傳 `asyncId` 並查狀態 |
 | W06 | 2026-03-19 PM | 執行 build / smoke test / check | 有 `.op_log`、`DevLog`、`check.fsx` 結果 |
+| W07 | 2026-03-19 PM | 更新上游套件相依並重新執行 audit | `Akka.Remote` critical warning 消失，build 不再依賴該 workaround |
 
 ## Work Items
 
@@ -39,6 +40,8 @@
 | T14 | 修正 Akka port 與 host / server 設定一致性 | T10-T12 | server 可連到 host | done |
 | T15 | local build workaround 下執行 compile 驗證 | T09-T14 | 真實 compile error 收斂 | done |
 | T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | done |
+| T17 | 升級 `Akka` / `Akka.Remote` 到安全版本 | T16 | `dotnet build` 不再出現 `NU1904` | done |
+| T18 | 重新執行 vulnerability audit 與文件同步 | T17 | project-level audit 無 vulnerable packages | done |
 
 ## 完成定義
 

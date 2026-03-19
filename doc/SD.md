@@ -153,3 +153,15 @@
   - 保留 `McpFsiTools.fs.bak` 作為比對基線
   - 先恢復 sync execute / async queue 核心路徑
   - 其餘低頻工具延後到下一個 WBS phase 收斂
+
+## 2026-03-19 相依更新設計補充
+
+### 7. Security-driven dependency refresh
+
+- `Akka` 與 `Akka.Remote` 必須維持同版本升級，避免 remoting protocol / serialization 行為漂移。
+- 本輪採「最小必要升級」策略：
+  - 只升已被 audit 判定為 critical 的 direct dependency
+  - 不同時重整 `NuGet.*` 與 `Paket.Core`，避免把 security fix 與相容性整理混成同一輪
+- 驗證採兩層：
+  - solution-level `dotnet build`：確認 restore + compile 可過且 `NU1904` 消失
+  - project-level `dotnet list package --vulnerable --no-restore`：確認兩個 Akka consumer 專案都無 vulnerable packages

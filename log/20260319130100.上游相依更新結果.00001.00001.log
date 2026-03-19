@@ -1,0 +1,33 @@
+背景
+- 本輪針對使用者要求的「更新上游 dependency」進行最小必要修正與 audit 驗證。
+
+執行命令/參數
+1. `dotnet build FSharp.MCP.DevKit.Async.sln -v minimal`
+2. `dotnet restore FSharp.MCP.DevKit.Async.sln -v minimal`
+3. `dotnet list src\\FSharp.MCP.DevKit.FsiHost\\FSharp.MCP.DevKit.FsiHost.fsproj package --vulnerable --include-transitive --no-restore`
+4. `dotnet list src\\FSharp.MCP.DevKit.Server\\FSharp.MCP.DevKit.Server.fsproj package --vulnerable --include-transitive --no-restore`
+5. `dotnet package search Akka.Remote --take 5`
+6. `dotnet package search Akka --take 5`
+
+結果
+- `Akka` / `Akka.Remote` 已由 `1.5.30` 升到 `1.5.62`。
+- solution build success，且不再出現 `Akka.Remote 1.5.30` 的 `NU1904`。
+- `FSharp.MCP.DevKit.FsiHost` 與 `FSharp.MCP.DevKit.Server` 的 project-level vulnerability audit 均為 clean。
+- `csharp-sdk` project-level vulnerability audit 亦為 clean，但其 repo 仍有既存未提交變更，本輪未覆蓋。
+
+根因判讀
+- 先前真正的 security blocker 在 target repo 內直接引用的 `Akka.Remote 1.5.30`，不是 `csharp-sdk` central package 本身。
+- solution-level `dotnet list package --vulnerable` 在本 repo 受 NuGet source mapping / restore 行為差異影響，需用 project-level audit 補足證據。
+
+下一步
+1. 若要繼續清 warning，下一輪應獨立處理 `NuGet.* 7.3.0` 的 `NU1701` 與 net472 assembly resolution warning。
+2. 若要回到部署任務，可在此安全版本基線上再補 Windows Service 化與遠端部署腳本。
+
+關聯文件
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Action.md`
+- `doc/DevLog.md`
+- `E:\dk\MCP.KM.md`

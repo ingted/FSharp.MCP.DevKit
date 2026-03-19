@@ -110,6 +110,16 @@
 2. `Core` 對 `NuGet.* 7.3.0` 仍有 `NU1701` 相容性警告。
 3. `FsiHost` 仍有 .NET Framework reference resolution warning，需要後續獨立整理 binding / reference policy。
 
+## 2026-03-19 相依更新補充
+
+- 重新以 audit-enabled build 驗證後，先前記錄的 `csharp-sdk` `NU1903` 已未再重現；目前真正阻塞 audit 的 critical dependency 是 target repo 內直接引用的 `Akka.Remote 1.5.30`。
+- `src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj` 與 `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 已同步將 `Akka` / `Akka.Remote` 升到 `1.5.62`，維持同版本配對。
+- 升版後，`dotnet build FSharp.MCP.DevKit.Async.sln` 已不再出現 `NU1904`。
+- project-level vulnerability audit 已驗證：
+  - `FSharp.MCP.DevKit.FsiHost` 無 vulnerable packages
+  - `FSharp.MCP.DevKit.Server` 無 vulnerable packages
+- solution-level `dotnet list ... package --vulnerable` 在本 repo 仍可能因 NuGet source mapping / restore 行為差異報 `NU1100`；這是工具鏈檢查路徑差異，不是升版後 package 真正無法 restore，因為同 repo `dotnet restore` 與 `dotnet build` 已成功。
+
 ## 關聯追溯
 
 - Local docs:

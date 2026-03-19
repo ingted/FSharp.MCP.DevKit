@@ -14,7 +14,7 @@
     <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.5.30" />
-    <PackageReference Include="Akka.Remote" Version="1.5.30" />
+    <PackageReference Include="Akka" Version="1.5.62" />
+    <PackageReference Include="Akka.Remote" Version="1.5.62" />
   </ItemGroup>
 </Project>

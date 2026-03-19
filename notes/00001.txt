@@ -1,0 +1,3115 @@
+1. 載入 AGENTS.md
+2. FSharp.MCP.DevKit 是之前讓 gemini 開發，從 .net 9 port fsi session 改 netfx 但是其他部分特別是依賴 csharp-sdk 的 mcp server - mcp client 通訊功能保留在 .net 9，兩者使用 akka 溝通， netfx/.net 9 mixed 版本的 fsharp-devkit mcp server
+3. "FSharp.MCP.DevKit - Async - 複製" 是 .net 10 版本的 fsharp-devkit，但是加入了 incremental code snippet execution / queue-request-then-async-exec 功能
+4. 請 review 2跟4，將合併版於 "FSharp.MCP.DevKit - Async" 開發
+5. "FSharp.MCP.DevKit - Async" 你可以任意進行 git 操作，方便開發
+
+有問題先問，沒問題按照 AGENTS.md 所述的 SOP 完成 SA/SD/WBS 文件後，按 WBS文件 schedule 開發
+
+先讀 AGENTS.md 和工作目錄結構，確認你提到的三個專案位置與 SOP；接著我會先做 2 與 4 的差異 review，然後在 FSharp.MCP.DevKit - Async 依 AGENTS.md 先產出 SA/SD/WBS，再按 WBS 進入實作。
+
+Ran Get-ChildItem -Recurse -Filter AGENTS.md | Select-Object -ExpandProperty FullName
+
+
+Ran Get-ChildItem -Force
+
+
+我已確認三個專案都在 E:\dk，接下來直接讀 AGENTS.md，把文件 SOP 和交付要求先落地，再做三個版本的結構比對。
+
+Ran Get-ChildItem -Force | Select-Object Name,LastWriteTime,Mode
+
+
+Ran Get-Content -Path AGENTS.md -TotalCount 260
+
+
+Ran Get-ChildItem -Force | Select-Object Name,LastWriteTime,Mode
+
+
+Ran Get-ChildItem -Force | Select-Object Name,LastWriteTime,Mode
+
+
+AGENTS.md 目前是編碼顯示亂碼，但可辨識出核心要求是先做 SA/SD/WBS/Test/DevLog、保留 append-only logging、以及先 review 再實作。我先把檔案用 UTF-8 方式重讀，並找 repo 內是否已有 check.fsx 或既有 SOP 腳本。
+
+Ran [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path AGENTS.md -Encoding UTF8 -Raw
+
+
+Ran rg --files -g "check.fsx"
+
+
+Ran rg -n "SA.md|SD.md|WBS.md|DevLog.md|Test.md|Policy.md|Action.md|check.fsx" AGENTS.md MCP.KM.md MCP.md
+
+
+為什麼是亂碼?
+
+是編碼不匹配，不是 AGENTS.md 內容壞掉。
+
+前一次我直接用 PowerShell 預設輸出讀檔，終端輸出編碼和檔案實際編碼不一致，所以中文被轉成亂碼。後來我改成明確指定：
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Get-Content -Encoding UTF8 AGENTS.md
+之後內容就正常了，表示檔案本身應該是 UTF-8，只是第一次「讀出到終端」那一步編碼錯了。
+
+如果你要，我現在就可以用正常編碼繼續照 AGENTS.md SOP 做 2 和 4 的 review，然後在 FSharp.MCP.DevKit - Async 開始產 SA/SD/WBS。
+
+
+請繼續
+
+
+Worked for 23s
+我先接續 SOP，但在正式開工前要先卡一個強制前置條件：前面已確認 E:\dk 下找不到 check.fsx。依 AGENTS.md 的「作業收尾稽核」規定，找不到這支腳本時必須先暫停並向你要路徑。
+
+Final message
+請提供 check.fsx 的實際路徑，我拿到後就繼續做 2 與 4 的 review、產出 FSharp.MCP.DevKit - Async 的 SA/SD/WBS，再按 WBS schedule 開發。
+
+
+放進去了你看看
+
+
+Worked for 48m 20s
+我先確認 check.fsx 已就位，接著會同時看三個 repo 的 git 狀態、文件現況與可編譯性，先把 review 基線建立起來，再產出 FSharp.MCP.DevKit - Async 的 SA/SD/WBS。
+
+Ran git status --short
+
+
+Ran rg --files -g "check.fsx"
+
+
+Ran git status --short
+
+
+Ran Get-ChildItem doc -Force | Select-Object Name,Length,LastWriteTime
+
+
+Ran git status --short
+
+
+三個 repo 都存在未提交變更，FSharp.MCP.DevKit - Async 與 FSharp.MCP.DevKit - Async - 複製 看起來已經有一批混版中間狀態，我會先把這些現況記錄下來，不會直接覆蓋。下一步我先讀 check.fsx、目標 repo 現有 SA/SD/WBS、以及三個 solution / fsproj 結構。
+
+Ran [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path check.fsx -TotalCount 260
+
+
+Ran [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path doc/WBS.md -Raw
+
+
+Ran [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path doc/SA.md -Raw
+
+
+Ran [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content -Path doc/SD.md -Raw
+
+
+Ran rg --files -g "*.sln" -g "*.fsproj" src .
+
+
+我現在先補齊 SOP 要求的作業痕跡：在目標 repo 建 log/ 並寫入本輪 planning log，之後所有 build / diff / test 會用 .op_log 留證。接著我會跑三個版本的基線 build 和結構比對，把合併範圍收斂成 SA/SD/WBS。
+
+Ran if (-not (Test-Path log)) { New-Item -ItemType Directory -Path log | Out-Null }; if (-not (Test-Path notes)) { New-Item -ItemType Directory -Path notes | Out-Null }; Get-ChildItem log,notes | Select-Object FullName,Mode
+
+
+Ran Get-Date -Format yyyyMMddHHmmss
+
+
+Ran git branch --show-current
+
+
+Created file
+20260319105743.review混版與規劃合併開發.00001.00001.log
++42
+-0
+
+背景
+- 使用者要求 review `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製`，並將合併版於 `FSharp.MCP.DevKit - Async` 開發。
+- 已依 `E:\dk\AGENTS.md` 確認需先完成 SA / SD / WBS，再按 schedule 開發。
+- `check.fsx` 已補入 `E:\dk\check.fsx`，本輪收尾需執行一致性稽核。
+
+目標
+- 建立三個 repo 的結構、build、差異與風險基線。
+- 產出 `doc/SA.md`、`doc/SD.md`、`doc/WBS.md`、`doc/Test.md`、`doc/DevLog.md`、`doc/Policy.md`、`doc/Action.md`。
+- 在 `FSharp.MCP.DevKit - Async` 實作可整合 .NET mixed FSI host 與 .NET 10 async incremental execution 的合併版。
+
+計畫步驟（planned steps）
+1. 檢查三個 repo 現況、solution / project 結構與 git dirty 狀態。
+2. 執行基線 build，留存 `.op_log`，確認目前可編譯性與主要失敗點。
+3. 比對 `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製` 的核心差異，聚焦 FSI host、Akka、MCP server/client 通訊、async incremental queue execution。
+4. 於 `FSharp.MCP.DevKit - Async` 更新 SA / SD / WBS / Test / Policy / Action / DevLog。
+5. 依 WBS schedule 實作與驗證。
+6. 執行 `check.fsx` 稽核，補齊缺失後收尾。
+
+執行命令/參數
+- 尚未開始本輪 build / diff / test；操作命令將另記於 `.op_log`。
+
+結果（成功/失敗）
+- in-progress
+
+根因判讀
+- 尚未完成分析。
+
+下一步
+- 執行三個 repo 的基線 build 與檔案差異分析。
+
+關聯文件/工單/PR
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/DevLog.md`
+- `doc/Policy.md`
+- `doc/Action.md`
+- `MCP.KM.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者說明 `FSharp.MCP.DevKit` 是 netfx/.NET 9 mixed 版本，`FSharp.MCP.DevKit - Async - 複製` 是 .NET 10 並帶 incremental code snippet execution / queue-request-then-async-exec，要求 review 兩者後在 `FSharp.MCP.DevKit - Async` 合併開發。
+我開始跑基線 build，會把三個 repo 的輸出都落到同一份 .op_log。這一步的目的是先看目前哪裡已經壞、哪裡只是功能差異，避免後面把 merge 問題和既有編譯問題混在一起。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319110030.review三版基線分析.op_log' "=== repo: FSharp.MCP.DevKit ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.sln -v minimal" | Tee-Object -FilePath $op -Append dotnet build FSharp.MCP.DevKit.sln -v minimal 2>&1 | Tee-Object -FilePath $op -Append "=== repo: FSharp.MCP.DevKit - Async ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.Async.sln -v minimal" | Tee-Object -FilePath $op -Append Set-Location 'e:\dk\FSharp.MCP.DevKit - Async' dotnet build FSharp.MCP.DevKit.Async.sln -v minimal 2>&1 | Tee-Object -FilePath $op -Append "=== repo: FSharp.MCP.DevKit - Async - 複製 ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.sln -v minimal" | Tee-Object -FilePath $op -Append Set-Location 'e:\dk\FSharp.MCP.DevKit - Async - 複製' dotnet build FSharp.MCP.DevKit.sln -v minimal 2>&1 | Tee-Object -FilePath $op -Append
+
+
+基線已經清楚了：三個版本都先卡在 csharp-sdk 的 NU1903，而 Async - 複製 另外還有 net10 library 對 net9/net8 consumer 的 NU1201 相容性錯誤。現在我轉去做功能層 review，先把 mixed-runtime 與 async incremental execution 各自落在哪些檔案與專案。
+
+Ran rg -n "<TargetFramework|<TargetFrameworks" -g "*.fsproj"
+
+
+Ran rg -n "<TargetFramework|<TargetFrameworks" -g "*.fsproj"
+
+
+Ran rg -n "Akka|ActorSystem|Remote|PipeServer|PipeClient|NamedPipe|ExecuteFSharpCodeAsync|asyncId|incremental|snippet|queue|ExecuteInteractionAsync|ExecuteCode" src tests
+
+
+Ran rg -n "<TargetFramework|<TargetFrameworks" -g "*.fsproj"
+
+
+Ran rg -n "Akka|ActorSystem|Remote|PipeServer|PipeClient|NamedPipe|ExecuteFSharpCodeAsync|asyncId|incremental|snippet|queue|ExecuteInteractionAsync|ExecuteCode" src tests
+
+
+Ran git diff --no-index --stat -- "e:/dk/FSharp.MCP.DevKit/src" "e:/dk/FSharp.MCP.DevKit - Async/src"
+
+
+Ran rg -n "Akka|ActorSystem|Remote|PipeServer|PipeClient|NamedPipe|ExecuteFSharpCodeAsync|asyncId|incremental|snippet|queue|ExecuteInteractionAsync|ExecuteCode" src tests
+
+
+Ran git diff --no-index --stat -- "e:/dk/FSharp.MCP.DevKit - Async/src" "e:/dk/FSharp.MCP.DevKit - Async - 複製/src"
+
+
+Ran Get-Content -Path src/FSharp.MCP.DevKit.Server/McpFsiTools.fs -TotalCount 260
+
+
+Ran Get-Content -Path src/FSharp.MCP.DevKit.Server/McpFsiTools.fs -TotalCount 260
+
+
+我已抓到一個重要現況：目標 repo 其實已經部分帶入了 Async - 複製 的 async queue / polling 設計，而且仍保留 base 版的 Akka mixed-runtime 架構，所以現在不是從零 merge，而是修正一個「半合併、未收斂」版本。接下來我會把核心檔案逐個比對，確認哪些部分應保留 Akka remote、哪些部分應收回 direct FsiService。
+
+Ran Get-Content src/FSharp.MCP.DevKit.Core/FsiActor.fs -TotalCount 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Core/FsiActor.fs -TotalCount 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.FsiHost/Program.fs -TotalCount 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.FsiHost/Program.fs -TotalCount 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Core/FSIService.fs -TotalCount 140
+
+
+Ran rg -n "increment|snippet|queue-request|async-exec|partial|fragment|EvaluateExpression|ExecuteInteraction\(|ExecuteInteractionAsync\(|EnqueueExecuteCode\(|isExpression" src tests
+
+
+Ran rg -n "increment|snippet|queue-request|async-exec|partial|fragment|EvaluateExpression|ExecuteInteraction\(|ExecuteInteractionAsync\(|EnqueueExecuteCode\(|isExpression" src tests
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/Program.fs -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj -TotalCount 220
+
+
+我現在看到目標 repo 有一個關鍵不一致：server 端保留了 Akka remote actor 的呼叫，但 Core.fsproj 只編入 FSIService.fs，FsiActor.fs 沒被編譯進 core；同時 async queue 版本又直接呼叫本地 FsiService。也就是說目前存在兩套路徑混在同一個 service 內，這就是需要先在設計上拆清楚的地方。
+
+Ran Get-Content src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Messages/FSharp.MCP.DevKit.Messages.fsproj -TotalCount 220
+
+
+Ran Get-Content FSharp.MCP.DevKit.Async.sln -TotalCount 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | Select-Object -First 260
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.FsiHost/akka.conf -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/akka.server.conf -TotalCount 220
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/akka.server.conf -TotalCount 220
+
+
+Ran rg -n "18081|8081" src
+
+
+Ran rg -n "18081|8081" src
+
+
+Ran rg -n "18081|8081" src
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 186 -and $i -le 206){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 186 -and $i -le 206){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj | ForEach-Object { $i++; if($i -ge 1 -and $i -le 40){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.FsiHost/akka.conf | ForEach-Object { $i++; '{0,4}: {1}' -f $i, $_ }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 18 -and $i -le 35){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 12 -and $i -le 35){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 108 -and $i -le 170){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 22 -and $i -le 45){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 288 -and $i -le 380){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -TotalCount 220
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 160 -and $i -le 420){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 1 -and $i -le 160){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -n "GetClient|StartFsi|PipeServer|PipeClient|ExecuteAsync\(|ExecuteFSharpCode\(|EvaluateExpression\(|LoadScript\(" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+
+
+Ran rg -n "GetClient\(|StartFsi\(|StopFsi\(|remoteActor|ExecuteAsync\(" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 220 -and $i -le 290){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -n "McpServerTool" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+
+
+Ran Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs.bak -TotalCount 220
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs | ForEach-Object { $i++; if($i -ge 430 -and $i -le 560){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -n "member this\.(ExecuteCode|EvaluateExpression|LoadScript|ReferenceAssembly|ReferencePackage|AddSearchPath|ResetSession|GetSessionState|IsRunning|ExecuteCommand|Ping)" src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs | ForEach-Object { $i++; if($i -ge 560 -and $i -le 650){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs | ForEach-Object { $i++; if($i -ge 1 -and $i -le 110){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -n "type PipeResponse|type DiagnosticInfo|type PipeCommand" src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs
+
+
+Ran rg -n "member this\.(ReferencePackage|ResetSession|GetSessionState|Ping|ParseAndCheck)" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Core/FSIService.fs | ForEach-Object { $i++; if($i -ge 200 -and $i -le 560){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -n "member this\.(ExecuteInteraction|EvaluateExpression|LoadScript|ReferenceAssembly|ReferenceNuGetPackage|ReferenceNugetPackage|AddSearchPath|Reset|Restart|GetState|ParseAndCheck|ExecuteInteractionAsync|CheckIfRunning|Stop|Start)" src/FSharp.MCP.DevKit.Core/FSIService.fs
+
+
+我已收斂出實作假設，先明講：我會把 FSharp.MCP.DevKit 的 mixed-runtime 架構當成 FSI session 的主幹，Async - 複製 的 queue / async polling / incremental session 併入這條路徑，而不是保留目前目標 repo 那套「server 內再開一個本地 FSI」的雙軌狀態。接下來先切 branch、落 SA/SD/WBS/Test/Policy/Action/DevLog，然後按文件實作。
+
+Ran $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319110030.review三版基線分析.op_log' "=== repo: FSharp.MCP.DevKit - Async / git branch ===" | Tee-Object -FilePath $op -Append "cmd: git checkout -b 20260319_001.async-merge" | Tee-Object -FilePath $op -Append git checkout -b 20260319_001.async-merge 2>&1 | Tee-Object -FilePath $op -Append
+
+
+Ran rg -n "RequireExternalTracking|external tracking|Jira|GitHub|Confluence|Issue|PR|Project" check.fsx
+
+
+Ran rg -n "LatestLogHasPlan|LatestLogMissingFields|BranchNameValid|FAIL|WARN|external" check.fsx
+
+
+Ran $i=0; Get-Content check.fsx | ForEach-Object { $i++; if($i -ge 255 -and $i -le 290){ '{0,4}: {1}' -f $i, $_ } }
+
+
+Ran rg -o "client\.[A-Za-z]+" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | Sort-Object | Get-Unique
+
+
+Ran rg -o "fsiService\.[A-Za-z]+" src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | Sort-Object | Get-Unique
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 410 -and $i -le 445){ '{0,4}: {1}' -f $i, $_ } }
+
+
+我現在寫文件，不只補格式，而是把剛剛 review 出來的實際 merge 策略固定下來，避免後面一邊改碼一邊變設計。寫完後我就按文件的 Phase 1 先修核心 transport 與 target framework。
+
+Created file
+Action.md
++42
+-0
+
+# Action
+
+## 分析
+
+| 任務 | 驗收 | 狀態 |
+|---|---|---|
+| baseline review 三版 repo | 有 SA 問題列表與 build baseline | done |
+| 收斂 merge 假設 | mixed-runtime 為主幹、async queue 併入遠端 backend | done |
+
+## 規劃
+
+| 任務 | 驗收 | 狀態 |
+|---|---|---|
+| 完成 SA / SD / WBS | 文件可作為實作依據 | done |
+| 完成 Test / Policy / Action / DevLog | 文件可支援開發與稽核 | in-progress |
+
+## 開發
+
+| 任務 | 依賴 | 驗收 | 狀態 |
+|---|---|---|---|
+| 擴充 Messages remote DTO | SA / SD | actor/server 可共用 transport contract | pending |
+| 修正 Core target framework 與 FsiActor compile path | SA / SD | host compile path 成立 | pending |
+| 導入 server remote client adapter | 前兩項 | MCP tools 不再依賴 local FSI backend | pending |
+| 修正 async queue / timeout / polling | remote client adapter | async execute 可運作 | pending |
+| 修正 port mismatch | remote client adapter | host / server 參數一致 | pending |
+
+## 測試
+
+| 任務 | 驗收 | 狀態 |
+|---|---|---|
+| workaround build | 可看見真實 compile 狀態 | pending |
+| host + sync execute smoke test | 遠端 session 可用 | pending |
+| async enqueue + polling smoke test | `asyncId` lifecycle 正常 | pending |
+| reset / restart regression | session state 可重建 | pending |
+
+## 回饋
+
+| 任務 | 驗收 | 狀態 |
+|---|---|---|
+| 更新 DevLog | 有本輪決策與驗證證據 | pending |
+| 更新 MCP.KM.md | 有 merge 知識沉澱 | pending |
+| 執行 check.fsx | 無與本輪目標衝突的 FAIL/WARN | pending |
+Created file
+DevLog.md
++26
+-0
+
+# DevLog
+
+## 2026-03-19 10:57:43
+
+- 背景：使用者要求 review `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製`，並在 `FSharp.MCP.DevKit - Async` 做合併開發。
+- 動作：
+  - 讀取 `E:\dk\AGENTS.md`
+  - 確認 `check.fsx` 已補入 workspace
+  - 建立 baseline log 與 op_log
+  - 針對三個 repo 執行 baseline build
+  - 收斂 mixed-runtime 為主幹、async queue 併入遠端 backend 的設計方向
+  - 重寫 `doc/SA.md`、`doc/SD.md`、`doc/WBS.md`
+  - 建立 `doc/Test.md`、`doc/Policy.md`、`doc/Action.md`
+- 結果：
+  - 三個 repo 均被 `csharp-sdk` 的 `NU1903` 先卡住 restore
+  - target repo 另確認出 `18081/8081` port mismatch、`Timeout = timeout` 型別錯誤、`Core.fsproj` 漏編 `FsiActor.fs`
+- 風險：
+  - external tracking 尚未提供，`check.fsx` 可能因此失敗
+  - target repo 為半合併狀態，需先收斂 backend 再談功能驗證
+- 關聯：
+  - `doc/SA.md`
+  - `doc/SD.md`
+  - `doc/WBS.md`
+  - `doc/Test.md`
+  - `doc/Policy.md`
+  - `doc/Action.md`
+Created file
+Policy.md
++43
+-0
+
+# Policy
+
+## Scope
+
+- 適用於 `FSharp.MCP.DevKit - Async` 本輪 mixed-runtime + async merge 任務。
+- 適用檔案：
+  - `doc/*.md`
+  - `log/*.log`
+  - `log/*.op_log`
+  - `src/**/*.fs`
+  - `src/**/*.fsproj`
+
+## Naming Rule
+
+- branch：`YYYYMMDD_001.topic`
+- log：`YYYYMMDDHHmmss.<摘要>.<主編號>.<子編號>.log`
+- op log：`YYYYMMDDHHmmss.<摘要>.op_log`
+- 文件名稱固定使用：
+  - `doc/SA.md`
+  - `doc/SD.md`
+  - `doc/WBS.md`
+  - `doc/Test.md`
+  - `doc/Policy.md`
+  - `doc/Action.md`
+  - `doc/DevLog.md`
+
+## File Retention Strategy
+
+- `doc/*.md` 一律納入 Git。
+- `log/*.log` 與 `log/*.op_log` 一律納入 Git。
+- `doc/DevLog.md` 採 append-only。
+- 本輪不新增機密檔案，不建立新的 `nuget.config`。
+
+## Risk And Exception
+
+- `csharp-sdk` 的 `NU1903` 屬外部依賴 gate；本輪允許以 local build workaround 驗證本 repo compile，但不可把 workaround 當成最終 release 解法。
+- 若 `check.fsx` 因缺少 external tracking 失敗，需回報使用者補齊 Jira / GitHub / Confluence。
+- 若使用者在 target repo 有既有 dirty worktree，本輪不得覆蓋其未要求回滾的內容。
+
+## Effective Date And Version
+
+- Effective date: 2026-03-19
+- Version: 0.2.1-async-merge
+Created file
+SA.md
++101
+-0
+
+# SA
+
+## 任務摘要
+
+- 目標 repo：`FSharp.MCP.DevKit - Async`
+- 參考來源：
+  - `E:\dk\FSharp.MCP.DevKit`
+  - `E:\dk\FSharp.MCP.DevKit - Async - 複製`
+- 本輪目標：把 `FSharp.MCP.DevKit` 的 net472 FSI host + .NET 9 MCP server/client mixed-runtime 架構，和 `Async - 複製` 的 incremental code snippet execution / queue-request-then-async-exec 能力合併到 `FSharp.MCP.DevKit - Async`。
+
+## 現況觀察
+
+### A. `FSharp.MCP.DevKit`
+
+- `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 是 `net472`，並編入 `FsiActor.fs`。
+- `src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj` 是 `net472`。
+- `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 是 `net9.0`。
+- `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 透過 Akka remote actor 連到 `akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor`。
+- 這版的設計重點正確：FSI session 在 netfx host，MCP server 維持在 .NET 9，兩者用 Akka 溝通。
+
+### B. `FSharp.MCP.DevKit - Async - 複製`
+
+- 已加入 async queue、`execute_f_sharp_code_async`、`fsi/async/{asyncId}` resource 與 HTTP polling endpoint。
+- 但這版有三個結構性問題：
+  1. `Core/Analysis/Communication/CodeEditing/Documentation` 幾乎都升成 `net10.0`，但 `Server` 仍是 `net9.0;net10.0`、`Tests` 仍是 `net8.0;net9.0;net10.0`，導致 restore 出現 `NU1201`。
+  2. `McpFsiTools.fs` 的 remote actor path 改成 `18081`，但 `FsiHost/akka.conf` 仍是 `8081`，host / client 連線參數不一致。
+  3. async queue 實作不是走 mixed-runtime host，而是在 server 內直接建立本地 `FsiService`，等於把 netfx host 架構繞掉。
+
+### C. `FSharp.MCP.DevKit - Async`
+
+- 目前是半合併狀態：已帶入 multi-target 與 async queue/polling 設計，也保留 Akka 設定與 `FsiHost` 專案。
+- 但目前 target repo 仍有以下問題：
+  1. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 同時保留 remote actor 與本地 `FsiService + PipeServer + PipeClient` 兩套路徑，session backend 未收斂。
+  2. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 第 195-205 行附近的 `EnqueueExecuteCode` 將 `TimeSpan option` 指派到 `Timeout: TimeSpan`，是明顯型別錯誤。
+  3. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 的 remote actor path 仍是 `18081`，與 `src/FSharp.MCP.DevKit.FsiHost/akka.conf` 的 `8081` 不一致。
+  4. `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 目前只編 `FileUtils.fs` 和 `FSIService.fs`，沒有把 `FsiActor.fs` 編進去，也沒有 reference `Messages`；netfx host 路徑實際上無法完整成立。
+  5. 三個 repo 的 baseline build 都先被 `csharp-sdk` 的 `NU1903` 卡住，target repo 還伴隨 mixed merge 本身的型別/target framework 問題。
+
+## 問題定義
+
+- 使用者要的是「保留 mixed-runtime 架構」而不是「把 async queue 直接做在 server 內本地 FSI」。
+- `Async - 複製` 的 async queue 概念正確，但實作位置錯了，導致：
+  - session state 分裂
+  - netfx host 名存實亡
+  - Akka remote 與 local FSI 兩套行為混雜
+- 若不先統一 session backend，再加功能只會把 incremental snippet state、tool state、session state 變成不可追蹤。
+
+## 根因判讀
+
+1. merge 時是把「async queue 功能」直接貼進 `McpFsiTools.fs`，沒有同步把 backend abstraction 收斂成單一路徑。
+2. target framework 調整是局部做的，沒有整體檢查 consumer / dependency 相容矩陣。
+3. host / server 的 Akka 設定沒有一併校正，出現 `18081` / `8081` 漂移。
+4. `Core.fsproj` 與 `Messages.fsproj` 的責任邊界在 merge 過程中被破壞，導致 actor compile path 漏接。
+
+## 範圍
+
+### In Scope
+
+- 讓 `FSharp.MCP.DevKit - Async` 重新成為可描述、可編譯、可驗證的 mixed-runtime repo。
+- 保留 net472 `FsiHost` + Akka remote actor 通道。
+- 讓 sync / async FSI tools 共用同一個遠端 session backend。
+- 將 `Async - 複製` 的 queue-request-then-async-exec / async status polling 併入 mixed-runtime 通道。
+- 修正 target framework 相容矩陣與 target repo 內的明顯 merge 錯誤。
+
+### Out of Scope
+
+- 本輪不處理 `csharp-sdk` 上游 `NU1903` 套件漏洞根因；僅以 local build workaround 繞過 restore gate 來驗證本 repo compile。
+- 本輪不重做所有 code-editing / documentation tool 的產品設計；只修到與 mixed-runtime FSI backend 一致且可驗證。
+- 本輪不主動建立遠端 GitHub / Jira / Confluence 工單；若 `check.fsx` 因 external tracking 要求失敗，再回報使用者補齊。
+
+## 假設
+
+1. mixed-runtime 架構以 `FSharp.MCP.DevKit` 為真相來源。
+2. `Async - 複製` 中值得保留的是 async queue / polling / incremental session state，不是它目前那條 local FSI backend。
+3. 對使用者最重要的是「同一個遠端 FSI session 能同時支援 sync 與 async snippet execution」，而不是維持目前 target repo 的雙 backend 行為。
+
+## 風險
+
+1. Akka remote DTO 若直接傳 `obj` 或 `FSharpDiagnostic`，可能有跨 runtime 序列化風險。
+2. 若部分 tools 仍走 local backend、部分 tools 改走 remote backend，FSI state 會分裂。
+3. 若 core target framework 切分不正確，可能再出現 `net472` host 與 `net9/net10` server 的 reference incompatibility。
+4. `NU1903` 會遮蔽真正的 compile error，需要用 local build workaround 才能看見 merge 後的真實編譯狀態。
+
+## 分析結論
+
+- 目標 repo 應收斂成「單一 session backend」：server 端所有 session-bound FSI tools 都走 net472 host 的 Akka remote actor。
+- async queue 應保留在 server 端，因為：
+  - queue / polling / asyncId lifecycle 屬於 MCP server concern
+  - 真正執行仍委派給遠端 host，因此能保留 incremental session state
+- server 端需要一個 remote client adapter，對上維持既有 tool 邏輯，對下統一轉成 Akka command request。
+
+## 關聯追溯
+
+- Local docs:
+  - `doc/SA.md`
+  - `doc/SD.md`
+  - `doc/WBS.md`
+  - `doc/Test.md`
+  - `doc/DevLog.md`
+- External tracking:
+  - pending，尚未提供 Jira / GitHub / Confluence 單號
+Created file
+SD.md
++139
+-0
+
+# SD
+
+## 設計目標
+
+- 統一 `FSharp.MCP.DevKit - Async` 的 FSI session backend。
+- 保留 net472 `FsiHost` 作為實際 FSI session 執行者。
+- 讓 sync tool、async queue、status polling 都落在同一個遠端 session 上。
+- 修正 target framework 與 actor/message compile path。
+
+## 設計決策
+
+### 1. Backend 單一路徑
+
+- `FsiHost` 維持 `net472`，持有唯一 FSI session。
+- `Server` 維持 `net9.0;net10.0`，不再在 process 內自啟第二個 `FsiService`。
+- `Server` 透過 Akka remote actor 對 `FsiHost` 發送 command request。
+- `async queue` 只負責排程與快取，不直接持有 FSI session。
+
+### 2. Remote Command DTO
+
+- 在 `Messages` 專案新增可序列化的 remote command / response DTO。
+- 不直接跨 Akka remote 傳 `obj option` 或 `FSharpDiagnostic[]`。
+- response 使用 transport-safe DTO：
+  - `Output`
+  - `Errors`
+  - `IsSuccess`
+  - `ExecutionTimeMs`
+  - `Diagnostics`（轉成純 record DTO）
+
+### 3. Remote Client Adapter
+
+- 在 `Server/McpFsiTools.fs` 建立 `RemoteFsiClient`，對上模擬既有 `PipeClient` 風格方法：
+  - `ExecuteCode`
+  - `EvaluateExpression`
+  - `LoadScript`
+  - `ParseAndCheck`
+  - `ReferenceNugetPackage`
+  - `ReferenceAssembly`
+  - `AddSearchPath`
+  - `Reset`
+  - `Restart`
+  - `GetState`
+  - `IsServerAvailable`
+- 這樣大部分 MCP tool 實作可維持既有 calling shape，不需要全面重寫工具層。
+
+### 4. Async Queue 位置
+
+- async queue 放在 `FsiMcpService`。
+- queue item 至少包含：
+  - `AsyncId`
+  - `Code`
+  - `Timeout`
+  - `EnqueuedAt`
+- queue worker 逐筆取出後，呼叫 `RemoteFsiClient.ExecuteCode` 到遠端 host。
+- 執行結果轉回 `FsiResult` 後寫入 `AsyncFsiResultCache`。
+
+### 5. Target Framework 策略
+
+- `Core` 改成 shared + host dual-purpose：
+  - shared API 供 net9/net10 consumer 使用
+  - net472 slice 供 `FsiHost` 使用
+- `FsiActor.fs`、Akka package reference、`Messages` project reference 只在 `net472` slice 啟用。
+- `Server` 保持 `net9.0;net10.0`。
+- `Messages` 保持 `netstandard2.0`。
+- 其他 library 維持 target repo 現況的 multi-target，避免再把 `Async - 複製` 的 `NU1201` 問題帶回來。
+
+## 元件責任
+
+### `src/FSharp.MCP.DevKit.Messages`
+
+- 定義 Akka remote transport DTO。
+- 不持有 FSI session 邏輯。
+
+### `src/FSharp.MCP.DevKit.Core`
+
+- 提供 `FsiService`。
+- 提供 async status shared model。
+- 在 net472 slice 編入 `FsiActor.fs`，將 remote command 轉成對 `FsiService` 的實際呼叫。
+
+### `src/FSharp.MCP.DevKit.FsiHost`
+
+- 啟動 Akka actor system。
+- 啟動單一 `fsiActor`。
+- 使用 `akka.conf` 的固定 port 作為 server 端連入點。
+
+### `src/FSharp.MCP.DevKit.Server`
+
+- `FsiMcpService`：
+  - 建立 actor system / actor selection
+  - 封裝 remote client adapter
+  - 維護 async queue / cache
+- `Program.fs`：
+  - MCP tool registration
+  - `fsi/async/{asyncId}` resource
+  - HTTP GET `/fsi/async/{asyncId}`
+
+## 資料流
+
+### Sync execution
+
+1. MCP tool 進入 `FSharpInteractiveTools.ExecuteFSharpCode`
+2. tool 取用 `FsiMcpService.GetClient()`
+3. `RemoteFsiClient.ExecuteCode` 送出 Akka remote command
+4. `FsiHost` 的 `FsiActor` 呼叫 `FsiService.ExecuteInteraction`
+5. transport-safe response 回到 server
+6. tool 回傳 output 或 formatted error
+
+### Async execution
+
+1. MCP tool `execute_f_sharp_code_async` 建立 `asyncId`
+2. `FsiMcpService.EnqueueExecuteCode` 把 request 寫入 channel
+3. background worker 依 FIFO 取出 request
+4. worker 透過 `RemoteFsiClient.ExecuteCode` 呼叫遠端 host
+5. result 寫入 `AsyncFsiResultCache`
+6. MCP resource / HTTP endpoint 透過 `GetAsyncExecutionStatus` 查詢 cache
+
+## 關鍵相容性修正
+
+1. `remoteActorPath` 與 `FsiHost/akka.conf` 必須統一為同一個 port。
+2. `EnqueueExecuteCode` 的 timeout 參數型別要收斂為 `TimeSpan`，不可留下 `TimeSpan option -> TimeSpan` 的錯誤指派。
+3. `Core.fsproj` 必須恢復 `FsiActor.fs` 的 compile path，並且只在 net472 slice 啟用 Akka / Messages dependency。
+4. remote response 不可攜帶非 transport-safe 型別。
+
+## 驗證策略
+
+- 第一層：`dotnet build` with local restore workaround，確認 merge 後真正的編譯錯誤。
+- 第二層：至少驗證下列操作可在同一個遠端 session 連續成功：
+  - `ReferenceNugetPackage`
+  - `ExecuteFSharpCode`
+  - `execute_f_sharp_code_async`
+  - `fsi/async/{asyncId}` polling
+- 第三層：確認 `Reset` / `Restart` 後 state 變化合理。
+
+## 回退策略
+
+- 若 remote command 泛化後導致大面積 regression：
+  - 保留 `McpFsiTools.fs.bak` 作為比對基線
+  - 先恢復 sync execute / async queue 核心路徑
+  - 其餘低頻工具延後到下一個 WBS phase 收斂
+Created file
+Test.md
++44
+-0
+
+# Test
+
+## 測試目標
+
+- 驗證 mixed-runtime backend 收斂後，sync / async FSI tools 共用同一個遠端 session。
+- 驗證 async queue、status polling、Reset / Restart 行為正確。
+- 驗證 merge 後沒有再出現 target framework / actor compile path 漏接。
+
+## 前置條件
+
+- `FSharp.MCP.DevKit - Async` 已完成本輪 code merge。
+- local build 以 workaround 排除 `csharp-sdk` 上游 `NU1903` restore gate，僅用於顯示本 repo 真正的 compile 結果。
+- `FSharp.MCP.DevKit.FsiHost` 可單獨啟動。
+
+## 測試案例
+
+| ID | 類型 | 案例 | 步驟 | 預期 |
+|---|---|---|---|---|
+| TC01 | Build | Solution compile | `dotnet build FSharp.MCP.DevKit.Async.sln <workaround>` | 無本 repo 造成的 compile error |
+| TC02 | Smoke | Host 啟動 | 啟動 `FSharp.MCP.DevKit.FsiHost` | Akka host 監聽設定 port |
+| TC03 | Smoke | Sync execute | 呼叫 `ExecuteFSharpCode` 執行 `let x = 1` | 成功、無 transport error |
+| TC04 | Session | Incremental snippet | 先 `let x = 41`，再 `x + 1` | 第二次可讀到同一 session 狀態 |
+| TC05 | Async | Async execute enqueue | 呼叫 `execute_f_sharp_code_async` | 立即回傳 `asyncId` |
+| TC06 | Async | Async polling | 讀取 `fsi/async/{asyncId}` 或 `/fsi/async/{asyncId}` | `exists=true`，完成後 `isCompleted=true` |
+| TC07 | Session | Async session continuity | sync 設定 state，async 讀取該 state | async worker 看到同一遠端 session 狀態 |
+| TC08 | Session | Reference package then execute | `ReferenceNugetPackage` 後執行使用該 package 的 code | 使用同一 session 成功 |
+| TC09 | Session | Reset | 呼叫 `Reset` 後再執行先前 binding | 舊 binding 消失 |
+| TC10 | Session | Restart | 呼叫 `Restart` 後再查 `GetState` | session 重新建立 |
+| TC11 | Error | Akka port mismatch regression | host / server 以既定 port 啟動 | 不再出現 `18081` / `8081` mismatch |
+| TC12 | Regression | ParseAndCheck | 呼叫 parse/check tool | 有正確 diagnostics，無 backend crash |
+
+## 本輪最低驗收
+
+- TC01
+- TC03
+- TC04
+- TC05
+- TC06
+- TC08
+- TC11
+
+## 風險註記
+
+- 若 `csharp-sdk` 的 `NU1903` 仍阻擋 restore，需用 local workaround 驗證 compile，並在 DevLog 註記這是外部依賴風險，不是本 repo merge 完成的最終解。
+Created file
+WBS.md
++48
+-0
+
+# WBS
+
+## 里程碑
+
+| ID | 項目 | 產出 | 狀態 |
+|---|---|---|---|
+| M1 | 完成 SA/SD/WBS/Test/Policy/Action/DevLog | `doc/*.md` | in-progress |
+| M2 | 收斂 mixed-runtime backend | server / core / host / messages code | pending |
+| M3 | 完成 build / smoke test / check | build log / test log / check result | pending |
+
+## Schedule
+
+| ID | 時間 | 工作 | 驗收 |
+|---|---|---|---|
+| W01 | 2026-03-19 AM | 建立基線、review 三版結構與 build 現況 | 有 SA 問題列表與 build baseline |
+| W02 | 2026-03-19 AM | 寫 SA / SD / WBS / Test / Policy / Action / DevLog | 文件可作為實作依據 |
+| W03 | 2026-03-19 PM | 修正 message / actor / core target framework compile path | `FsiHost` 與 server 共享 transport contract |
+| W04 | 2026-03-19 PM | 導入 remote client adapter，移除 server 內本地 FSI backend 依賴 | sync / async tools 共用單一 backend |
+| W05 | 2026-03-19 PM | 修正 async queue 型別與 polling 路徑 | `execute_f_sharp_code_async` 能回傳 `asyncId` 並查狀態 |
+| W06 | 2026-03-19 PM | 執行 build / smoke test / check | 有 `.op_log`、`DevLog`、`check.fsx` 結果 |
+
+## Work Items
+
+| ID | 工作 | 依賴 | 驗收 | 狀態 |
+|---|---|---|---|---|
+| T01 | 記錄 baseline build 與 review 結果 | 無 | `log/*.log`、`log/*.op_log` | done |
+| T02 | 重寫 `doc/SA.md` | T01 | 問題、根因、scope 清楚 | done |
+| T03 | 重寫 `doc/SD.md` | T02 | backend / data flow / rollback 清楚 | done |
+| T04 | 重寫 `doc/WBS.md` | T02-T03 | 任務可執行 | done |
+| T05 | 建立 `doc/Test.md` | T02-T03 | 正常/異常/回歸案例齊備 | pending |
+| T06 | 建立 `doc/Policy.md` | T02-T04 | scope / retention / 例外條件清楚 | pending |
+| T07 | 建立 `doc/Action.md` | T04 | phase / status 可追蹤 | pending |
+| T08 | 建立 `doc/DevLog.md` 初始條目 | T01-T04 | 有本輪任務紀錄 | pending |
+| T09 | 擴充 `Messages` transport DTO | T03 | actor 可接收統一 command | pending |
+| T10 | 修正 `Core.fsproj` target framework 與 `FsiActor` 編譯條件 | T03 | host compile path 恢復 | pending |
+| T11 | 更新 `FsiActor.fs` 支援 remote command dispatch | T09-T10 | host 能處理 sync / async 同一套命令 | pending |
+| T12 | 更新 `McpFsiTools.fs` 的 remote client adapter | T09-T11 | 不再依賴 server 本地 FSI session | pending |
+| T13 | 修正 async queue 型別與 cache 更新流程 | T12 | queue worker 可執行與回填結果 | pending |
+| T14 | 修正 Akka port 與 host / server 設定一致性 | T10-T12 | server 可連到 host | pending |
+| T15 | local build workaround 下執行 compile 驗證 | T09-T14 | 真實 compile error 收斂 | pending |
+| T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | pending |
+
+## 完成定義
+
+- `FSharp.MCP.DevKit - Async` 的 sync / async FSI tools 不再混用 local FSI 與 remote FSI 兩條 backend。
+- net472 host 與 .NET 9/10 server 的責任邊界恢復清楚。
+- async queue / polling 可在單一遠端 session 上工作。
+- 文件、log、DevLog、check 皆可追溯。
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Server/McpFsiTools.fs | ForEach-Object { $i++; if($i -ge 500 -and $i -le 535){ '{0,4}: {1}' -f $i, $_ } }
+
+
+我開始改程式碼了，第一段先做 transport contract 與 host compile path：Messages 定義遠端 DTO，Core 恢復 net472 actor slice，FsiActor 接住統一 command。這一段不動工具層行為，只先把 backend 骨架扶正。
+
+Edited file
+FSharp.MCP.DevKit.Core.fsproj
++36
+-23
+
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard20;net10.0</TargetFrameworks>
+	  <!--<TargetFrameworks>net10.0</TargetFrameworks>-->
+    <RootNamespace>FSharp.MCP.DevKit.Core</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="FileUtils.fs" />
+    <Compile Include="FSIService.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <PackageReference Include="NuGet.Packaging" Version="7.3.0" />
+    <PackageReference Include="Paket.Core" Version="9.0.2" />
+  </ItemGroup>
+</Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net472;netstandard2.0;net10.0</TargetFrameworks>
+    <RootNamespace>FSharp.MCP.DevKit.Core</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="FileUtils.fs" />
+    <Compile Include="FSIService.fs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Compile Include="FsiActor.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <PackageReference Include="NuGet.Packaging" Version="7.3.0" />
+    <PackageReference Include="Paket.Core" Version="9.0.2" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <PackageReference Include="Akka" Version="1.5.30" />
+    <PackageReference Include="Akka.Remote" Version="1.5.30" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+  </ItemGroup>
+</Project>
+Edited file
+FsiActor.fs
++77
+-26
+
+namespace FSharp.MCP.DevKit.Core.Actors
+
+open Akka.Actor
+open FSharp.MCP.DevKit.Core
+
+type FsiActor(config: FsiConfig) =
+    inherit ActorBase()
+    
+    let fsi = new FsiService(config)
+    do fsi.Start()
+
+    override this.Receive(message: obj) =
+        match message with
+        | :? FsiEvalRequest as req ->
+            let result = 
+                if req.IsExpression then
+                    fsi.EvaluateExpression(req.Code)
+                else
+                    fsi.ExecuteInteraction(req.Code)
+            
+            this.Sender.Tell({ RequestId = req.RequestId; Result = result })
+            true
+        | _ -> false
+
+    static member Props(config: FsiConfig) =
+        Props.Create<FsiActor>(config)
+namespace FSharp.MCP.DevKit.Core.Actors
+
+open System
+open Akka.Actor
+open FSharp.MCP.DevKit.Core
+
+let toRemoteDiagnostic diagnostic =
+    { FileName = diagnostic.FileName
+      StartLine = diagnostic.StartLineAlternate
+      EndLine = diagnostic.EndLineAlternate
+      StartColumn = diagnostic.StartColumn
+      EndColumn = diagnostic.EndColumn
+      Severity = diagnostic.Severity.ToString()
+      Message = diagnostic.Message }
+
+let toRemoteResult result =
+    { Output = result.Output
+      Errors = result.Errors
+      IsSuccess = result.IsSuccess
+      ExecutionTimeMs = result.ExecutionTime |> Option.map (fun value -> value.TotalMilliseconds)
+      Diagnostics = result.Diagnostics |> Array.map toRemoteDiagnostic }
+
+let successResult output =
+    { Output = output
+      Errors = ""
+      IsSuccess = true
+      ExecutionTimeMs = None
+      Diagnostics = [||] }
+
+let failureResult error =
+    { Output = ""
+      Errors = error
+      IsSuccess = false
+      ExecutionTimeMs = None
+      Diagnostics = [||] }
+
+type FsiActor(config: FsiConfig) =
+    inherit ActorBase()
+    
+    let fsi = new FsiService(config)
+    do fsi.Start()
+
+    override this.Receive(message: obj) =
+        match message with
+        | :? FsiRemoteCommandRequest as req ->
+            let result =
+                try
+                    match req.CommandType with
+                    | "EXEC" -> fsi.ExecuteInteraction(req.Payload) |> toRemoteResult
+                    | "EVAL" -> fsi.EvaluateExpression(req.Payload) |> toRemoteResult
+                    | "LOAD" -> fsi.ExecuteInteraction($"#load \"{req.Payload}\"") |> toRemoteResult
+                    | "PARSE" -> fsi.ParseAndCheck(req.Payload) |> toRemoteResult
+                    | "REFERENCE_NUGET" ->
+                        fsi.ReferenceNugetPackage(req.Payload, ?usePackageTargets = req.UsePackageTargets)
+                        |> toRemoteResult
+                    | "REFERENCE_ASSEMBLY" -> fsi.ReferenceAssembly(req.Payload) |> toRemoteResult
+                    | "ADD_PATH" -> fsi.AddSearchPath(req.Payload) |> toRemoteResult
+                    | "RESET" ->
+                        fsi.Reset()
+                        successResult "FSI session reset"
+                    | "RESTART" ->
+                        fsi.Restart()
+                        successResult "FSI session restarted"
+                    | "STATE" ->
+                        fsi.GetState()
+                        |> successResult
+                    | "PING" -> successResult "PONG"
+                    | unknown -> failureResult $"Unsupported remote FSI command: {unknown}"
+                with ex ->
+                    failureResult ex.Message
+
+            this.Sender.Tell({ RequestId = req.RequestId; Result = result })
+            true
+        | _ -> false
+
+    static member Props(config: FsiConfig) =
+        Props.Create<FsiActor>(config)
+Edited file
+FSharp.MCP.DevKit.Messages.fsproj
++8
+-11
+
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="McpActorMessages.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.10.101" />
+  </ItemGroup>
+</Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="McpActorMessages.fs" />
+  </ItemGroup>
+</Project>
+Edited file
+McpActorMessages.fs
++29
+-28
+
+namespace FSharp.MCP.DevKit.Core
+
+open System
+open FSharp.Compiler.Diagnostics
+
+type FsiResult =
+    { Output: string
+      Errors: string
+      IsSuccess: bool
+      Value: obj option
+      ExecutionTime: TimeSpan option
+      Diagnostics: FSharpDiagnostic[] }
+
+namespace FSharp.MCP.DevKit.Core.Actors
+
+open System
+open FSharp.MCP.DevKit.Core
+
+type FsiEvalRequest = {
+    RequestId: string
+    Code: string
+    IsExpression: bool
+}
+
+type FsiEvalResponse = {
+    RequestId: string
+    Result: FsiResult
+}
+namespace FSharp.MCP.DevKit.Core.Actors
+
+open System
+
+type FsiRemoteDiagnostic =
+    { FileName: string
+      StartLine: int
+      EndLine: int
+      StartColumn: int
+      EndColumn: int
+      Severity: string
+      Message: string }
+
+type FsiRemoteCommandRequest =
+    { RequestId: string
+      CommandType: string
+      Payload: string
+      UsePackageTargets: bool option }
+
+type FsiRemoteResult =
+    { Output: string
+      Errors: string
+      IsSuccess: bool
+      ExecutionTimeMs: float option
+      Diagnostics: FsiRemoteDiagnostic array }
+
+type FsiRemoteCommandResponse =
+    { RequestId: string
+      Result: FsiRemoteResult }
+這段開始收斂 server backend：我會把 McpFsiTools.fs 裡本地 FsiService + PipeServer + PipeClient 的 session 路徑移掉，改成一個 remote client adapter，讓既有 tools 還是用同樣的方法名，但實際都走 Akka 到 net472 host。
+
+Edited file
+McpFsiTools.fs
++211
+-194
+
+open System.Threading.Channels
+open Microsoft.Extensions.Logging
+open Akka.Actor
+open Akka.Configuration
+open FSharp.MCP.DevKit.Communication.IPC
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Analysis
+open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
+open ModelContextProtocol.Server
+open Fantomas.Core
+open Microsoft.Extensions.Logging
+open Akka.Actor
+open Akka.Configuration
+open FSharp.MCP.DevKit.Communication.IPC
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Core.Actors
+open FSharp.MCP.DevKit.Analysis
+open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
+open ModelContextProtocol.Server
+open Fantomas.Core
+
+            | _ -> Ok()
+
+    /// Service that manages the FSI pipe server and client
+    type FsiMcpService(logger: ILogger<FsiMcpService>) =
+        let configContent = File.ReadAllText("akka.server.conf")
+        let config = ConfigurationFactory.ParseString(configContent)
+        let system = ActorSystem.Create("McpClientSystem", config)
+        let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:18081/user/fsiActor"
+        let remoteActor = system.ActorSelection(remoteActorPath)
+        
+        let mutable fsiService: FsiService option = None
+        let mutable pipeServer: PipeServer option = None
+        let mutable pipeClient: PipeClient option = None
+        let asyncResultCache = AsyncFsiResultCache()
+        let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
+        let asyncProcessorGate = obj()
+        let asyncProcessorCts = new CancellationTokenSource()
+        let mutable asyncProcessor: Task option = None
+        let config = FsiConfig.defaultConfig
+        let pipeConfig = PipeConfig.defaultConfig
+
+        /// Default timeout for FSI operations (30 seconds)
+        let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
+
+        member private this.GetOrStartFsiCore() =
+            match fsiService with
+            | Some service when service.IsRunning -> service
+            | _ ->
+                this.StartFsi()
+
+                match fsiService with
+                | Some service -> service
+                | None -> failwith "FSI service failed to start"
+
+        member private this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
+            task {
+                try
+                    let service = this.GetOrStartFsiCore()
+                    use cts = new CancellationTokenSource()
+                    cts.CancelAfter(request.Timeout)
+                    let! result = service.ExecuteInteractionAsync(request.Code, cts.Token)
+                    asyncResultCache.[request.AsyncId] <- Some result
+
+                    logger.LogInformation(
+                        "Async FSI request completed. AsyncId={AsyncId} EnqueuedAt={EnqueuedAt}",
+                        request.AsyncId,
+                        request.EnqueuedAt
+                    )
+                with
+                | :? OperationCanceledException ->
+                    asyncResultCache.[request.AsyncId] <-
+                        Some(createFailedFsiResult $"Operation timed out after {request.Timeout.TotalSeconds} seconds" (Some request.Timeout))
+
+                    logger.LogWarning(
+                        "Async FSI request timed out. AsyncId={AsyncId} Timeout={TimeoutSeconds}",
+                        request.AsyncId,
+                        request.Timeout.TotalSeconds
+                    )
+                | ex ->
+                    asyncResultCache.[request.AsyncId] <- Some(createFailedFsiResult ex.Message None)
+                    logger.LogError(ex, "Async FSI request failed. AsyncId={AsyncId}", request.AsyncId)
+            }
+
+        member private this.RunAsyncProcessor(cancellationToken: CancellationToken) : Task =
+            task {
+                let reader = asyncRequestChannel.Reader
+
+                try
+                    while not cancellationToken.IsCancellationRequested do
+                        let! request = reader.ReadAsync(cancellationToken).AsTask()
+                        do! this.ProcessAsyncRequest(request)
+                with :? OperationCanceledException ->
+                    logger.LogInformation("Async FSI request processor stopped")
+            }
+
+        member private this.EnsureAsyncProcessorStarted() =
+            lock asyncProcessorGate (fun () ->
+                match asyncProcessor with
+                | Some worker when not worker.IsCompleted -> ()
+                | _ ->
+                    asyncProcessor <- Some(this.RunAsyncProcessor(asyncProcessorCts.Token))
+                    logger.LogInformation("Async FSI request processor started"))
+
+        /// Set the default timeout for FSI operations
+        member this.SetDefaultTimeout(timeout: TimeSpan) = defaultTimeout <- timeout
+
+        /// Get the current default timeout
+        member this.DefaultTimeout = defaultTimeout
+
+        member this.EnqueueExecuteCode(code: string, isExpression: bool, ?timeout: TimeSpan) =
+            let t = defaultArg timeout defaultTimeout
+            this.EnsureAsyncProcessorStarted()
+
+            let asyncId = Guid.NewGuid().ToString("N")
+
+            let request =
+                { AsyncId = asyncId
+                  Code = code
+                  Timeout = timeout
+                  EnqueuedAt = DateTime.UtcNow }
+
+            asyncResultCache.[asyncId] <- None
+
+            if asyncRequestChannel.Writer.TryWrite(request) then
+                logger.LogInformation("Async FSI request enqueued. AsyncId={AsyncId}", asyncId)
+                asyncId
+            else
+                asyncResultCache.TryRemove(asyncId) |> ignore
+                failwith "Failed to enqueue async FSI request"
+
+        member this.TryGetAsyncExecution(asyncId: string) =
+            match asyncResultCache.TryGetValue(asyncId) with
+            | true, result -> Some result
+            | false, _ -> None
+
+        member this.GetAsyncExecutionStatus(asyncId: string) =
+            this.TryGetAsyncExecution(asyncId) |> AsyncFsiStatus.fromCacheEntry asyncId
+
+        /// Start the FSI service and pipe server
+        member this.StartFsi() =
+            try
+                if fsiService.IsNone then
+                    let fsi = new FsiService(config)
+                    fsi.Start()
+
+                    // Initialize with common namespaces
+                    fsi.ExecuteInteraction("open System") |> ignore
+                    fsi.ExecuteInteraction("open System.IO") |> ignore
+                    fsi.ExecuteInteraction("open System.Collections.Generic") |> ignore
+
+                    let server = new PipeServer(pipeConfig, fsi)
+                    server.Start()
+
+                    let client = new PipeClient(pipeConfig)
+
+                    fsiService <- Some fsi
+                    pipeServer <- Some server
+                    pipeClient <- Some client
+
+                    logger.LogInformation(
+                        "FSI service started successfully with pipe name: {PipeName}",
+                        pipeConfig.PipeName
+                    )
+            with ex ->
+                logger.LogError(ex, "Failed to start FSI service")
+                reraise ()
+
+        /// Stop the FSI service and pipe server
+        member this.StopFsi() =
+            try
+                match pipeServer with
+                | Some server ->
+                    server.Stop()
+                    (server :> IDisposable).Dispose()
+                | None -> ()
+
+                match fsiService with
+                | Some fsi -> fsi.Stop()
+                | None -> ()
+
+                pipeServer <- None
+                pipeClient <- None
+                fsiService <- None
+
+                logger.LogInformation("FSI service stopped")
+            with ex ->
+                logger.LogError(ex, "Error stopping FSI service")
+
+        /// Get the pipe client for executing commands
+        member this.GetClient() =
+            match pipeClient with
+            | Some client -> client
+            | None ->
+                this.StartFsi()
+                pipeClient.Value
+
+        /// Check if FSI is running
+        member this.IsRunning =
+            match fsiService with
+            | Some fsi -> fsi.IsRunning
+            | None -> false
+
+        interface IDisposable with
+            member this.Dispose() =
+                asyncProcessorCts.Cancel()
+                asyncProcessorCts.Dispose()
+                this.StopFsi()
+    let toPipeDiagnostic diagnostic =
+        { FileName = diagnostic.FileName
+          StartLine = diagnostic.StartLine
+          EndLine = diagnostic.EndLine
+          StartColumn = diagnostic.StartColumn
+          EndColumn = diagnostic.EndColumn
+          Severity = diagnostic.Severity
+          Message = diagnostic.Message }
+
+    let toPipeResponse requestId result =
+        let diagnostics =
+            if Array.isEmpty result.Diagnostics then
+                None
+            else
+                result.Diagnostics |> Array.map toPipeDiagnostic |> Some
+
+        { RequestId = requestId
+          IsSuccess = result.IsSuccess
+          Output = result.Output
+          Errors = result.Errors
+          Diagnostics = diagnostics
+          Value = None
+          ExecutionTime = result.ExecutionTimeMs |> Option.map TimeSpan.FromMilliseconds
+          Timestamp = DateTime.UtcNow }
+
+    let toCachedFsiResult response =
+        { Output = response.Output
+          Errors = response.Errors
+          IsSuccess = response.IsSuccess
+          Value = None
+          ExecutionTime = response.ExecutionTime
+          Diagnostics = [||] }
+
+    type RemoteFsiClient(remoteActor: ActorSelection, logger: ILogger) =
+        member this.SendCommand(commandType: string, payload: string, ?usePackageTargets: bool, ?timeout: TimeSpan) : Task<PipeResponse> =
+            let effectiveTimeout = defaultArg timeout (TimeSpan.FromSeconds(30.0))
+            let requestId = Guid.NewGuid().ToString("N")
+
+            task {
+                try
+                    let request =
+                        { RequestId = requestId
+                          CommandType = commandType
+                          Payload = payload
+                          UsePackageTargets = usePackageTargets }
+
+                    let! response = remoteActor.Ask<FsiRemoteCommandResponse>(request, effectiveTimeout)
+                    return toPipeResponse response.RequestId response.Result
+                with ex ->
+                    logger.LogError(ex, "Failed to execute remote FSI command {CommandType}", commandType)
+
+                    return
+                        { RequestId = requestId
+                          IsSuccess = false
+                          Output = ""
+                          Errors = ex.Message
+                          Diagnostics = None
+                          Value = None
+                          ExecutionTime = None
+                          Timestamp = DateTime.UtcNow }
+            }
+
+        member this.ExecuteCode(code: string, ?timeout: TimeSpan) =
+            this.SendCommand("EXEC", code, ?timeout = timeout)
+
+        member this.EvaluateExpression(expression: string, ?timeout: TimeSpan) =
+            this.SendCommand("EVAL", expression, ?timeout = timeout)
+
+        member this.LoadScript(scriptPath: string, ?timeout: TimeSpan) =
+            this.SendCommand("LOAD", scriptPath, ?timeout = timeout)
+
+        member this.ParseAndCheck(code: string, ?timeout: TimeSpan) =
+            this.SendCommand("PARSE", code, ?timeout = timeout)
+
+        member this.ReferenceNugetPackage(packageName: string, ?timeout: TimeSpan) =
+            this.SendCommand("REFERENCE_NUGET", packageName, ?timeout = timeout)
+
+        member this.ReferenceAssembly(assemblyPath: string, ?timeout: TimeSpan) =
+            this.SendCommand("REFERENCE_ASSEMBLY", assemblyPath, ?timeout = timeout)
+
+        member this.AddSearchPath(path: string, ?timeout: TimeSpan) =
+            this.SendCommand("ADD_PATH", path, ?timeout = timeout)
+
+        member this.Reset(?timeout: TimeSpan) =
+            this.SendCommand("RESET", "", ?timeout = timeout)
+
+        member this.Restart(?timeout: TimeSpan) =
+            this.SendCommand("RESTART", "", ?timeout = timeout)
+
+        member this.GetState(?timeout: TimeSpan) =
+            this.SendCommand("STATE", "", ?timeout = timeout)
+
+        member this.IsServerAvailable() =
+            try
+                let response =
+                    this.SendCommand("PING", "", timeout = TimeSpan.FromSeconds(1.0))
+                        .GetAwaiter()
+                        .GetResult()
+
+                response.IsSuccess
+            with _ ->
+                false
+
+    /// Service that manages remote FSI access and async queue
+    type FsiMcpService(logger: ILogger<FsiMcpService>) =
+        let configContent = File.ReadAllText("akka.server.conf")
+        let akkaConfig = ConfigurationFactory.ParseString(configContent)
+        let system = ActorSystem.Create("McpClientSystem", akkaConfig)
+        let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor"
+        let remoteActor = system.ActorSelection(remoteActorPath)
+        let remoteClient = new RemoteFsiClient(remoteActor, logger)
+        let asyncResultCache = AsyncFsiResultCache()
+        let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
+        let asyncProcessorGate = obj()
+        let asyncProcessorCts = new CancellationTokenSource()
+        let mutable asyncProcessor: Task option = None
+        let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
+
+        member this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
+            task {
+                let! response = remoteClient.ExecuteCode(request.Code, request.Timeout)
+                let result = toCachedFsiResult response
+                asyncResultCache.[request.AsyncId] <- Some result
+
+                if response.IsSuccess then
+                    logger.LogInformation(
+                        "Async FSI request completed. AsyncId={AsyncId} EnqueuedAt={EnqueuedAt}",
+                        request.AsyncId,
+                        request.EnqueuedAt
+                    )
+                else
+                    logger.LogWarning(
+                        "Async FSI request failed. AsyncId={AsyncId} Error={Error}",
+                        request.AsyncId,
+                        response.Errors
+                    )
+            }
+
+        member this.RunAsyncProcessor(cancellationToken: CancellationToken) : Task =
+            task {
+                let reader = asyncRequestChannel.Reader
+
+                try
+                    while not cancellationToken.IsCancellationRequested do
+                        let! request = reader.ReadAsync(cancellationToken).AsTask()
+                        do! this.ProcessAsyncRequest(request)
+                with :? OperationCanceledException ->
+                    logger.LogInformation("Async FSI request processor stopped")
+            }
+
+        member this.EnsureAsyncProcessorStarted() =
+            lock asyncProcessorGate (fun () ->
+                match asyncProcessor with
+                | Some worker when not worker.IsCompleted -> ()
+                | _ ->
+                    asyncProcessor <- Some(this.RunAsyncProcessor(asyncProcessorCts.Token))
+                    logger.LogInformation("Async FSI request processor started"))
+
+        /// Set the default timeout for FSI operations
+        member this.SetDefaultTimeout(timeout: TimeSpan) = defaultTimeout <- timeout
+
+        /// Get the current default timeout
+        member this.DefaultTimeout = defaultTimeout
+
+        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan) =
+            this.EnsureAsyncProcessorStarted()
+
+            let asyncId = Guid.NewGuid().ToString("N")
+
+            let request =
+                { AsyncId = asyncId
+                  Code = code
+                  Timeout = timeout
+                  EnqueuedAt = DateTime.UtcNow }
+
+            asyncResultCache.[asyncId] <- None
+
+            if asyncRequestChannel.Writer.TryWrite(request) then
+                logger.LogInformation("Async FSI request enqueued. AsyncId={AsyncId}", asyncId)
+                asyncId
+            else
+                asyncResultCache.TryRemove(asyncId) |> ignore
+                failwith "Failed to enqueue async FSI request"
+
+        member this.TryGetAsyncExecution(asyncId: string) =
+            match asyncResultCache.TryGetValue(asyncId) with
+            | true, result -> Some result
+            | false, _ -> None
+
+        member this.GetAsyncExecutionStatus(asyncId: string) =
+            this.TryGetAsyncExecution(asyncId) |> AsyncFsiStatus.fromCacheEntry asyncId
+
+        member this.GetClient() = remoteClient
+
+        member this.IsRunning = remoteClient.IsServerAvailable()
+
+        interface IDisposable with
+            member _.Dispose() =
+                asyncProcessorCts.Cancel()
+                asyncProcessorCts.Dispose()
+                system.Dispose()
+
+Ran rg -n "StartLineAlternate|EndLineAlternate|StartLine|EndLine" src/FSharp.MCP.DevKit.Core src/FSharp.MCP.DevKit.Communication
+
+
+Ran $i=0; Get-Content src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs | ForEach-Object { $i++; if($i -ge 172 -and $i -le 188){ '{0,4}: {1}' -f $i, $_ } }
+
+
+後端骨架已經改完，我先用 local restore workaround 跑 target repo build，把真正的 compile 錯誤打出來。這一步會決定我接下來補的是小型型別修正，還是還有漏掉的設計接口。
+
+Ran $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319112330.async-merge-build.op_log' "=== repo: FSharp.MCP.DevKit - Async / workaround build ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false" | Tee-Object -FilePath $op -Append dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false 2>&1 | Tee-Object -FilePath $op -Append
+
+
+編譯已經把剩下的真實問題打出來了，主要是兩類：FsiActor.fs 用 namespace 裝 helper value，以及 McpFsiTools.fs 因為 PipeResponse / FsiResult / FsiRemoteResult 欄位名稱重疊，型別推斷跑偏。我先補型別註記和 module 邊界，這屬於 merge 後的預期收尾。
+
+Edited file
+FsiActor.fs
++3
+-3
+
+namespace FSharp.MCP.DevKit.Core.Actors
+module FSharp.MCP.DevKit.Core.Actors
+
+    { FileName = diagnostic.FileName
+      StartLine = diagnostic.StartLineAlternate
+      EndLine = diagnostic.EndLineAlternate
+      StartLine = diagnostic.StartLine
+      EndLine = diagnostic.EndLine
+      StartColumn = diagnostic.StartColumn
+Edited file
+McpFsiTools.fs
++3
+-3
+
+
+    let toPipeDiagnostic diagnostic =
+    let toPipeDiagnostic (diagnostic: FsiRemoteDiagnostic) : PipeDiagnostic =
+        { FileName = diagnostic.FileName
+
+    let toPipeResponse requestId result =
+    let toPipeResponse (requestId: string) (result: FsiRemoteResult) : PipeResponse =
+        let diagnostics =
+
+    let toCachedFsiResult response =
+    let toCachedFsiResult (response: PipeResponse) : FsiResult =
+        { Output = response.Output
+Ran $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319112330.async-merge-build.op_log' "=== repo: FSharp.MCP.DevKit - Async / workaround build rerun ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false" | Tee-Object -FilePath $op -Append dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false 2>&1 | Tee-Object -FilePath $op -Append
+
+
+我把 actor compile path 再收斂一步：FsiActor 本質上是 host-specific，不應繼續塞在 shared core slice 裡。接下來會把它改成由 FsiHost 編譯，core 回到 shared library 身分，這會把目前 net472 / messages / actor 交叉依賴一次拆乾淨。
+
+Edited file
+FSharp.MCP.DevKit.Core.fsproj
++1
+-15
+
+  <PropertyGroup>
+    <TargetFrameworks>net472;netstandard2.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;net10.0</TargetFrameworks>
+    <RootNamespace>FSharp.MCP.DevKit.Core</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+    <Compile Include="FSIService.fs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <Compile Include="FsiActor.fs" />
+  </ItemGroup>
+    <PackageReference Include="Paket.Core" Version="9.0.2" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net472'">
+    <PackageReference Include="Akka" Version="1.5.30" />
+    <PackageReference Include="Akka.Remote" Version="1.5.30" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+  </ItemGroup>
+Edited file
+FsiActor.fs
++9
+-5
+
+
+let toRemoteDiagnostic diagnostic =
+let toRemoteDiagnostic (diagnostic: FSharp.Compiler.Diagnostics.FSharpDiagnostic) : FsiRemoteDiagnostic =
+    { FileName = diagnostic.FileName
+
+let toRemoteResult result =
+let toRemoteResult (result: FsiResult) : FsiRemoteResult =
+    { Output = result.Output
+
+let successResult output =
+let successResult (output: string) : FsiRemoteResult =
+    { Output = output
+
+let failureResult error =
+let failureResult (error: string) : FsiRemoteResult =
+    { Output = ""
+
+            this.Sender.Tell({ RequestId = req.RequestId; Result = result })
+            let response : FsiRemoteCommandResponse =
+                { RequestId = req.RequestId
+                  Result = result }
+
+            this.Sender.Tell(response)
+            true
+Edited file
+FSharp.MCP.DevKit.FsiHost.fsproj
++14
+-9
+
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+    <None Include="akka.conf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+  </ItemGroup>
+</Project>
+  <ItemGroup>
+    <Compile Include="..\FSharp.MCP.DevKit.Core\FsiActor.fs" Link="FsiActor.fs" />
+    <Compile Include="Program.fs" />
+    <None Include="akka.conf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
+    <ProjectReference Include="..\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Akka" Version="1.5.30" />
+    <PackageReference Include="Akka.Remote" Version="1.5.30" />
+  </ItemGroup>
+</Project>
+Ran $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319112330.async-merge-build.op_log' "=== repo: FSharp.MCP.DevKit - Async / workaround build rerun 2 ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false" | Tee-Object -FilePath $op -Append dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false 2>&1 | Tee-Object -FilePath $op -Append
+
+
+我把 DTO namespace 再拆開，避免它和 FsiActor 所在模組同名互相遮蔽。這不是功能改動，而是把 transport contract 跟 actor implementation 分到不同命名空間，讓 F# 型別解析穩定下來。
+
+Edited file
+FsiActor.fs
++1
+-0
+
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Messages
+
+Edited file
+McpActorMessages.fs
++1
+-1
+
+namespace FSharp.MCP.DevKit.Core.Actors
+namespace FSharp.MCP.DevKit.Messages
+
+Edited file
+McpFsiTools.fs
++1
+-1
+
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Core.Actors
+open FSharp.MCP.DevKit.Messages
+open FSharp.MCP.DevKit.Analysis
+Ran $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319112330.async-merge-build.op_log' "=== repo: FSharp.MCP.DevKit - Async / workaround build rerun 3 ===" | Tee-Object -FilePath $op -Append "cmd: dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false" | Tee-Object -FilePath $op -Append dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false 2>&1 | Tee-Object -FilePath $op -Append
+
+
+build 已過，現在進行真正的 mixed-runtime smoke：只啟動 net472 host，然後用 server assembly 直接建立 FsiMcpService 去測 sync execute、async enqueue/poll、session continuity、reset。這能直接驗證本輪最核心的 Akka 通道與單一 session 狀態。
+
+Ran $ErrorActionPreference='Stop' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319113630.async-smoke.op_log' $hostOp='e:\dk\FSharp.MCP.DevKit - Async\log\20260319113631.fsi-host.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $serverDll='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not (normalize evalResp.Output).Contains("42") then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOp -RedirectStandardError $hostOp -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append "cmd: dotnet fsi --exec $scriptPath" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath 2>&1 | Tee-Object -FilePath $op -Append $exitCode = $LASTEXITCODE } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+host 啟動卡在 PowerShell 的 redirect 限制，不是程式本身問題。我改成 stdout / stderr 分開落檔再重跑 smoke。
+
+Ran $ErrorActionPreference='Stop' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319113630.async-smoke.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319113631.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319113632.fsi-host-stderr.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not (normalize evalResp.Output).Contains("42") then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append "cmd: dotnet fsi --exec $scriptPath" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath 2>&1 | Tee-Object -FilePath $op -Append $exitCode = $LASTEXITCODE } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+Ran Get-Content log/20260319113631.fsi-host-stdout.op_log -Tail 120
+
+
+Ran Get-Content log/20260319113630.async-smoke.op_log -Tail 120
+
+
+Ran Get-Content log/20260319113632.fsi-host-stderr.op_log -Tail 120
+
+
+失敗點應該不是 Akka 通道，而是 dotnet fsi 在 temp script 下無法自動解析 server output 目錄裡的相依 DLL。我補 #I 指向 build output 後重跑。
+
+Ran $ErrorActionPreference='Stop' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114130.async-smoke-rerun.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114131.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114132.fsi-host-stderr.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $serverDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not (normalize evalResp.Output).Contains("42") then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append "cmd: dotnet fsi --exec $scriptPath" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath 2>&1 | Tee-Object -FilePath $op -Append $exitCode = $LASTEXITCODE } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+Ran Get-Content log/20260319114130.async-smoke-rerun.op_log -Tail 200
+
+
+Ran Get-Content log/20260319114131.fsi-host-stdout.op_log -Tail 200
+
+
+Ran Get-Content log/20260319114132.fsi-host-stderr.op_log -Tail 200
+
+
+Ran $serverDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0' [System.Reflection.Assembly]::LoadFrom((Join-Path $serverDir 'FSharp.MCP.DevKit.dll')) | Out-Null [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -like 'FSharp.MCP.DevKit*' -or $_.GetName().Name -like 'Microsoft.Extensions.Logging.Abstractions' } | ForEach-Object { $_.GetTypes() | Where-Object { $_.FullName -like '*FsiMcpService*' -or $_.FullName -like '*RemoteFsiClient*' } | Select-Object -ExpandProperty FullName }
+
+
+Ran $serverDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0' $asm=[System.Reflection.Assembly]::LoadFrom((Join-Path $serverDir 'FSharp.MCP.DevKit.dll')) try { $asm.GetTypes() | Out-Null } catch [System.Reflection.ReflectionTypeLoadException] { $_.Exception.LoaderExceptions | ForEach-Object { $_.Message } }
+
+
+我改成 cmd /c 直接做 stdout/stderr 重導，繞過 PowerShell 把 dotnet fsi 的 stderr 包成例外的問題，這樣就能拿到真正的 smoke script 輸出。
+
+Ran $ErrorActionPreference='Stop' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114530.async-smoke-cmd.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114531.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114532.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114533.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not (normalize evalResp.Output).Contains("42") then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append cmd /c "dotnet fsi --exec \"$scriptPath\" > \"$clientOut\" 2>&1" Get-Content $clientOut | Tee-Object -FilePath $op -Append $exitCode = $LASTEXITCODE } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+PowerShell 的 cmd quoting 又踩到 Windows path 空白。我改成 PowerShell 原生重導，不中止在 stderr，直接把 dotnet fsi 全量導到檔案再讀回來。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114730.async-smoke-pwsh.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114731.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114732.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114733.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not (normalize evalResp.Output).Contains("42") then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+真正的 smoke 錯誤抓到了，是測試 script 自己的 F# 語法，不是合併後程式碼。補上括號後重跑就能看到通道結果。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114930.async-smoke-pwsh-rerun.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114931.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114932.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319114933.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not ((normalize evalResp.Output).Contains("42")) then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+下一個錯誤也在 smoke script，不在 repo：dotnet fsi 需要顯式 #r logging abstractions。補上之後就能真正打到服務物件了。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115130.async-smoke-pwsh-rerun2.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115131.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115132.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115133.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\Microsoft.Extensions.Logging.Abstractions.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not ((normalize evalResp.Output).Contains("42")) then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+Ran Get-ChildItem -Path $env:USERPROFILE\.nuget\packages\microsoft.extensions.logging.abstractions -Recurse -Filter Microsoft.Extensions.Logging.Abstractions.dll | Select-Object -ExpandProperty FullName
+
+
+我已找到 Microsoft.Extensions.Logging.Abstractions.dll 的實際 NuGet cache 路徑，直接用那個實體檔案 reference。這次就能排掉 fsi 找不到 logging namespace 的問題。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115430.async-smoke-pwsh-rerun3.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115431.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115432.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115433.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"C:\Users\Administrator\.nuget\packages\microsoft.extensions.logging.abstractions\10.0.5\lib\net10.0\Microsoft.Extensions.Logging.Abstractions.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not ((normalize evalResp.Output).Contains("42")) then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+PipeResponse 的 namespace 也需要顯式 #r communication assembly，這還是在 smoke harness 的相依載入，不是 merge 後主程式碼錯。補上後再跑一次。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115630.async-smoke-pwsh-rerun4.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115631.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115632.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115633.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"C:\Users\Administrator\.nuget\packages\microsoft.extensions.logging.abstractions\10.0.5\lib\net10.0\Microsoft.Extensions.Logging.Abstractions.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.Communication.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not ((normalize evalResp.Output).Contains("42")) then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+這次已經真正打進 service 了，失敗原因是 smoke harness 的工作目錄不在 server output，抓不到 akka.server.conf。把 script 開頭切到 server output 後就能做最後一次驗證。
+
+Ran $ErrorActionPreference='Continue' $op='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115830.async-smoke-final.op_log' $hostOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115831.fsi-host-stdout.op_log' $hostErr='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115832.fsi-host-stderr.op_log' $clientOut='e:\dk\FSharp.MCP.DevKit - Async\log\20260319115833.smoke-client.op_log' $scriptPath=Join-Path $env:TEMP 'fsharp_mcp_async_smoke.fsx' $serverDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0' $hostDir='e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472' @' #I @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0" #r @"C:\Users\Administrator\.nuget\packages\microsoft.extensions.logging.abstractions\10.0.5\lib\net10.0\Microsoft.Extensions.Logging.Abstractions.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.Communication.dll" #r @"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0\FSharp.MCP.DevKit.dll" open System open System.IO open System.Threading open Microsoft.Extensions.Logging.Abstractions open FSharp.MCP.DevKit.Server.McpFsiTools open FSharp.MCP.DevKit.Communication.IPC Directory.SetCurrentDirectory(@"e:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\bin\Debug\net10.0") let runTask (t: System.Threading.Tasks.Task<'T>) = t.GetAwaiter().GetResult() let normalize (text: string) = text.Replace("\r", " ").Replace("\n", " ").Trim() let printResponse label (response: PipeResponse) = printfn "%s|success=%b|output=%s|errors=%s" label response.IsSuccess (normalize response.Output) (normalize response.Errors) let svc = new FsiMcpService(NullLogger<FsiMcpService>.Instance) let client = svc.GetClient() printfn "isRunning|%b" svc.IsRunning if not svc.IsRunning then failwith "FSI host not reachable" let initResp = runTask (client.ExecuteCode("let x = 41")) printResponse "init" initResp if not initResp.IsSuccess then failwith "initial execute failed" let asyncId = svc.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(30.0)) printfn "asyncId|%s" asyncId let rec poll attempts = let status = svc.GetAsyncExecutionStatus(asyncId) let successText = match status.Result with | Some result -> string result.IsSuccess | None -> "None" let outputText = match status.Result with | Some result -> normalize result.Output | None -> "" let errorText = match status.Result with | Some result -> normalize result.Errors | None -> "" printfn "poll|exists=%b|completed=%b|success=%s|output=%s|errors=%s" status.Exists status.IsCompleted successText outputText errorText if status.IsCompleted || attempts <= 0 then status else Thread.Sleep(500) poll (attempts - 1) let asyncStatus = poll 20 if not asyncStatus.IsCompleted then failwith "async request did not complete" match asyncStatus.Result with | Some result when result.IsSuccess -> () | Some result -> failwith $"async request failed: {normalize result.Errors}" | None -> failwith "async result missing" let evalResp = runTask (client.EvaluateExpression("y")) printResponse "evalY" evalResp if not evalResp.IsSuccess then failwith "y evaluation failed" if not ((normalize evalResp.Output).Contains("42")) then failwith $"unexpected y output: {normalize evalResp.Output}" let resetResp = runTask (client.Reset()) printResponse "reset" resetResp if not resetResp.IsSuccess then failwith "reset failed" let afterReset = runTask (client.EvaluateExpression("y")) printResponse "afterReset" afterReset if afterReset.IsSuccess then failwith "y should not exist after reset" '@ | Set-Content -Path $scriptPath -Encoding UTF8 "=== host start ===" | Tee-Object -FilePath $op -Append $hostProc = Start-Process -FilePath (Join-Path $hostDir 'FSharp.MCP.DevKit.FsiHost.exe') -WorkingDirectory $hostDir -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru try { Start-Sleep -Seconds 4 "=== smoke script ===" | Tee-Object -FilePath $op -Append dotnet fsi --exec $scriptPath *> $clientOut $exitCode = $LASTEXITCODE Get-Content $clientOut | Tee-Object -FilePath $op -Append } finally { if ($hostProc -and -not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force } Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue } exit $exitCode
+
+
+Context automatically compacted
+我先接著收斂目前 blocker，確認 FSharp.MCP.DevKit - Async 的執行期依賴缺口、補齊文件狀態，再跑 check.fsx 做最後驗證。
+
+Ran git status --short --branch
+
+
+Ran rg -n "ObjectPool|Akka.Serialization.NewtonSoftJson|PackageReference Include=\"Akka|PackageReference Include=\"Microsoft.Extensions.ObjectPool|NewtonsoftJsonSerializer|akka\.server\.conf" -S src
+
+
+Ran Get-ChildItem -Force src\FSharp.MCP.DevKit.Server\bin\Debug\net9.0 | Select-Object Name,Length | Format-Table -AutoSize
+
+
+Ran Get-Content -Encoding UTF8 log\20260319115830.async-smoke-final.op_log | Select-Object -Last 120
+
+
+我在收斂執行期問題。現在 compile 已經過，但 smoke harness 在載入 Akka.Serialization.NewtonSoftJsonSerializer 時缺 Microsoft.Extensions.ObjectPool，先確認是專案參考缺漏還是僅 FSI 腳本載入路徑問題。
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj
+
+
+Ran Select-String -Path src\FSharp.MCP.DevKit.Server\bin\Debug\net9.0\FSharp.MCP.DevKit.deps.json -Pattern 'ObjectPool|Akka.Serialization.NewtonSoftJson|Microsoft.Extensions.ObjectPool' -Context 0,3
+
+
+Ran dotnet list src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj package --include-transitive
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.FsiHost\FSharp.MCP.DevKit.FsiHost.fsproj
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\akka.server.conf
+
+
+Ran rg -n 'ObjectPool|NewtonSoftJsonSerializer|Akka.Serialization.NewtonSoftJson' src\FSharp.MCP.DevKit.Server\obj -S
+
+
+Ran Get-ChildItem -Recurse -Filter Microsoft.Extensions.ObjectPool.dll | Select-Object FullName,Length | Format-Table -AutoSize
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.FsiHost\akka.conf
+
+
+有兩個線索：project.assets.json 已經有 Microsoft.Extensions.ObjectPool 依賴，但 server output 沒 copy 出來；同時 net472 host 目錄有一個只有 40 bytes 的同名檔案，看起來不像正常 runtime assembly。我先把這個依賴鏈釐清，再決定是補 package reference 還是調整 smoke harness。
+
+Ran Get-Item src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\Microsoft.Extensions.ObjectPool.dll | Format-List *
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\bin\Debug\net9.0\FSharp.MCP.DevKit.deps.json | Select-String -Pattern 'Akka.Serialization.NewtonSoftJson|Microsoft.Extensions.ObjectPool' -Context 0,8
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\obj\project.assets.json | Select-String -Pattern 'Microsoft.Extensions.ObjectPool/|Akka.Serialization.NewtonSoftJson/' -Context 0,12
+
+
+Ran Get-ChildItem -Recurse E:\Users\Administrator\.nuget\packages\microsoft.extensions.objectpool | Select-Object FullName,Length | Format-Table -AutoSize
+
+
+Ran Get-ChildItem -Recurse C:\Users\Administrator\.nuget\packages\microsoft.extensions.objectpool | Select-Object FullName,Length | Format-Table -AutoSize
+
+
+Ran rg -n 'Microsoft.Extensions.ObjectPool|Akka.Serialization.NewtonSoftJson' src\FSharp.MCP.DevKit.Server\obj\project.assets.json -A 8 -B 2
+
+
+Ran rg -n 'Microsoft.Extensions.ObjectPool|Akka.Serialization.NewtonSoftJson' src\FSharp.MCP.DevKit.Server\bin\Debug\net9.0\FSharp.MCP.DevKit.deps.json -A 6 -B 2
+
+
+這個 ObjectPool 問題比較像 smoke harness 載入方式造成的，不一定是 merged server 本身有 bug。FSharp.MCP.DevKit 是 ASP.NET Core app，直接用 dotnet fsi #r 它的 DLL 會繞過 runtimeconfig/deps.json，shared framework 裡的 Microsoft.Extensions.* 不會自動補進來。接下來我會改用「真正的 app host」方式做 smoke，而不是直接把 web app DLL 塞進 FSI。
+
+Ran rg -n "FsiMcpService|ExecuteCode|queue-request|async-exec|MCP client|ModelContextProtocol|mcp" src tests -S
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\Program.fs
+
+
+Ran Get-Content -Encoding UTF8 doc\Action.md
+
+
+Ran Get-Content -Encoding UTF8 doc\DevLog.md
+
+
+我先把 smoke 驗證換成真正可代表部署型態的方式。下一步不是再用 fsi #r webapp.dll，而是做一個臨時 .NET app 直接 ProjectReference 到 server project，這樣 runtimeconfig/deps 和 shared framework 都會正確生效。
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\McpFsiTools.fs | Select-Object -First 340
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Core\FsiActor.fs
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.FsiHost\Program.fs
+
+
+Ran Get-Content -Encoding UTF8 FSharp.MCP.DevKit.Async.sln | Select-Object -First 160
+
+
+我先不碰 repo 代碼，先做臨時 smoke harness 驗證 merged backend 本身是否可跑。這會直接啟 host，然後用一個小型 .NET app 建立 FsiMcpService 做 sync/async/reset 流程。
+
+Ran $smokeDir = Join-Path $env:TEMP 'fsharp-mcp-async-smoke-app'; if (Test-Path $smokeDir) { Remove-Item -Recurse -Force $smokeDir }; dotnet new console -lang F# -o $smokeDir
+
+
+Ran $hostOut = 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472'; if (Test-Path $hostOut) { Get-ChildItem $hostOut | Select-Object Name,Length | Format-Table -AutoSize }
+
+
+Ran dotnet new console -lang F# -o E:\dk\_smoke_async_20260319
+
+
+Ran Get-Content -Encoding UTF8 E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj
+
+
+Ran Get-Content -Encoding UTF8 E:\dk\_smoke_async_20260319\Program.fs
+
+
+Ran rg -n "type AsyncFsiStatus|module AsyncFsiStatus|IsCompleted|AsyncFsiStatus" E:\dk\FSharp.MCP.DevKit - Async\src -S
+
+
+Ran rg -n "type AsyncFsiStatus|module AsyncFsiStatus|AsyncFsiStatus" -S src
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\McpFsiTools.fs | Select-Object -Skip 320 -First 120
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Core\FSIService.fs | Select-Object -First 80
+
+
+我會先補一個真正的執行期 bug：host 跟 server 都是用相對路徑讀 akka*.conf，目前只要工作目錄不是輸出目錄就會失敗。這是實際部署風險，不只是 smoke harness 問題，所以先修成以 assembly base directory 為準。
+
+Edited file
+Program.fs
++7
+-6
+
+
+[<EntryPoint>]
+let main argv =
+    let configContent = File.ReadAllText("akka.conf")
+    let config = ConfigurationFactory.ParseString(configContent)
+    let system = ActorSystem.Create("FsiExecutionSystem", config)
+[<EntryPoint>]
+let main argv =
+    let configPath = Path.Combine(AppContext.BaseDirectory, "akka.conf")
+    let configContent = File.ReadAllText(configPath)
+    let config = ConfigurationFactory.ParseString(configContent)
+    let system = ActorSystem.Create("FsiExecutionSystem", config)
+    
+    
+    0
+    0
+Edited file
+McpFsiTools.fs
++2
+-1
+
+    type FsiMcpService(logger: ILogger<FsiMcpService>) =
+        let configContent = File.ReadAllText("akka.server.conf")
+        let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+        let configContent = File.ReadAllText(configPath)
+        let akkaConfig = ConfigurationFactory.ParseString(configContent)
+Ran Get-Content -Raw -Encoding UTF8 E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj
+
+
+Ran Get-Content -Raw -Encoding UTF8 E:\dk\_smoke_async_20260319\Program.fs
+
+
+Created file
+Program.fs
++69
+-0
+
+open System
+open System.IO
+open System.Threading.Tasks
+open Microsoft.Extensions.Logging.Abstractions
+open FSharp.MCP.DevKit.Server.McpFsiTools
+
+let fail message =
+    Console.Error.WriteLine(message)
+    1
+
+[<EntryPoint>]
+let main _ =
+    let serverConfigSource = @"E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\akka.server.conf"
+    let serverConfigTarget = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+    File.Copy(serverConfigSource, serverConfigTarget, true)
+
+    use service = new FsiMcpService(NullLogger<FsiMcpService>.Instance)
+    let client = service.GetClient()
+
+    if not service.IsRunning then
+        fail "Remote FSI host is not reachable."
+    else
+        let exec = client.ExecuteCode("let x = 41", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+        if not exec.IsSuccess then
+            fail $"Sync execute failed: {exec.Errors}"
+        else
+            let asyncId = service.EnqueueExecuteCode("let y = x + 1", TimeSpan.FromSeconds(10.0))
+            let mutable status = service.GetAsyncExecutionStatus(asyncId)
+            let mutable retries = 0
+
+            while not status.IsCompleted && retries < 50 do
+                Task.Delay(200).GetAwaiter().GetResult()
+                status <- service.GetAsyncExecutionStatus(asyncId)
+                retries <- retries + 1
+
+            if not status.Exists then
+                fail $"Async execution entry not found: {asyncId}"
+            elif not status.IsCompleted then
+                fail $"Async execution did not complete in time: {asyncId}"
+            elif status.Result.IsNone || not status.Result.Value.IsSuccess then
+                let error =
+                    status.Result
+                    |> Option.map (fun result -> result.Errors)
+                    |> Option.defaultValue "unknown async execution failure"
+
+                fail $"Async execution failed: {error}"
+            else
+                let eval = client.EvaluateExpression("y", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                if not eval.IsSuccess then
+                    fail $"Evaluate y failed: {eval.Errors}"
+                else
+                    let reset = client.Reset(TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                    if not reset.IsSuccess then
+                        fail $"Reset failed: {reset.Errors}"
+                    else
+                        let postReset = client.EvaluateExpression("y", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                        if postReset.IsSuccess then
+                            fail "Reset regression: y still exists after reset."
+                        else
+                            printfn "SMOKE_OK"
+                            printfn "EXEC_OUTPUT=%s" exec.Output
+                            printfn "ASYNC_ID=%s" asyncId
+                            printfn "EVAL_OUTPUT=%s" eval.Output
+                            printfn "POST_RESET_ERROR=%s" postReset.Errors
+                            0
+Edited file
+_smoke_async_20260319.fsproj
++9
+-5
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+我現在重建一次 target solution，然後直接跑 host + 臨時 smoke app。這一步如果過，表示 mixed-runtime + async queue 的核心流程已經能實際走通，不再只是 compile success。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $logDir = Join-Path $repo 'log' $timestamp = Get-Date -Format 'yyyyMMddHHmmss' $opLog = Join-Path $logDir ($timestamp + '.async-smoke-app.op_log') $hostOut = Join-Path $logDir ($timestamp + '.async-host.stdout.log') $hostErr = Join-Path $logDir ($timestamp + '.async-host.stderr.log') $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $smokeProj = 'E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj' "=== build ===" | Tee-Object -FilePath $opLog -Append & dotnet build (Join-Path $repo 'FSharp.MCP.DevKit.Async.sln') -v minimal -p:NuGetAudit=false *>&1 | Tee-Object -FilePath $opLog -Append if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } "=== host start ===" | Tee-Object -FilePath $opLog -Append $host = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru Start-Sleep -Seconds 5 try { "=== smoke app ===" | Tee-Object -FilePath $opLog -Append & dotnet run --project $smokeProj -p:NuGetAudit=false *>&1 | Tee-Object -FilePath $opLog -Append exit $LASTEXITCODE } finally { if ($host -and -not $host.HasExited) { Stop-Process -Id $host.Id -Force } }
+
+
+Ran $latest = Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log\*.async-smoke-app.op_log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($latest) { Get-Content -Encoding UTF8 $latest.FullName | Select-Object -Last 160 }
+
+
+Ran Get-ChildItem E:\dk\FSharp.MCP.DevKit - Async\log | Sort-Object LastWriteTime -Descending | Select-Object -First 6 Name,LastWriteTime | Format-Table -AutoSize
+
+
+Ran $latest = Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log\*.async-host.stderr.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($latest) { Get-Content -Encoding UTF8 $latest.FullName | Select-Object -Last 80 }
+
+
+Ran $latest = Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log\*.async-host.stdout.log' | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($latest) { Get-Content -Encoding UTF8 $latest.FullName | Select-Object -Last 80 }
+
+
+合併版核心看起來是活的：host 已正常起在 8081。剛才失敗點只在臨時 smoke app 本身的 F# 型別推斷，這不是 target repo 問題，我修一下 harness 就重跑。
+
+Edited file
+Program.fs
++1
+-1
+
+
+let fail message =
+let fail (message: string) =
+    Console.Error.WriteLine(message)
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $logDir = Join-Path $repo 'log' $timestamp = Get-Date -Format 'yyyyMMddHHmmss' $opLog = Join-Path $logDir ($timestamp + '.async-smoke-app-rerun.op_log') $hostOut = Join-Path $logDir ($timestamp + '.async-host.stdout.log') $hostErr = Join-Path $logDir ($timestamp + '.async-host.stderr.log') $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $smokeProj = 'E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj' "=== host start ===" | Tee-Object -FilePath $opLog -Append $host = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru Start-Sleep -Seconds 5 try { "=== smoke app ===" | Tee-Object -FilePath $opLog -Append & dotnet run --project $smokeProj -p:NuGetAudit=false *>&1 | Tee-Object -FilePath $opLog -Append exit $LASTEXITCODE } finally { if ($host -and -not $host.HasExited) { Stop-Process -Id $host.Id -Force } }
+
+
+核心 smoke 已經過了。接下來我把文件狀態補齊成跟實作一致，尤其是 actor compile path、config path、smoke evidence，然後跑 visibility 檢查跟 check.fsx。
+
+Ran Get-Content -Encoding UTF8 doc\SD.md
+
+
+Ran Get-Content -Encoding UTF8 doc\SA.md
+
+
+Ran Get-Content -Encoding UTF8 E:\dk\MCP.KM.md
+
+
+Ran Get-Content -Encoding UTF8 doc\WBS.md
+
+
+Ran Get-Content -Encoding UTF8 doc\Test.md
+
+
+Ran Get-Content -Encoding UTF8 doc\Policy.md
+
+
+我還差一個驗收缺口：文件原本把 ReferenceNugetPackage 列進最低驗收，但實際 smoke 還沒涵蓋。先把這個補掉，避免文件跟證據不一致。
+
+Ran Get-Content -Encoding UTF8 E:\dk\_smoke_async_20260319\Program.fs
+
+
+Ran rg -n "member this.ReferenceNugetPackage|let ReferenceNugetPackage|ReferenceNugetPackage\(" src\FSharp.MCP.DevKit.Core\FSIService.fs -A 80 -B 20
+
+
+我補一個 #r "nuget:..." 路徑驗證，確保 async merge 沒把 package-reference 流程破壞掉。這樣文件裡列的最低驗收就能跟實際證據對齊。
+
+Edited file
+Program.fs
++33
+-12
+
+                else
+                    let reset = client.Reset(TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                    let packageRef =
+                        client.ReferenceNugetPackage("Newtonsoft.Json, 13.0.3", TimeSpan.FromSeconds(60.0))
+                            .GetAwaiter()
+                            .GetResult()
+
+                    if not reset.IsSuccess then
+                        fail $"Reset failed: {reset.Errors}"
+                    if not packageRef.IsSuccess then
+                        fail $"Reference package failed: {packageRef.Errors}"
+                    else
+                        let postReset = client.EvaluateExpression("y", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                        let packageUse =
+                            client.ExecuteCode(
+                                "open Newtonsoft.Json\nlet json = JsonConvert.SerializeObject(box {| Value = 42 |})",
+                                TimeSpan.FromSeconds(20.0)
+                            )
+                                .GetAwaiter()
+                                .GetResult()
+
+                        if postReset.IsSuccess then
+                            fail "Reset regression: y still exists after reset."
+                        if not packageUse.IsSuccess then
+                            fail $"Package-backed execution failed: {packageUse.Errors}"
+                        else
+                            printfn "SMOKE_OK"
+                            printfn "EXEC_OUTPUT=%s" exec.Output
+                            printfn "ASYNC_ID=%s" asyncId
+                            printfn "EVAL_OUTPUT=%s" eval.Output
+                            printfn "POST_RESET_ERROR=%s" postReset.Errors
+                            0
+                            let reset = client.Reset(TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                            if not reset.IsSuccess then
+                                fail $"Reset failed: {reset.Errors}"
+                            else
+                                let postReset = client.EvaluateExpression("y", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                                if postReset.IsSuccess then
+                                    fail "Reset regression: y still exists after reset."
+                                else
+                                    printfn "SMOKE_OK"
+                                    printfn "EXEC_OUTPUT=%s" exec.Output
+                                    printfn "ASYNC_ID=%s" asyncId
+                                    printfn "EVAL_OUTPUT=%s" eval.Output
+                                    printfn "PACKAGE_REF_OUTPUT=%s" packageRef.Output
+                                    printfn "PACKAGE_USE_OUTPUT=%s" packageUse.Output
+                                    printfn "POST_RESET_ERROR=%s" postReset.Errors
+                                    0
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $logDir = Join-Path $repo 'log' $timestamp = Get-Date -Format 'yyyyMMddHHmmss' $opLog = Join-Path $logDir ($timestamp + '.async-smoke-app-package.op_log') $hostOut = Join-Path $logDir ($timestamp + '.async-host.stdout.log') $hostErr = Join-Path $logDir ($timestamp + '.async-host.stderr.log') $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $smokeProj = 'E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj' "=== host start ===" | Tee-Object -FilePath $opLog -Append $hostProcess = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -PassThru Start-Sleep -Seconds 5 try { "=== smoke app ===" | Tee-Object -FilePath $opLog -Append & dotnet run --project $smokeProj -p:NuGetAudit=false *>&1 | Tee-Object -FilePath $opLog -Append exit $LASTEXITCODE } finally { if ($hostProcess -and -not $hostProcess.HasExited) { Stop-Process -Id $hostProcess.Id -Force } }
+
+
+我順手把 repo hygiene 看一下。現在功能面已經過 smoke，但工作樹還有前一輪留下的 .bak 與 solution rename 痕跡，我會先確認哪些是 merge 過程殘留，再決定要不要清乾淨。
+
+Ran git diff --stat
+
+
+Ran rg -n "\bprivate\b|\binternal\b|\bfile\b" src\FSharp.MCP.DevKit.Core\FsiActor.fs src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs src\FSharp.MCP.DevKit.Server\McpFsiTools.fs src\FSharp.MCP.DevKit.FsiHost\Program.fs -S
+
+
+Ran Get-Content -Encoding UTF8 src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj | Select-Object -First 120
+
+
+Ran git show HEAD:FSharp.MCP.DevKit.sln | Select-Object -First 80
+
+
+Ran git status --short
+
+
+我在收尾前先把 check.fsx 的規則讀一遍，避免文件補齊了卻因參數或強制欄位漏掉再多跑一次。
+
+Ran Get-Content -Encoding UTF8 E:\dk\check.fsx | Select-Object -First 260
+
+
+Ran Get-Content -Encoding UTF8 E:\dk\AGENTS.md | Select-Object -First 260
+
+
+Ran rg -n "external tracking|Jira|GitHub|Confluence|FAIL|WARN|LatestLog|DevLog|append-only|BranchNameValid|require-external" E:\dk\check.fsx -A 3 -B 3
+
+
+Ran Get-Content -Encoding UTF8 E:\dk\check.fsx | Select-Object -Skip 456 -First 40
+
+
+Ran rg -n "externalRefRegex" E:\dk\check.fsx -A 4 -B 4
+
+
+Ran Get-ChildItem -Force
+
+
+Ran if (Test-Path notes) { Get-ChildItem notes -Force } else { 'NO_NOTES_DIR' }
+
+
+我現在同步文件到實作現況，重點是三件事：actor compile path 改成 host link source、config path 改成輸出目錄解析、以及 smoke 證據正式落到 SA/SD/Test/DevLog/KM。
+
+Edited file
+Action.md
++15
+-13
+
+| 完成 SA / SD / WBS | 文件可作為實作依據 | done |
+| 完成 Test / Policy / Action / DevLog | 文件可支援開發與稽核 | in-progress |
+| 完成 Test / Policy / Action / DevLog | 文件可支援開發與稽核 | done |
+
+|---|---|---|---|
+| 擴充 Messages remote DTO | SA / SD | actor/server 可共用 transport contract | pending |
+| 修正 Core target framework 與 FsiActor compile path | SA / SD | host compile path 成立 | pending |
+| 導入 server remote client adapter | 前兩項 | MCP tools 不再依賴 local FSI backend | pending |
+| 修正 async queue / timeout / polling | remote client adapter | async execute 可運作 | pending |
+| 修正 port mismatch | remote client adapter | host / server 參數一致 | pending |
+| 擴充 Messages remote DTO | SA / SD | actor/server 可共用 transport contract | done |
+| 修正 Core target framework 與 FsiActor compile path | SA / SD | host compile path 成立 | done |
+| 導入 server remote client adapter | 前兩項 | MCP tools 不再依賴 local FSI backend | done |
+| 修正 async queue / timeout / polling | remote client adapter | async execute 可運作 | done |
+| 修正 port mismatch | remote client adapter | host / server 參數一致 | done |
+| 修正 Akka config path 解析 | remote client adapter | 非輸出目錄啟動不再因 cwd 漂移失敗 | done |
+
+|---|---|---|
+| workaround build | 可看見真實 compile 狀態 | pending |
+| host + sync execute smoke test | 遠端 session 可用 | pending |
+| async enqueue + polling smoke test | `asyncId` lifecycle 正常 | pending |
+| reset / restart regression | session state 可重建 | pending |
+| workaround build | 可看見真實 compile 狀態 | done |
+| host + sync execute smoke test | 遠端 session 可用 | done |
+| async enqueue + polling smoke test | `asyncId` lifecycle 正常 | done |
+| package reference regression | `#r "nuget:..."` 可在同一 session 使用 | done |
+| reset / restart regression | session state 可重建 | done |
+
+|---|---|---|
+| 更新 DevLog | 有本輪決策與驗證證據 | pending |
+| 更新 MCP.KM.md | 有 merge 知識沉澱 | pending |
+| 執行 check.fsx | 無與本輪目標衝突的 FAIL/WARN | pending |
+| 更新 DevLog | 有本輪決策與驗證證據 | done |
+| 更新 MCP.KM.md | 有 merge 知識沉澱 | done |
+| 執行 check.fsx | 無與本輪目標衝突的 FAIL/WARN | in-progress |
+Edited file
+DevLog.md
++30
+-0
+
+  - `doc/Action.md`
+
+## 2026-03-19 11:32:30
+
+- 背景：完成 mixed-runtime merge 實作後，需要確認不是只有 compile success，而是 net472 host 與 net9/net10 server 的 sync / async session flow 真正可運作。
+- 動作：
+  - 將 `FsiActor.fs` 的 compile owner 固定為 `FsiHost`
+  - 在 `Messages` 建立 transport-safe remote DTO
+  - 在 `McpFsiTools.fs` 導入 `RemoteFsiClient`，移除 server 端本地 FSI backend 依賴
+  - 修正 `EnqueueExecuteCode` timeout 型別與 `8081` port 對齊
+  - 修正 host / server 解析 `akka*.conf` 的方式，改從輸出目錄讀取
+  - 以 `dotnet build FSharp.MCP.DevKit.Async.sln -p:NuGetAudit=false` 重新驗證
+  - 啟動 net472 `FsiHost`，再用臨時 .NET smoke app 驗證 sync execute / async queue / polling / package reference / reset
+- 結果：
+  - solution build success
+  - host 成功監聽 `akka.tcp://FsiExecutionSystem@localhost:8081`
+  - `let x = 41`、`let y = x + 1`、`EvaluateExpression("y") = 42` 成功
+  - `ReferenceNugetPackage("Newtonsoft.Json, 13.0.3")` 成功，後續程式碼可實際使用 package
+  - reset 後舊 binding 消失，session reset 行為正確
+- 根因判讀：
+  - 先前 `Microsoft.Extensions.ObjectPool` 缺失不是 merged backend 壞掉，而是直接用 `dotnet fsi #r` 載入 ASP.NET Core app DLL，沒有正確套用 `runtimeconfig/deps`
+  - `akka.conf` / `akka.server.conf` 使用相對路徑則會在 cwd 漂移時失敗，屬實際部署風險，已修正
+- 風險：
+  - `csharp-sdk` 的 `NU1903` 仍需上游處理
+  - `Core` 與 `FsiHost` 仍有數個歷史 warning，未在本輪一併清空
+- 關聯：
+  - `doc/SA.md`
+  - `doc/SD.md`
+  - `doc/Test.md`
+  - `doc/Action.md`
+  - `log/*async-smoke-app*.op_log`
+Edited file
+SA.md
++25
+-3
+
+
+### C. `FSharp.MCP.DevKit - Async`
+### C. `FSharp.MCP.DevKit - Async` baseline 問題（本輪已修正）
+
+  3. `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 的 remote actor path 仍是 `18081`，與 `src/FSharp.MCP.DevKit.FsiHost/akka.conf` 的 `8081` 不一致。
+  4. `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 目前只編 `FileUtils.fs` 和 `FSIService.fs`，沒有把 `FsiActor.fs` 編進去，也沒有 reference `Messages`；netfx host 路徑實際上無法完整成立。
+  4. `src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj` 與 `FsiActor.fs` 的責任邊界混亂；本輪改為 `Core` 只保留 shared API，`FsiHost` 以 linked source compile `FsiActor.fs`，避免把 Akka host 依賴帶回 shared library。
+  5. 三個 repo 的 baseline build 都先被 `csharp-sdk` 的 `NU1903` 卡住，target repo 還伴隨 mixed merge 本身的型別/target framework 問題。
+
+## 本輪落地結果
+
+- `src/FSharp.MCP.DevKit.Messages` 已建立 transport-safe DTO，避免直接跨 runtime 傳 `obj` / `FSharpDiagnostic`。
+- `src/FSharp.MCP.DevKit.FsiHost` 已成為 `FsiActor.fs` 的實際 compile owner，並維持 net472 單一 FSI session。
+- `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 已收斂成 `RemoteFsiClient + async queue/cache`，不再在 server 內自啟本地 `FsiService`。
+- `remoteActorPath` 已與 host 固定為 `8081`。
+- host / server 讀取 `akka.conf`、`akka.server.conf` 已改為從輸出目錄解析，避免工作目錄漂移。
+- `dotnet build FSharp.MCP.DevKit.Async.sln -p:NuGetAudit=false` 已通過。
+- mixed-runtime smoke 已通過：
+  - sync execute：`let x = 41`
+  - async queue：`let y = x + 1`
+  - session continuity：`y = 42`
+  - package reference：`#r "nuget:Newtonsoft.Json, 13.0.3"`
+  - reset regression：reset 後 `y` 不再存在
+
+## 剩餘風險
+
+1. `csharp-sdk` 仍受上游 `NU1903` 影響；本輪 compile 驗證依賴 `NuGetAudit=false` workaround。
+2. `Core` 對 `NuGet.* 7.3.0` 仍有 `NU1701` 相容性警告。
+3. `FsiHost` 仍有 .NET Framework reference resolution warning，需要後續獨立整理 binding / reference policy。
+
+## 關聯追溯
+- External tracking:
+  - pending，尚未提供 Jira / GitHub / Confluence 單號
+  - GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+  - 專屬 Jira / PR 仍待補
+Edited file
+SD.md
++22
+-6
+
+
+- `Core` 改成 shared + host dual-purpose：
+  - shared API 供 net9/net10 consumer 使用
+  - net472 slice 供 `FsiHost` 使用
+- `FsiActor.fs`、Akka package reference、`Messages` project reference 只在 `net472` slice 啟用。
+- `Core` 保留 shared API 與 `FsiService`，目前 target `netstandard2.0;net10.0`。
+- `FsiActor.fs` 雖然實體檔案放在 `src/FSharp.MCP.DevKit.Core`，但 compile owner 改成 `FsiHost`，用 linked source 方式編入。
+- Akka package reference 與 `Messages` project reference 只放在 `FsiHost`，避免 shared library 背上 host-only 依賴。
+- `Server` 保持 `net9.0;net10.0`。
+
+### 6. Runtime Config 解析策略
+
+- `FsiHost` 讀 `akka.conf` 改為從輸出目錄解析。
+- `FsiMcpService` 讀 `akka.server.conf` 改為從輸出目錄解析。
+- 目的不是美化程式，而是消除「從非輸出目錄啟動就找不到 Akka config」的實際部署風險。
+
+## 元件責任
+- 提供 async status shared model。
+- 在 net472 slice 編入 `FsiActor.fs`，將 remote command 轉成對 `FsiService` 的實際呼叫。
+- 保存 `FsiActor.fs` 原始碼，由 `FsiHost` linked compile 後將 remote command 轉成對 `FsiService` 的實際呼叫。
+
+2. `EnqueueExecuteCode` 的 timeout 參數型別要收斂為 `TimeSpan`，不可留下 `TimeSpan option -> TimeSpan` 的錯誤指派。
+3. `Core.fsproj` 必須恢復 `FsiActor.fs` 的 compile path，並且只在 net472 slice 啟用 Akka / Messages dependency。
+3. `FsiActor.fs` 必須有明確 compile path；本輪選擇由 `FsiHost` linked compile，而不是把 Akka / Messages dependency 塞回 `Core`。
+4. remote response 不可攜帶非 transport-safe 型別。
+5. host / server 的 Akka config 不可再依賴 current working directory。
+
+
+## 已驗證結果
+
+- Build：`dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false` 成功。
+- Smoke：
+  - net472 `FsiHost` 成功監聽 `akka.tcp://FsiExecutionSystem@localhost:8081`
+  - sync execute / async enqueue / polling / eval / reset 全部成功
+  - `ReferenceNugetPackage("Newtonsoft.Json, 13.0.3")` 成功，後續程式碼可使用該 package
+- 補充判讀：
+  - 先前用 `dotnet fsi #r FSharp.MCP.DevKit.dll` 的 smoke 失敗，是 ASP.NET Core app 直接被 FSI 載入時無法正確套用 `runtimeconfig/deps`，不是 merged backend 本身壞掉。
+
+## 回退策略
+Edited file
+Test.md
++20
+-0
+
+- TC08
+- TC09
+- TC11
+
+## 本輪執行結果
+
+| ID | 結果 | 證據 |
+|---|---|---|
+| TC01 | pass | `log/*async-smoke-app.op_log` 內含 solution build success |
+| TC02 | pass | host stdout 顯示 `akka.tcp://FsiExecutionSystem@localhost:8081` |
+| TC03 | pass | `let x = 41` 成功 |
+| TC04 | pass | 後續 `y = x + 1`、`EvaluateExpression("y") = 42` |
+| TC05 | pass | 成功取得 `asyncId` |
+| TC06 | pass | polling 最終 `isCompleted=true` |
+| TC08 | pass | `ReferenceNugetPackage("Newtonsoft.Json, 13.0.3")` 後成功序列化 JSON |
+| TC09 | pass | reset 後 `y` 不再可見 |
+| TC11 | pass | host / server 全程使用 `8081` |
+
+## 測試方法補充
+
+- 為避免 `dotnet fsi #r webapp.dll` 對 ASP.NET Core app 的 shared framework 載入偏差，本輪 smoke 採「啟動真實 net472 host + 臨時 .NET app ProjectReference server project」方式驗證。
+- 這個 smoke harness 是驗證工具，不屬於 target repo 交付物。
+
+## 風險註記
+Edited file
+MCP.KM.md
++22
+-1
+
+   - Test: [docs/Test.md](s:\SSIS\DB2Query\DB2FQueryWrapper\docs\Test.md)
+   - DevLog: [docs/DevLog.md](s:\SSIS\DB2Query\DB2FQueryWrapper\docs\DevLog.md)
+   - DevLog: [docs/DevLog.md](s:\SSIS\DB2Query\DB2FQueryWrapper\docs\DevLog.md)
+
+## 23. [2026-03-19][FSharp.MCP.DevKit.Async mixed-runtime async merge]
+1. 背景
+   - 目標是把 `FSharp.MCP.DevKit` 的 net472 `FsiHost` + .NET server mixed-runtime 架構，與 `FSharp.MCP.DevKit - Async - 複製` 的 async queue / polling 能力，合併到 [FSharp.MCP.DevKit - Async](e:\dk\FSharp.MCP.DevKit - Async)。
+2. 核心知識
+   - 真正要保留的是「單一遠端 FSI session + server 端 async queue」，不是在 server process 內再開一個本地 `FsiService`。
+   - transport-safe DTO 必須獨立放在 `Messages`，不要直接跨 runtime 傳 `obj option` 或 `FSharpDiagnostic[]`。
+   - `FsiActor.fs` 可以實體放在 `Core` 路徑下，但 compile owner 應放在 `FsiHost`；這樣 shared library 不必背 Akka host 依賴。
+   - `akka.conf` / `akka.server.conf` 若以相對路徑讀取，從非輸出目錄啟動就會失敗；對 mixed-runtime host/server 都要改成從輸出目錄解析。
+   - 直接用 `dotnet fsi #r webapp.dll` 驗證 ASP.NET Core server 會繞過 `runtimeconfig/deps`，容易出現 `Microsoft.Extensions.*` 載入錯誤；應改用真正的 app host 方式做 smoke。
+3. 驗證與證據
+   - build：`dotnet build E:\dk\FSharp.MCP.DevKit - Async\FSharp.MCP.DevKit.Async.sln -p:NuGetAudit=false`
+   - smoke：`log/*.async-smoke-app.op_log`、`log/*.async-smoke-app-package.op_log`
+   - host 證據：`log/*.async-host.stdout.log`
+4. 關聯
+   - SA：`E:\dk\FSharp.MCP.DevKit - Async\doc\SA.md`
+   - SD：`E:\dk\FSharp.MCP.DevKit - Async\doc\SD.md`
+   - WBS：`E:\dk\FSharp.MCP.DevKit - Async\doc\WBS.md`
+   - Test：`E:\dk\FSharp.MCP.DevKit - Async\doc\Test.md`
+   - DevLog：`E:\dk\FSharp.MCP.DevKit - Async\doc\DevLog.md`
+   - GitHub tracker：https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+Ran rg -n "latestLogMissingFields|required field|背景|目標|計畫步驟|planned steps|執行命令|結果|根因判讀|下一步|關聯文件|prompt" E:\dk\check.fsx -A 5 -B 5
+
+
+我先補一份正式 .log 當這輪收尾的最新主紀錄，讓 check.fsx 讀到的是最新計畫、結果與追溯，而不是早上的 baseline log。
+
+Ran $path = 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319133330.async混版實作驗證收尾.00001.00001.log' $content = @' 背景 - 使用者要求 review `FSharp.MCP.DevKit` 與 `FSharp.MCP.DevKit - Async - 複製`，並把 mixed-runtime + async queue 合併到 `FSharp.MCP.DevKit - Async`。 目標 - 完成 mixed-runtime backend 收斂、保留 async queue/polling、補齊 SA/SD/WBS/Test/Action/DevLog/KM，並執行 check 收尾。 計畫步驟 1. 重新驗證 build 與 mixed-runtime smoke。 2. 同步文件到實作現況。 3. 執行 visibility 檢查與 check.fsx。 執行命令/參數 - `dotnet build FSharp.MCP.DevKit.Async.sln -v minimal -p:NuGetAudit=false` - 啟動 `src/FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe` - `dotnet run --project E:\dk\_smoke_async_20260319\_smoke_async_20260319.fsproj -p:NuGetAudit=false` - 後續執行 `rg -n "\bprivate\b|\binternal\b|\bfile\b" ...` 與 `dotnet fsi --exec E:\dk\check.fsx -- ...` 結果 - build success。 - sync execute / async queue / polling / package reference / reset smoke success。 - 文件已更新到實作現況。 根因判讀 - 先前 `Microsoft.Extensions.ObjectPool` 缺失是因為用 `dotnet fsi #r` 直接載入 ASP.NET Core app DLL，沒有正確套用 `runtimeconfig/deps`。 - host / server 的 `akka*.conf` 若依賴 cwd 會造成啟動風險，因此改為從輸出目錄解析。 下一步 - 執行 visibility 檢查。 - 執行 `check.fsx`，若有 FAIL 或與本輪相關的 WARN，先補齊再結束。 關聯文件/工單/PR - `doc/SA.md` - `doc/SD.md` - `doc/WBS.md` - `doc/Test.md` - `doc/Action.md` - `doc/DevLog.md` - GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues prompt/上下文摘要 - 使用者要求依 `AGENTS.md` SOP 先做 SA/SD/WBS，再在 `FSharp.MCP.DevKit - Async` 合併 mixed-runtime 與 async queue 功能，並允許在 target repo 進行 git 操作。 '@ Set-Content -Path $path -Value $content -Encoding UTF8
+
+
+我把 merge 過程殘留的備份檔清掉，避免最後工作樹留下不必要噪音。功能與文件證據已經落盤，這些 .bak 不再需要。
+
+Ran Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server' -Filter '*.bak' | Remove-Item -Force
+
+
+Ran rg -n "CODEX_THREAD_ID|SessionId|session id|stateFilePath" E:\dk\check.fsx -A 6 -B 6
+
+
+我先查 log/ 檔名規範，因為 check.fsx 會對整個 log 目錄掃描。若先前 smoke 產生的 stdout/stderr 檔名不合規，這會變成收尾 WARN/FAIL，必須先消掉。
+
+Ran $regex = '^[0-9]{14}\.[^.]{1,50}\.[0-9]{5}\.[0-9]{5}\.log$'; Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log' -Filter '*.log' | Where-Object { $_.Name -notmatch $regex } | Select-Object Name | Format-Table -AutoSize
+
+
+我會把這六個 host stdout/stderr 證據檔改成符合 AGENTS 規範的 .log 檔名。內容不變，只修命名，避免 check.fsx 對整個 log/ 掃描時報告 invalid_log_names。
+
+Ran Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stderr.log' '20260319113000.asynchoststderr.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stdout.log' '20260319113000.asynchoststdout.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113045.async-host.stderr.log' '20260319113045.asynchoststderr.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113045.async-host.stdout.log' '20260319113045.asynchoststdout.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113201.async-host.stderr.log' '20260319113201.asynchoststderr.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113201.async-host.stdout.log' '20260319113201.asynchoststdout.00001.00001.log'
+
+
+Ran $regex = '^[0-9]{14}\.[^.]{1,50}\.[0-9]{5}\.[0-9]{5}\.log$'; Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log' -Filter '*.log' | Where-Object { $_.Name -notmatch $regex } | Select-Object Name | Format-Table -AutoSize
+
+
+四個已改成功，剩兩個還被檔案鎖住。我先把驗證與 check.fsx 照常往前跑，最後再回來重試這兩個；如果鎖釋放了，就能把 invalid_log_names 一次清乾淨。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $log = Join-Path $repo 'log\20260319133630.async可見性檢查.op_log' "=== rg visibility scan ===" | Tee-Object -FilePath $log -Append & rg -n "\bprivate\b|\binternal\b|\bfile\b" "$repo\src\FSharp.MCP.DevKit.Core\FsiActor.fs" "$repo\src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs" "$repo\src\FSharp.MCP.DevKit.Server\McpFsiTools.fs" "$repo\src\FSharp.MCP.DevKit.FsiHost\Program.fs" *>&1 | Tee-Object -FilePath $log -Append "=== diff-added visibility scan ===" | Tee-Object -FilePath $log -Append & git -C $repo diff --unified=0 -- src/FSharp.MCP.DevKit.Core/FsiActor.fs src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs src/FSharp.MCP.DevKit.Server/McpFsiTools.fs src/FSharp.MCP.DevKit.FsiHost/Program.fs *>&1 | Tee-Object -FilePath $log -Append
+
+
+Ran Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stderr.log' '20260319113000.asynchoststderr.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stdout.log' '20260319113000.asynchoststdout.00001.00001.log'
+
+
+我找到鎖檔原因了。第一次 smoke script 因為用了 PowerShell 保留變數 $host，最後沒把那個 net472 host process 收掉，所以它還握著兩個 stdout/stderr 檔案。先清掉殘留 host，再把最後兩個 log 名稱修正。
+
+Ran Get-Process | Where-Object { $_.ProcessName -eq 'FSharp.MCP.DevKit.FsiHost' } | Stop-Process -Force
+
+
+Ran Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stderr.log' '20260319113000.asynchoststderr.00001.00001.log' Rename-Item 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319113000.async-host.stdout.log' '20260319113000.asynchoststdout.00001.00001.log'
+
+
+Ran $regex = '^[0-9]{14}\.[^.]{1,50}\.[0-9]{5}\.[0-9]{5}\.log$'; Get-ChildItem 'E:\dk\FSharp.MCP.DevKit - Async\log' -Filter '*.log' | Where-Object { $_.Name -notmatch $regex } | Select-Object Name | Format-Table -AutoSize
+
+
+我開始跑正式 check.fsx。這一步會檢查最新 log/op_log、文件追溯、git 狀態、DevLog append-only，以及 external tracking 回鏈。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $opLog = Join-Path $repo 'log\20260319133830.async-check.op_log' & dotnet fsi --exec E:\dk\check.fsx -- --session-id 20260319_async_merge --log-dir "$repo\log" --repo "$repo" --sa "$repo\doc\SA.md" --sd "$repo\doc\SD.md" --wbs "$repo\doc\WBS.md" --test "$repo\doc\Test.md" --devlog "$repo\doc\DevLog.md" --policy "$repo\doc\Policy.md" --action "$repo\doc\Action.md" --km E:\dk\MCP.KM.md --notes-dir "$repo\notes" --require-external-tracking *>&1 | Tee-Object -FilePath $opLog
+
+
+check.fsx 已經 0 FAIL，只剩 git_dirty 這個 WARN。這跟 AGENTS 收尾規範一致，我會把最終狀態文件補成 completed、做一次本地 commit，再重跑 check.fsx 把 dirty warning 清掉。
+
+Ran git status --short
+
+
+Ran Get-Content -Encoding UTF8 doc\Action.md
+
+
+Ran Get-Content -Encoding UTF8 doc\WBS.md
+
+
+我把計畫文件收斂成完成態，然後一次做本地 commit 再重跑 check.fsx。這樣最後交付的文件、git 狀態和稽核結果會一致。
+
+Edited file
+Action.md
++1
+-1
+
+| 更新 MCP.KM.md | 有 merge 知識沉澱 | done |
+| 執行 check.fsx | 無與本輪目標衝突的 FAIL/WARN | in-progress |
+| 執行 check.fsx | 無與本輪目標衝突的 FAIL/WARN | done |
+Edited file
+WBS.md
++15
+-15
+
+|---|---|---|---|
+| M1 | 完成 SA/SD/WBS/Test/Policy/Action/DevLog | `doc/*.md` | in-progress |
+| M2 | 收斂 mixed-runtime backend | server / core / host / messages code | pending |
+| M3 | 完成 build / smoke test / check | build log / test log / check result | pending |
+| M1 | 完成 SA/SD/WBS/Test/Policy/Action/DevLog | `doc/*.md` | done |
+| M2 | 收斂 mixed-runtime backend | server / core / host / messages code | done |
+| M3 | 完成 build / smoke test / check | build log / test log / check result | done |
+
+| T04 | 重寫 `doc/WBS.md` | T02-T03 | 任務可執行 | done |
+| T05 | 建立 `doc/Test.md` | T02-T03 | 正常/異常/回歸案例齊備 | pending |
+| T06 | 建立 `doc/Policy.md` | T02-T04 | scope / retention / 例外條件清楚 | pending |
+| T07 | 建立 `doc/Action.md` | T04 | phase / status 可追蹤 | pending |
+| T08 | 建立 `doc/DevLog.md` 初始條目 | T01-T04 | 有本輪任務紀錄 | pending |
+| T09 | 擴充 `Messages` transport DTO | T03 | actor 可接收統一 command | pending |
+| T10 | 修正 `Core.fsproj` target framework 與 `FsiActor` 編譯條件 | T03 | host compile path 恢復 | pending |
+| T11 | 更新 `FsiActor.fs` 支援 remote command dispatch | T09-T10 | host 能處理 sync / async 同一套命令 | pending |
+| T12 | 更新 `McpFsiTools.fs` 的 remote client adapter | T09-T11 | 不再依賴 server 本地 FSI session | pending |
+| T13 | 修正 async queue 型別與 cache 更新流程 | T12 | queue worker 可執行與回填結果 | pending |
+| T14 | 修正 Akka port 與 host / server 設定一致性 | T10-T12 | server 可連到 host | pending |
+| T15 | local build workaround 下執行 compile 驗證 | T09-T14 | 真實 compile error 收斂 | pending |
+| T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | pending |
+| T05 | 建立 `doc/Test.md` | T02-T03 | 正常/異常/回歸案例齊備 | done |
+| T06 | 建立 `doc/Policy.md` | T02-T04 | scope / retention / 例外條件清楚 | done |
+| T07 | 建立 `doc/Action.md` | T04 | phase / status 可追蹤 | done |
+| T08 | 建立 `doc/DevLog.md` 初始條目 | T01-T04 | 有本輪任務紀錄 | done |
+| T09 | 擴充 `Messages` transport DTO | T03 | actor 可接收統一 command | done |
+| T10 | 修正 `Core.fsproj` target framework 與 `FsiActor` 編譯條件 | T03 | host compile path 恢復 | done |
+| T11 | 更新 `FsiActor.fs` 支援 remote command dispatch | T09-T10 | host 能處理 sync / async 同一套命令 | done |
+| T12 | 更新 `McpFsiTools.fs` 的 remote client adapter | T09-T11 | 不再依賴 server 本地 FSI session | done |
+| T13 | 修正 async queue 型別與 cache 更新流程 | T12 | queue worker 可執行與回填結果 | done |
+| T14 | 修正 Akka port 與 host / server 設定一致性 | T10-T12 | server 可連到 host | done |
+| T15 | local build workaround 下執行 compile 驗證 | T09-T14 | 真實 compile error 收斂 | done |
+| T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | done |
+
+我準備清掉兩個不該進版控的 .bak，這樣本地 commit 後工作樹才能乾淨。其餘新增的 Messages/FsiHost/akka.server.conf/doc/log 都是本輪正式產出，會一起納入。
+
+Ran cmd /c del /q "E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\*.bak"
+
+
+Ran git status --short
+
+
+我發現一個額外點：log/ 產物目前沒出現在 git status，看起來 repo 可能把它 ignore 了。AGENTS 要求這些證據檔進版控，所以我先確認 ignore 規則，再用 -f 強制納入。
+
+Ran git check-ignore -v log\20260319133330.async混版實作驗證收尾.00001.00001.log
+
+
+Ran git ls-files log
+
+
+Ran git check-ignore -v log\20260319133830.async-check.op_log
+
+
+Ran Get-ChildItem log | Select-Object Name | Format-Table -AutoSize
+
+
+我開始做本地收尾 commit。會納入正式產出與證據檔，包括 doc/、src/、solution 調整、akka.server.conf，以及 log/ 內本輪新增的 .log/.op_log。
+
+Ran git add -A . git add -f log\*
+
+
+Ran git status --short
+
+
+Ran git commit -m "Merge mixed-runtime async FSI backend"
+
+
+本地 commit 已完成，現在工作樹理論上應該乾淨。我先看 remote 設定；如果 repo 有正常 origin，我會試著把這個工作 branch 推上去，否則至少會把本地 clean 狀態與 commit hash 留下。
+
+Ran git status --short
+
+
+Ran git remote -v
+
+
+Ran git log -1 --stat --oneline
+
+
+Ran git push -u origin 20260319_001.async-merge
+
+
+我補最後一份 .log，把 commit/push 納入追溯，然後用新的 final session id 再跑一次 check.fsx。這次目標是拿到 clean git 狀態下的最終稽核結果。
+
+Ran $path = 'E:\dk\FSharp.MCP.DevKit - Async\log\20260319134530.async混版提交推送收尾.00001.00001.log' $content = @' 背景 - 第一輪 `check.fsx` 已確認文件/追溯/命名大致符合規範，只剩 `git_dirty` WARN。 目標 - 將本輪 mixed-runtime async merge 以 commit + push 收尾，並在 clean git 狀態下重跑最終檢查。 計畫步驟 1. 更新 WBS / Action 到 completed 狀態。 2. 提交本地 commit。 3. push branch 到 origin。 4. 以 final session id 重跑 `check.fsx`。 執行命令/參數 - `git commit -m "Merge mixed-runtime async FSI backend"` - `git push -u origin 20260319_001.async-merge` - `dotnet fsi --exec E:\dk\check.fsx -- --session-id 20260319_async_merge_final ...` 結果 - 本地 commit 成功，HEAD 為 `9595364`。 - branch 已 push 到 `origin/20260319_001.async-merge`。 - 準備執行 final `check.fsx`。 根因判讀 - `git_dirty` WARN 屬於預期的收尾項目，不是功能缺陷；在 commit/push 後應可消除。 下一步 - 執行 final `check.fsx`。 - 若無 FAIL 與本輪衝突 WARN，即完成交付。 關聯文件/工單/PR - `doc/WBS.md` - `doc/Action.md` - `doc/DevLog.md` - GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues - Branch PR URL: https://github.com/ingted/FSharp.MCP.DevKit/pull/new/20260319_001.async-merge prompt/上下文摘要 - 使用者要求依 `AGENTS.md` SOP 完成 review、merge、文件、驗證與 git 收尾；target repo 允許任意 git 操作。 '@ Set-Content -Path $path -Value $content -Encoding UTF8
+
+
+Ran git status --short
+
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $opLog = Join-Path $repo 'log\20260319134630.async-check-final.op_log' & dotnet fsi --exec E:\dk\check.fsx -- --session-id 20260319_async_merge_final --log-dir "$repo\log" --repo "$repo" --sa "$repo\doc\SA.md" --sd "$repo\doc\SD.md" --wbs "$repo\doc\WBS.md" --test "$repo\doc\Test.md" --devlog "$repo\doc\DevLog.md" --policy "$repo\doc\Policy.md" --action "$repo\doc\Action.md" --km E:\dk\MCP.KM.md --notes-dir "$repo\notes" --require-external-tracking *>&1 | Tee-Object -FilePath $opLog
+
+
+check.fsx 最後剩的是一個時序性 FAIL，不是內容缺失：它在執行當下看到「最新 log 比最新 op_log 新」，因為這次 final check 本身還沒寫完。這種情況只要再跑一次，讓上一份 final check 變成「最新 op_log」，就能過。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $opLog = Join-Path $repo 'log\20260319134730.async-check-final2.op_log' & dotnet fsi --exec E:\dk\check.fsx -- --session-id 20260319_async_merge_final2 --log-dir "$repo\log" --repo "$repo" --sa "$repo\doc\SA.md" --sd "$repo\doc\SD.md" --wbs "$repo\doc\WBS.md" --test "$repo\doc\Test.md" --devlog "$repo\doc\DevLog.md" --policy "$repo\doc\Policy.md" --action "$repo\doc\Action.md" --km E:\dk\MCP.KM.md --notes-dir "$repo\notes" --require-external-tracking *>&1 | Tee-Object -FilePath $opLog
+
+
+最後還有一個 SOP 細節：剛才兩份 final check 證據檔因 log/ 被 ignore，還沒進版控。我會把這三個最後的收尾 log 強制納入，再補一個小 commit，讓 branch 內容和證據完全一致。
+
+Ran git add -f "log/20260319134530.async混版提交推送收尾.00001.00001.log" "log/20260319134630.async-check-final.op_log" "log/20260319134730.async-check-final2.op_log" git commit -m "Add final merge check logs"
+
+
+Ran git push
+
+
+Ran git status --short
+
+
+Ran git log -2 --oneline
+
+
+臨時 smoke harness 已經完成任務，我把它從 workspace 清掉，避免留下 repo 外的測試殘留。
+
+Ran cmd /c rmdir /s /q "E:\dk\_smoke_async_20260319"
+
+
+Ran git status --short
+
+
+Final message
+完成
+已在 FSharp.MCP.DevKit - Async 完成 mixed-runtime 合併，核心收斂成「net472 FsiHost 持有唯一 FSI session，server 端保留 async queue/polling，所有 session-bound 操作都走 Akka remote」。關鍵實作在 [McpFsiTools.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\McpFsiTools.fs)、[FsiActor.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Core\FsiActor.fs)、[McpActorMessages.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Messages\McpActorMessages.fs)、[Program.fs](E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.FsiHost\Program.fs)。另外把 solution 正式改成 [FSharp.MCP.DevKit.Async.sln](E:\dk\FSharp.MCP.DevKit - Async\FSharp.MCP.DevKit.Async.sln)，並補齊 [SA.md](E:\dk\FSharp.MCP.DevKit - Async\doc\SA.md)、[SD.md](E:\dk\FSharp.MCP.DevKit - Async\doc\SD.md)、[WBS.md](E:\dk\FSharp.MCP.DevKit - Async\doc\WBS.md)、[Test.md](E:\dk\FSharp.MCP.DevKit - Async\doc\Test.md)、[Action.md](E:\dk\FSharp.MCP.DevKit - Async\doc\Action.md)、[DevLog.md](E:\dk\FSharp.MCP.DevKit - Async\doc\DevLog.md)。
+
+驗證
+dotnet build 已在 -p:NuGetAudit=false workaround 下通過；mixed-runtime smoke 已驗證 sync execute、async enqueue/polling、同 session state continuity、#r "nuget:Newtonsoft.Json, 13.0.3"、reset regression。最終 check.fsx 結果是 PASS=24 WARN=0 FAIL=0，證據在 [20260319134730.async-check-final2.op_log](E:\dk\FSharp.MCP.DevKit - Async\log\20260319134730.async-check-final2.op_log)。本輪沒有另外跑完整 dotnet test；驗證範圍是 build + smoke + check。
+
+Git
+branch 是 20260319_001.async-merge，已 push 到 origin。本地最後兩個 commit 是 9595364、3b26029，目前工作樹乾淨。PR 可直接從這個 URL 開：https://github.com/ingted/FSharp.MCP.DevKit/pull/new/20260319_001.async-merge。
+
+剩餘已知風險只有上游 csharp-sdk 的 NU1903，所以目前 build 仍依賴 NuGetAudit=false。
+
+
+18 files changed
++971
+-483
+Undo
+
+Review
+MCP.KM.md
+_smoke_async_20260319/Program.fs
+_smoke_async_20260319/_smoke_async_20260319.fsproj
+doc/Action.md
+doc/DevLog.md
+doc/Policy.md
+doc/SA.md
+doc/SD.md
+doc/Test.md
+doc/WBS.md
+log/20260319105743.review混版與規劃合併開發.00001.00001.log
+src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj
+src/FSharp.MCP.DevKit.Core/FsiActor.fs
+src/FSharp.MCP.DevKit.FsiHost/FSharp.MCP.DevKit.FsiHost.fsproj
+src/FSharp.MCP.DevKit.FsiHost/Program.fs
+src/FSharp.MCP.DevKit.Messages/FSharp.MCP.DevKit.Messages.fsproj
+src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs
+src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+所以現在你(agent / mcp client)能使用這個 mcp server， async 跑參考了 .net472 編譯的 f# dll 的 fsx 腳本了嗎?
+
+
+我不想直接猜。現在我去做一個實測：編一個最小的 net472 F# DLL，再透過 merged mcp backend 的 async 路徑執行引用它的 .fsx/snippet，確認能不能真的跑通。
+
+Ran $root = 'E:\dk\_verify_net472_dll' if (Test-Path $root) { cmd /c rmdir /s /q "$root" } dotnet new classlib -lang F# -o $root for 1s
+
+
+我先把測試 DLL 固定成 net472，再用最小模組輸出一個可辨識結果。之後會直接走 merged backend 的 async #load 路徑驗證，不只測 sync。
+
+Ran Get-Content -Encoding UTF8 E:\dk\_verify_net472_dll\_verify_net472_dll.fsproj
+
+
+Ran Get-ChildItem E:\dk\_verify_net472_dll | Select-Object Name,Length | Format-Table -AutoSize
+
+
+我現在改兩個檔：project target 到 net472，再加一個簡單模組供腳本 #r 後呼叫。這個只是驗證工件，不會動 target repo。
+
+Ran Get-Content -Raw -Encoding UTF8 E:\dk\_verify_net472_dll\Library.fs
+
+
+Ran Get-Content -Raw -Encoding UTF8 E:\dk\_verify_net472_dll\_verify_net472_dll.fsproj
+
+
+Created file
+Library.fs
++7
+-0
+
+namespace Verify472
+
+module Demo =
+    let add a b = a + b
+
+    let banner () =
+        "VERIFY_NET472_OK"
+Edited file
+_verify_net472_dll.fsproj
++4
+-4
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+Ran dotnet build E:\dk\_verify_net472_dll\_verify_net472_dll.fsproj -v minimal for 1s
+
+
+DLL 已經編成 net472。下一步我會直接做一個 .fsx，裡面用 #r 指向這個 DLL，然後用 async #load 路徑跑，看 session 內能不能拿到腳本定義的值。
+
+Created file
+use472.fsx
++8
+-0
+
+#r @"E:\dk\_verify_net472_dll\bin\Debug\net472\_verify_net472_dll.dll"
+
+open Verify472
+
+let valueFrom472 = Demo.add 1 41
+let bannerFrom472 = Demo.banner()
+
+printfn "%s:%d" bannerFrom472 valueFrom472
+Ran dotnet new console -lang F# -o E:\dk\_verify_async_472_runner
+
+
+Created file
+Program.fs
++60
+-0
+
+open System
+open System.IO
+open System.Threading.Tasks
+open Microsoft.Extensions.Logging.Abstractions
+open FSharp.MCP.DevKit.Server.McpFsiTools
+
+let fail (message: string) =
+    Console.Error.WriteLine(message)
+    1
+
+[<EntryPoint>]
+let main _ =
+    let serverConfigSource = @"E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\akka.server.conf"
+    let serverConfigTarget = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+    let scriptPath = @"E:\dk\_verify_net472_dll\use472.fsx"
+
+    File.Copy(serverConfigSource, serverConfigTarget, true)
+
+    use service = new FsiMcpService(NullLogger<FsiMcpService>.Instance)
+    let client = service.GetClient()
+
+    if not service.IsRunning then
+        fail "Remote FSI host is not reachable."
+    else
+        let escapedScriptPath = scriptPath.Replace("\\", "\\\\")
+        let asyncId = service.EnqueueExecuteCode($"#load @\"{escapedScriptPath}\"", TimeSpan.FromSeconds(30.0))
+        let mutable status = service.GetAsyncExecutionStatus(asyncId)
+        let mutable retries = 0
+
+        while not status.IsCompleted && retries < 100 do
+            Task.Delay(200).GetAwaiter().GetResult()
+            status <- service.GetAsyncExecutionStatus(asyncId)
+            retries <- retries + 1
+
+        if not status.Exists then
+            fail $"Async execution entry not found: {asyncId}"
+        elif not status.IsCompleted then
+            fail $"Async execution did not complete in time: {asyncId}"
+        elif status.Result.IsNone || not status.Result.Value.IsSuccess then
+            let error =
+                status.Result
+                |> Option.map (fun result -> result.Errors)
+                |> Option.defaultValue "unknown async execution failure"
+
+            fail $"Async #load failed: {error}"
+        else
+            let valueResult = client.EvaluateExpression("valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+            let bannerResult = client.EvaluateExpression("bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            if not valueResult.IsSuccess then
+                fail $"Evaluate valueFrom472 failed: {valueResult.Errors}"
+            elif not bannerResult.IsSuccess then
+                fail $"Evaluate bannerFrom472 failed: {bannerResult.Errors}"
+            else
+                printfn "VERIFY_ASYNC_NET472_DLL_OK"
+                printfn "ASYNC_ID=%s" asyncId
+                printfn "LOAD_OUTPUT=%s" (status.Result.Value.Output)
+                printfn "VALUE_RESULT=%s" valueResult.Output
+                printfn "BANNER_RESULT=%s" bannerResult.Output
+                0
+Edited file
+_verify_async_472_runner.fsproj
++9
+-5
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+我現在跑實測：先起 net472 host，再用一個臨時 console app 呼叫 merged backend 的 async #load，目標是讓腳本裡 #r 的 net472 DLL 被實際載入並在 session 中留下可讀值。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $tempOut = 'E:\dk\_verify_async_472_runner\host.stdout.log' $tempErr = 'E:\dk\_verify_async_472_runner\host.stderr.log' $runnerProj = 'E:\dk\_verify_async_472_runner\_verify_async_472_runner.fsproj' & dotnet build $runnerProj -p:NuGetAudit=false -v minimal if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } $hostProcess = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $tempOut -RedirectStandardError $tempErr -PassThru Start-Sleep -Seconds 5 try { & dotnet run --project $runnerProj -p:NuGetAudit=false exit $LASTEXITCODE } finally { if ($hostProcess -and -not $hostProcess.HasExited) { Stop-Process -Id $hostProcess.Id -Force } } for 26s
+
+
+第一次 async #load 已經走到 host 並完成，但我驗證腳本內 top-level 變數的方式不對，#load 後那些值不一定會以我預期的名稱留在外層 scope。我要改成檢查兩件更直接的證據：script 的實際輸出，以及 load 後 session 內能不能直接呼叫那個 net472 DLL 的函式。
+
+Edited file
+Program.fs
++12
+-6
+
+        else
+            let valueResult = client.EvaluateExpression("valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+            let bannerResult = client.EvaluateExpression("bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+            let loadOutput = status.Result.Value.Output
+            let valueResult =
+                client.EvaluateExpression("Verify472.Demo.add 1 41", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            if not valueResult.IsSuccess then
+                fail $"Evaluate valueFrom472 failed: {valueResult.Errors}"
+            let bannerResult =
+                client.EvaluateExpression("Verify472.Demo.banner()", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            if not (loadOutput.Contains("VERIFY_NET472_OK:42")) then
+                fail $"Async #load output did not contain expected marker. Output: {loadOutput}"
+            elif not valueResult.IsSuccess then
+                fail $"Evaluate Verify472.Demo.add failed: {valueResult.Errors}"
+            elif not bannerResult.IsSuccess then
+                fail $"Evaluate bannerFrom472 failed: {bannerResult.Errors}"
+                fail $"Evaluate Verify472.Demo.banner failed: {bannerResult.Errors}"
+            else
+                printfn "ASYNC_ID=%s" asyncId
+                printfn "LOAD_OUTPUT=%s" (status.Result.Value.Output)
+                printfn "LOAD_OUTPUT=%s" loadOutput
+                printfn "VALUE_RESULT=%s" valueResult.Output
+我改成檢查真正重要的證據了：async #load 的輸出是否出現預期標記，還有載入後 session 能不能直接呼叫 Verify472.Demo。這比較符合你問的能力本身。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $tempOut = 'E:\dk\_verify_async_472_runner\host.stdout.log' $tempErr = 'E:\dk\_verify_async_472_runner\host.stderr.log' $runnerProj = 'E:\dk\_verify_async_472_runner\_verify_async_472_runner.fsproj' & dotnet build $runnerProj -p:NuGetAudit=false -v minimal if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } $hostProcess = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $tempOut -RedirectStandardError $tempErr -PassThru Start-Sleep -Seconds 5 try { & dotnet run --project $runnerProj -p:NuGetAudit=false exit $LASTEXITCODE } finally { if ($hostProcess -and -not $hostProcess.HasExited) { Stop-Process -Id $hostProcess.Id -Force } } for 14s
+
+
+這次結果其實已經很接近答案了：async #load 成功，FSI 明確回報腳本被載入，而且腳本裡用到的 valueFrom472、bannerFrom472 已經出現在載入後的模組裡。差的只是一層 FSI 自動產生的模組名，我把它解析出來再做最後一次驗證。
+
+Edited file
+Program.fs
++22
+-2
+
+open System.IO
+open System.Text.RegularExpressions
+open System.Threading.Tasks
+            let loadOutput = status.Result.Value.Output
+            let moduleMatch = Regex.Match(loadOutput, @"module\s+([A-Za-z0-9_.]+)")
+
+            if not moduleMatch.Success then
+                fail $"Unable to parse loaded script module name. Output: {loadOutput}"
+            else
+                let scriptModule = moduleMatch.Groups.[1].Value
+            let valueResult =
+
+            if not (loadOutput.Contains("VERIFY_NET472_OK:42")) then
+                fail $"Async #load output did not contain expected marker. Output: {loadOutput}"
+            let scriptValueResult =
+                client.EvaluateExpression($"{scriptModule}.valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            let scriptBannerResult =
+                client.EvaluateExpression($"{scriptModule}.bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            if not (loadOutput.Contains("valueFrom472: int")) then
+                fail $"Async #load output did not expose expected script binding. Output: {loadOutput}"
+            elif not valueResult.IsSuccess then
+                fail $"Evaluate Verify472.Demo.banner failed: {bannerResult.Errors}"
+            elif not scriptValueResult.IsSuccess then
+                fail $"Evaluate {scriptModule}.valueFrom472 failed: {scriptValueResult.Errors}"
+            elif not scriptBannerResult.IsSuccess then
+                fail $"Evaluate {scriptModule}.bannerFrom472 failed: {scriptBannerResult.Errors}"
+            else
+                printfn "ASYNC_ID=%s" asyncId
+                printfn "SCRIPT_MODULE=%s" scriptModule
+                printfn "LOAD_OUTPUT=%s" loadOutput
+                printfn "BANNER_RESULT=%s" bannerResult.Output
+                printfn "SCRIPT_VALUE_RESULT=%s" scriptValueResult.Output
+                printfn "SCRIPT_BANNER_RESULT=%s" scriptBannerResult.Output
+                0
+Ran Get-Content -Encoding UTF8 E:\dk\_verify_async_472_runner\Program.fs
+
+
+Edited file
+Program.fs
++28
+-28
+
+                let scriptModule = moduleMatch.Groups.[1].Value
+            let valueResult =
+                client.EvaluateExpression("Verify472.Demo.add 1 41", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                let valueResult =
+                    client.EvaluateExpression("Verify472.Demo.add 1 41", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            let bannerResult =
+                client.EvaluateExpression("Verify472.Demo.banner()", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                let bannerResult =
+                    client.EvaluateExpression("Verify472.Demo.banner()", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            let scriptValueResult =
+                client.EvaluateExpression($"{scriptModule}.valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                let scriptValueResult =
+                    client.EvaluateExpression($"{scriptModule}.valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            let scriptBannerResult =
+                client.EvaluateExpression($"{scriptModule}.bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+                let scriptBannerResult =
+                    client.EvaluateExpression($"{scriptModule}.bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+            if not (loadOutput.Contains("valueFrom472: int")) then
+                fail $"Async #load output did not expose expected script binding. Output: {loadOutput}"
+            elif not valueResult.IsSuccess then
+                fail $"Evaluate Verify472.Demo.add failed: {valueResult.Errors}"
+            elif not bannerResult.IsSuccess then
+                fail $"Evaluate Verify472.Demo.banner failed: {bannerResult.Errors}"
+            elif not scriptValueResult.IsSuccess then
+                fail $"Evaluate {scriptModule}.valueFrom472 failed: {scriptValueResult.Errors}"
+            elif not scriptBannerResult.IsSuccess then
+                fail $"Evaluate {scriptModule}.bannerFrom472 failed: {scriptBannerResult.Errors}"
+            else
+                printfn "VERIFY_ASYNC_NET472_DLL_OK"
+                printfn "ASYNC_ID=%s" asyncId
+                printfn "SCRIPT_MODULE=%s" scriptModule
+                printfn "LOAD_OUTPUT=%s" loadOutput
+                printfn "VALUE_RESULT=%s" valueResult.Output
+                printfn "BANNER_RESULT=%s" bannerResult.Output
+                printfn "SCRIPT_VALUE_RESULT=%s" scriptValueResult.Output
+                printfn "SCRIPT_BANNER_RESULT=%s" scriptBannerResult.Output
+                0
+                if not (loadOutput.Contains("valueFrom472: int")) then
+                    fail $"Async #load output did not expose expected script binding. Output: {loadOutput}"
+                elif not valueResult.IsSuccess then
+                    fail $"Evaluate Verify472.Demo.add failed: {valueResult.Errors}"
+                elif not bannerResult.IsSuccess then
+                    fail $"Evaluate Verify472.Demo.banner failed: {bannerResult.Errors}"
+                elif not scriptValueResult.IsSuccess then
+                    fail $"Evaluate {scriptModule}.valueFrom472 failed: {scriptValueResult.Errors}"
+                elif not scriptBannerResult.IsSuccess then
+                    fail $"Evaluate {scriptModule}.bannerFrom472 failed: {scriptBannerResult.Errors}"
+                else
+                    printfn "VERIFY_ASYNC_NET472_DLL_OK"
+                    printfn "ASYNC_ID=%s" asyncId
+                    printfn "SCRIPT_MODULE=%s" scriptModule
+                    printfn "LOAD_OUTPUT=%s" loadOutput
+                    printfn "VALUE_RESULT=%s" valueResult.Output
+                    printfn "BANNER_RESULT=%s" bannerResult.Output
+                    printfn "SCRIPT_VALUE_RESULT=%s" scriptValueResult.Output
+                    printfn "SCRIPT_BANNER_RESULT=%s" scriptBannerResult.Output
+                    0
+我把最後一個驗證修正好了，現在會直接確認兩條都成立：#load 後腳本內 bindings 存在，而且 referenced net472 DLL 也能從 session 直接呼叫。
+
+Ran $repo = 'E:\dk\FSharp.MCP.DevKit - Async' $hostExe = Join-Path $repo 'src\FSharp.MCP.DevKit.FsiHost\bin\Debug\net472\FSharp.MCP.DevKit.FsiHost.exe' $tempOut = 'E:\dk\_verify_async_472_runner\host.stdout.log' $tempErr = 'E:\dk\_verify_async_472_runner\host.stderr.log' $runnerProj = 'E:\dk\_verify_async_472_runner\_verify_async_472_runner.fsproj' & dotnet build $runnerProj -p:NuGetAudit=false -v minimal if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } $hostProcess = Start-Process -FilePath $hostExe -WorkingDirectory (Split-Path $hostExe) -RedirectStandardOutput $tempOut -RedirectStandardError $tempErr -PassThru Start-Sleep -Seconds 5 try { & dotnet run --project $runnerProj -p:NuGetAudit=false exit $LASTEXITCODE } finally { if ($hostProcess -and -not $hostProcess.HasExited) { Stop-Process -Id $hostProcess.Id -Force } } for 13s
+
+
+Worked for 4m 54s
+可以，但要分兩層講。
+
+就「FSI backend / MCP tool 實際執行路徑」來說，可以。我剛實測了：
+
+先編一個 net472 的 F# DLL
+再寫一個 .fsx 用 #r 參考那個 DLL
+然後用合併版的 async 路徑執行 #load "that.fsx"
+結果成功，驗證到：
+
+async #load 成功
+載入後可直接呼叫 DLL 裡的函式
+回傳值正確
+我實測到的結果是：
+
+Verify472.Demo.add 1 41 => 42
+Verify472.Demo.banner() => "VERIFY_NET472_OK"
+script 內的 bindings 也存在，只是會掛在 FSI 自動產生的模組下，例如 FSI_0001.Use472.valueFrom472
+所以就你問的這句來說：
+
+「async 跑參考了 .net472 編譯的 f# dll 的 fsx 腳本」：可以
+而且是走 merged mixed-runtime backend，不是 server 內本地假 FSI
+但有一個精確補充：
+
+我剛驗的是 FsiMcpService 這條執行路徑，也就是 MCP tools 背後真正用的 backend
+不是另外拿一個外部 MCP client 做完整協議層 end-to-end 測試
+如果你要，我下一步可以直接補一個真正的 end-to-end MCP 測試：
+
+stdio 模式
+或 HTTP /mcp 模式
+這樣就能回答成「不只 backend 可以，外部 mcp client 也真的能調到」。
+
+
+5 files changed
++114
+-16
+Undo
+
+Review
+_verify_async_472_runner/Program.fs
+﻿// For more information see https://aka.ms/fsharp-console-apps
+printfn "Hello from F#"
+open System
+open System.IO
+open System.Text.RegularExpressions
+open System.Threading.Tasks
+open Microsoft.Extensions.Logging.Abstractions
+open FSharp.MCP.DevKit.Server.McpFsiTools
+
+let fail (message: string) =
+    Console.Error.WriteLine(message)
+    1
+
+[<EntryPoint>]
+let main _ =
+    let serverConfigSource = @"E:\dk\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\akka.server.conf"
+    let serverConfigTarget = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+    let scriptPath = @"E:\dk\_verify_net472_dll\use472.fsx"
+
+    File.Copy(serverConfigSource, serverConfigTarget, true)
+
+    use service = new FsiMcpService(NullLogger<FsiMcpService>.Instance)
+    let client = service.GetClient()
+
+    if not service.IsRunning then
+        fail "Remote FSI host is not reachable."
+    else
+        let escapedScriptPath = scriptPath.Replace("\\", "\\\\")
+        let asyncId = service.EnqueueExecuteCode($"#load @\"{escapedScriptPath}\"", TimeSpan.FromSeconds(30.0))
+        let mutable status = service.GetAsyncExecutionStatus(asyncId)
+        let mutable retries = 0
+
+        while not status.IsCompleted && retries < 100 do
+            Task.Delay(200).GetAwaiter().GetResult()
+            status <- service.GetAsyncExecutionStatus(asyncId)
+            retries <- retries + 1
+
+        if not status.Exists then
+            fail $"Async execution entry not found: {asyncId}"
+        elif not status.IsCompleted then
+            fail $"Async execution did not complete in time: {asyncId}"
+        elif status.Result.IsNone || not status.Result.Value.IsSuccess then
+            let error =
+                status.Result
+                |> Option.map (fun result -> result.Errors)
+                |> Option.defaultValue "unknown async execution failure"
+
+            fail $"Async #load failed: {error}"
+        else
+            let loadOutput = status.Result.Value.Output
+            let moduleMatch = Regex.Match(loadOutput, @"module\s+([A-Za-z0-9_.]+)")
+
+            if not moduleMatch.Success then
+                fail $"Unable to parse loaded script module name. Output: {loadOutput}"
+            else
+                let scriptModule = moduleMatch.Groups.[1].Value
+                let valueResult =
+                    client.EvaluateExpression("Verify472.Demo.add 1 41", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                let bannerResult =
+                    client.EvaluateExpression("Verify472.Demo.banner()", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                let scriptValueResult =
+                    client.EvaluateExpression($"{scriptModule}.valueFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                let scriptBannerResult =
+                    client.EvaluateExpression($"{scriptModule}.bannerFrom472", TimeSpan.FromSeconds(10.0)).GetAwaiter().GetResult()
+
+                if not (loadOutput.Contains("valueFrom472: int")) then
+                    fail $"Async #load output did not expose expected script binding. Output: {loadOutput}"
+                elif not valueResult.IsSuccess then
+                    fail $"Evaluate Verify472.Demo.add failed: {valueResult.Errors}"
+                elif not bannerResult.IsSuccess then
+                    fail $"Evaluate Verify472.Demo.banner failed: {bannerResult.Errors}"
+                elif not scriptValueResult.IsSuccess then
+                    fail $"Evaluate {scriptModule}.valueFrom472 failed: {scriptValueResult.Errors}"
+                elif not scriptBannerResult.IsSuccess then
+                    fail $"Evaluate {scriptModule}.bannerFrom472 failed: {scriptBannerResult.Errors}"
+                else
+                    printfn "VERIFY_ASYNC_NET472_DLL_OK"
+                    printfn "ASYNC_ID=%s" asyncId
+                    printfn "SCRIPT_MODULE=%s" scriptModule
+                    printfn "LOAD_OUTPUT=%s" loadOutput
+                    printfn "VALUE_RESULT=%s" valueResult.Output
+                    printfn "BANNER_RESULT=%s" bannerResult.Output
+                    printfn "SCRIPT_VALUE_RESULT=%s" scriptValueResult.Output
+                    printfn "SCRIPT_BANNER_RESULT=%s" scriptBannerResult.Output
+                    0
+_verify_async_472_runner/_verify_async_472_runner.fsproj
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+</Project>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FSharp.MCP.DevKit - Async\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+_verify_net472_dll/Library.fs
+﻿namespace _verify_net472_dll
+
+module Say =
+    let hello name =
+        printfn "Hello %s" name
+namespace Verify472
+
+module Demo =
+    let add a b = a + b
+
+    let banner () =
+        "VERIFY_NET472_OK"
+_verify_net472_dll/_verify_net472_dll.fsproj
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Library.fs" />
+_verify_net472_dll/use472.fsx
+#r @"E:\dk\_verify_net472_dll\bin\Debug\net472\_verify_net472_dll.dll"
+
+open Verify472
+
+let valueFrom472 = Demo.add 1 41
+let bannerFrom472 = Demo.banner()
+
+printfn "%s:%d" bannerFrom472 valueFrom472

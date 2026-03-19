@@ -28,6 +28,8 @@
 | TC10 | Session | Restart | 呼叫 `Restart` 後再查 `GetState` | session 重新建立 |
 | TC11 | Error | Akka port mismatch regression | host / server 以既定 port 啟動 | 不再出現 `18081` / `8081` mismatch |
 | TC12 | Regression | ParseAndCheck | 呼叫 parse/check tool | 有正確 diagnostics，無 backend crash |
+| TC13 | Security | Audit-enabled solution build | `dotnet build FSharp.MCP.DevKit.Async.sln` | 不再出現 `Akka.Remote` `NU1904` |
+| TC14 | Security | Project vulnerability audit | 對 `FsiHost` / `Server` 執行 `dotnet list package --vulnerable --include-transitive --no-restore` | 兩個專案皆無 vulnerable packages |
 
 ## 本輪最低驗收
 
@@ -53,6 +55,8 @@
 | TC08 | pass | `ReferenceNugetPackage("Newtonsoft.Json, 13.0.3")` 後成功序列化 JSON |
 | TC09 | pass | reset 後 `y` 不再可見 |
 | TC11 | pass | host / server 全程使用 `8081` |
+| TC13 | pass | `log/20260319130030.build-after-akka-update.op_log` 無 `NU1904` |
+| TC14 | pass | `log/20260319130033.fsihost-vulnerable.op_log`、`log/20260319130034.server-vulnerable.op_log` |
 
 ## 測試方法補充
 

@@ -53,4 +53,30 @@
   - `doc/SD.md`
   - `doc/Test.md`
   - `doc/Action.md`
+
+## 2026-03-19 13:00:34
+
+- 背景：使用者要求更新上游 dependency，目標是移除目前 build audit 的已知高風險套件。
+- 動作：
+  - 重新檢查 `csharp-sdk` 與 target repo 的 vulnerability 狀態
+  - 確認 `csharp-sdk` 當前 audit 已無 vulnerable packages，但其 repo 有既存未提交變更：`Directory.Packages.props`、`global.json`
+  - 重新以不帶 `NuGetAudit=false` 的方式 build target repo，定位真正的 critical dependency 為 `Akka.Remote 1.5.30`
+  - 將 `FSharp.MCP.DevKit.FsiHost.fsproj`、`FSharp.MCP.DevKit.Server.fsproj` 的 `Akka` / `Akka.Remote` 升到 `1.5.62`
+  - 重新執行 `dotnet restore`、`dotnet build`、project-level vulnerability audit
+- 結果：
+  - target repo build 不再出現 `NU1904`
+  - `FSharp.MCP.DevKit.FsiHost` 與 `FSharp.MCP.DevKit.Server` 的 project-level vulnerability audit 均回報無 vulnerable packages
+  - 仍保留既有非安全性 warning：`NU1701`、`NU1510`、`MSB3245`、`MSB3243`
+- 根因判讀：
+  - 先前真正需要處理的是 target repo 的 `Akka.Remote 1.5.30`，不是 `csharp-sdk` 的既有 central package
+  - solution-level `dotnet list package --vulnerable` 在本 repo 會受 NuGet source mapping / restore 路徑差異影響，因此本輪以 project-level audit 作為安全性驗證證據
+- 風險：
+  - `csharp-sdk` 仍有使用者或其他流程留下的未提交變更，本輪未主動覆蓋
+  - `NuGet.* 7.3.0` 的 `NU1701` 與 net472 reference resolution warning 仍待獨立整理
+- 關聯：
+  - `doc/SA.md`
+  - `doc/SD.md`
+  - `doc/WBS.md`
+  - `doc/Test.md`
+  - `doc/Action.md`
   - `log/*async-smoke-app*.op_log`

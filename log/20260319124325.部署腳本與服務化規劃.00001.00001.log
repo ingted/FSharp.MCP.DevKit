@@ -1,0 +1,25 @@
+背景
+- 使用者要求在可 `Invoke-Command` 的遠端 Windows 機器上，自動部署 mixed-runtime FSharp.MCP.DevKit - Async。
+- 目標是自動複製正確 artifact，並註冊兩個服務：
+  - `fsihost`：`net472` FSI host
+  - `fsharp-devkit`：`.NET 10` MCP server
+
+目標
+- 補齊 `FsiHost` 與 `Server` 的 Windows Service hosting 能力。
+- 提供可重複執行的 PowerShell 部署腳本。
+- 補齊 deployment / runbook 文件與驗證證據。
+
+計畫步驟
+1. 檢查目前 entry point 是否具備 Windows Service lifecycle 支援。
+2. 修改 `FSharp.MCP.DevKit.FsiHost` 與 `FSharp.MCP.DevKit.Server`，讓兩者都可在 console / service 模式運作。
+3. 新增部署腳本，支援 local publish、remote copy、service install/update、啟動與健康檢查。
+4. 更新 `doc/Deployment.md`、`doc/Runbook.md`、`doc/SA.md`、`doc/SD.md`、`doc/WBS.md`、`doc/Test.md`、`doc/Action.md`、`doc/DevLog.md`。
+5. 執行 build / publish / script syntax / artifact check，並以 `.op_log` 落檔。
+
+關聯文件
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Action.md`
+- `doc/DevLog.md`

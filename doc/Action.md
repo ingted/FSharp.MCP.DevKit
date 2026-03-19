@@ -24,6 +24,7 @@
 | 修正 async queue / timeout / polling | remote client adapter | async execute 可運作 | done |
 | 修正 port mismatch | remote client adapter | host / server 參數一致 | done |
 | 修正 Akka config path 解析 | remote client adapter | 非輸出目錄啟動不再因 cwd 漂移失敗 | done |
+| 更新 `Akka` / `Akka.Remote` 安全版本 | build / audit evidence | `NU1904` 消失 | done |
 
 ## 測試
 
@@ -34,6 +35,8 @@
 | async enqueue + polling smoke test | `asyncId` lifecycle 正常 | done |
 | package reference regression | `#r "nuget:..."` 可在同一 session 使用 | done |
 | reset / restart regression | session state 可重建 | done |
+| audit-enabled build | solution build 不再出現 `NU1904` | done |
+| project vulnerability audit | `FsiHost` / `Server` 無 vulnerable packages | done |
 
 ## 回饋
 

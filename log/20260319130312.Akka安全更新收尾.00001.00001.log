@@ -1,0 +1,54 @@
+背景
+- 使用者要求更新上游 dependency，重點是移除目前 mixed-runtime devkit 在 audit-enabled build 下的高風險套件。
+
+目標
+- 以最小變更更新 target repo 的 security blocker。
+- 保持 mixed-runtime 行為不變。
+- 完成 build、restore、project-level vulnerability audit 與 SOP 文件同步。
+
+計畫步驟
+1. 重新確認目前 audit 真正命中的 vulnerability 所在 repo 與 package。
+2. 檢查上游 `csharp-sdk` 是否已有未提交 dependency 變更，避免覆寫。
+3. 只升 target repo 中 `Akka` / `Akka.Remote` 到同一安全版本。
+4. 以 audit-enabled `dotnet build` 與 `dotnet restore` 驗證 `NU1904` 已消失。
+5. 對 `FsiHost` / `Server` 執行 project-level vulnerability audit。
+6. 同步更新 SA/SD/WBS/Test/Action/DevLog/KM 並執行 `check.fsx`。
+
+執行命令/參數
+1. `dotnet package search Akka.Remote --take 5`
+2. `dotnet package search Akka --take 5`
+3. `dotnet build FSharp.MCP.DevKit.Async.sln -v minimal`
+4. `dotnet restore FSharp.MCP.DevKit.Async.sln -v minimal`
+5. `dotnet list src\\FSharp.MCP.DevKit.FsiHost\\FSharp.MCP.DevKit.FsiHost.fsproj package --vulnerable --include-transitive --no-restore`
+6. `dotnet list src\\FSharp.MCP.DevKit.Server\\FSharp.MCP.DevKit.Server.fsproj package --vulnerable --include-transitive --no-restore`
+
+結果
+- `Akka` / `Akka.Remote` 已由 `1.5.30` 升到 `1.5.62`。
+- `dotnet build FSharp.MCP.DevKit.Async.sln -v minimal` 成功，且已不再出現 `Akka.Remote` `NU1904`。
+- `dotnet restore FSharp.MCP.DevKit.Async.sln -v minimal` 成功。
+- `FSharp.MCP.DevKit.FsiHost` 與 `FSharp.MCP.DevKit.Server` 的 project-level vulnerability audit 均為 clean。
+- SA/SD/WBS/Test/Action/DevLog 與 `E:\dk\MCP.KM.md` 已同步更新。
+
+根因判讀
+- 目前真正需要處理的 security blocker 是 target repo 直接引用的 `Akka.Remote 1.5.30`。
+- `csharp-sdk` 當前 audit 已無 vulnerable packages，但其 repo 仍存在既有未提交變更，本輪未覆蓋。
+- solution-level `dotnet list package --vulnerable` 在本 repo 有 source-mapping / restore 路徑差異，因此以 project-level audit 作為最終安全性證據。
+
+下一步
+1. 若要繼續降 warning，需獨立整理 `NuGet.* 7.3.0` 的 `NU1701`。
+2. net472 `FsiHost` 的 `System.IO.Compression` / `System.Net.Http` assembly resolution warning 也應另開一輪處理。
+3. 若使用者要回到部署任務，可在這個安全版本基線上繼續。
+
+關聯文件/工單/PR
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Action.md`
+- `doc/DevLog.md`
+- `E:\dk\MCP.KM.md`
+- GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者確認目前程式碼可編譯後，要求更新上游 dependency。
+- 重新檢查後，先前 `csharp-sdk` 的 `NU1903` 已未再重現；真正阻塞為 target repo 的 `Akka.Remote 1.5.30` critical vulnerability。

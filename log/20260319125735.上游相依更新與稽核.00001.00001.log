@@ -1,0 +1,22 @@
+背景
+- 使用者要求更新上游 dependency，目標是移除目前 build audit 的阻塞與已知高風險套件。
+
+目標
+- 釐清目前 `FSharp.MCP.DevKit - Async` 與 `csharp-sdk` 的 vulnerability / outdated 狀態。
+- 先修正已確認的 critical vulnerability。
+- 重跑 build / audit，確認不再依賴 `NuGetAudit=false` workaround 才能完成 restore。
+
+計畫步驟
+1. 盤點 `csharp-sdk` 與 target repo 的 vulnerable / outdated package。
+2. 檢查上游 repo 是否已有未提交 dependency 變更，避免覆蓋。
+3. 以最小變更更新 `FSharp.MCP.DevKit - Async` 中的 `Akka` / `Akka.Remote`。
+4. 重跑 build / package audit，確認 `NU1904` 是否清除。
+5. 更新 SA/SD/WBS/Test/Action/DevLog 與相關 log 證據。
+
+關聯文件
+- `doc/SA.md`
+- `doc/SD.md`
+- `doc/WBS.md`
+- `doc/Test.md`
+- `doc/Action.md`
+- `doc/DevLog.md`
