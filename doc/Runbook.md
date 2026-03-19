@@ -51,6 +51,7 @@ Invoke-RestMethod http://localhost:5000/healthz
 - `RemoteRoot` 必須放在遠端主機可寫入的本機固定磁碟，例如 `C:\services\FSharp.MCP.DevKit.Async`
 - 若目標磁碟是 `Removable`、`IsReady = False` 或容量為 `0`，部署腳本會在複製前直接失敗
 - `ServerPort` 若已被其他程序占用，部署腳本會在清空目錄前直接失敗，需改用其他 port
+- 若懷疑 service registration 本身已壞掉，可加 `-RecreateServices` 先刪除再重建服務
 - 先用 `-WhatIf` 確認參數組合
 - 若已手動 publish，可改用 `-SkipPublish`
 - 若遠端服務卡住，先停服務再重跑：

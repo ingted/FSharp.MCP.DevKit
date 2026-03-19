@@ -31,6 +31,7 @@
 
 - `fsihost`
 - `fsharp-devkit`
+- 若指定 `-RecreateServices`，腳本會在重部署時先刪除既有 service registration，再重新建立
 
 ## 常用指令
 
@@ -65,6 +66,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
   -FsiHostArtifactPath .\artifacts\deploy-check\fsihost `
   -ServerArtifactPath .\artifacts\deploy-check\fsharp-devkit `
   -WhatIf
+```
+
+### 4. 強制刪除並重建 service
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
+  -ComputerName 10.36.205.160 `
+  -RemoteRoot C:\services\FSharp.MCP.DevKit.Async `
+  -Configuration Release `
+  -ServerPort 5010 `
+  -RecreateServices
 ```
 
 ## 驗證

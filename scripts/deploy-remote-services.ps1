@@ -42,6 +42,9 @@ param(
     [switch]$SkipStart,
 
     [Parameter(Mandatory = $false)]
+    [switch]$RecreateServices,
+
+    [Parameter(Mandatory = $false)]
     [switch]$KeepLocalArtifacts
 )
 
@@ -128,6 +131,7 @@ $serverUrls = "http://0.0.0.0:$ServerPort"
 $remoteHealthUrl = "http://localhost:$ServerPort/healthz"
 $requiredRemoteBytes = [int64]0
 $skipStartFlag = if ($SkipStart.IsPresent) { "true" } else { "false" }
+$recreateServicesFlag = if ($RecreateServices.IsPresent) { "true" } else { "false" }
 
 if (-not $PSCmdlet.ShouldProcess("${ComputerName}:$RemoteRoot", "Deploy fsihost and fsharp-devkit services")) {
     return
@@ -175,7 +179,8 @@ try {
             $FsiHostServiceName,
             $ServerServiceName,
             $RequiredRemoteBytes,
-            $ServerPort
+            $ServerPort,
+            $RecreateServicesFlag
         )
 
         function Clear-DirectoryContents {
@@ -249,6 +254,36 @@ try {
             throw "ServerPort $Port is already in use by PID $($listener.OwningProcess) ($processName). Choose another -ServerPort."
         }
 
+        function Remove-ServiceRegistration {
+            param([string]$Name)
+
+            $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+
+            if (-not $service) {
+                return
+            }
+
+            $deleteOutput = & sc.exe delete $Name 2>&1 | Out-String
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "sc.exe delete failed: $Name`n$deleteOutput"
+            }
+
+            $deadline = [DateTime]::UtcNow.AddSeconds(60)
+
+            while ([DateTime]::UtcNow -lt $deadline) {
+                if (-not (Get-Service -Name $Name -ErrorAction SilentlyContinue)) {
+                    return
+                }
+
+                Start-Sleep -Seconds 1
+            }
+
+            throw "Timed out waiting for service registration to be removed: $Name"
+        }
+
+        $shouldRecreateServices = [string]::Equals($RecreateServicesFlag, "true", [System.StringComparison]::OrdinalIgnoreCase)
+
         $netRelease = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" -Name Release).Release
         if ($netRelease -lt 461808) {
             throw ".NET Framework 4.7.2 or later is required on the remote machine."
@@ -271,11 +306,17 @@ try {
             }
         }
 
+        if ($shouldRecreateServices) {
+            foreach ($serviceName in @($ServerServiceName, $FsiHostServiceName)) {
+                Remove-ServiceRegistration -Name $serviceName
+            }
+        }
+
         Assert-ServerPortAvailable -Port $ServerPort
 
         Clear-DirectoryContents -Path $RemoteFsiHostDir
         Clear-DirectoryContents -Path $RemoteServerDir
-    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes, $ServerPort
+    } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes, $ServerPort, $recreateServicesFlag
 
     Write-Step "Copying fsihost artifacts to $remoteFsiHostDir"
     Copy-DirectoryContentsToSession -Session $session -LocalPath $localFsiHostDir -RemotePath $remoteFsiHostDir
