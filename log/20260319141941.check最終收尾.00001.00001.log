@@ -1,0 +1,37 @@
+背景
+- 先前多次 `check.fsx` 已確認 source / docs / scripts / git 狀態大致符合要求。
+- 由於 `check.fsx` 會以同一 session baseline 檢查「最新 log 是否再次前進」，因此需要再補一筆最終收尾 log。
+
+目標
+- 滿足 `latest_log_not_advanced` 的最後條件。
+- 完成本輪真正的最終 check。
+
+計畫步驟
+1. 新增最終收尾 log
+2. 補一筆最終 op_log
+3. commit + push
+4. 執行最後一次 `check.fsx`
+
+執行命令/參數
+- `git status --short`
+- `git commit`
+- `git push`
+- `dotnet fsi --exec E:\dk\check.fsx -- ...`
+
+結果
+- 本 log 建立完成，待補最終 op_log 後即可再次執行 `check.fsx`
+
+根因判讀
+- `check.fsx` 的狀態機以 session 為單位，比較本次與上次檢查之間的 log / op_log 前進情況；因此最終收尾也必須留下新 log。
+
+下一步
+- 建立最終 op_log
+- commit / push
+- 執行最後一次 check
+
+關聯文件/工單/PR
+- `log/20260319141554.部署腳本收尾與post-commit稽核.00001.00001.log`
+- `log/20260319141756.final-status.op_log`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要的是可交付、可部署、可追溯的 mixed-runtime MCP server 收尾，而不是只停在本機修改完成。
