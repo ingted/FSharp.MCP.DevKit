@@ -30,10 +30,16 @@ type FsiSupervisorSessionSnapshot =
       LastCheckpointId: string option
       RunningSinceUtc: DateTime option }
 
+type FsiSupervisorResetResult =
+    { SessionId: string
+      Existed: bool
+      Status: string }
+
 type IFsiSupervisorClient =
     abstract member Execute: host: HostRecord * request: FsiSupervisorExecRequest -> Task<FsiSupervisorExecutionResult>
     abstract member GetSessionInfo: host: HostRecord * sessionId: string -> Task<FsiSupervisorSessionSnapshot>
     abstract member ListSessions: host: HostRecord -> Task<FsiSupervisorSessionSnapshot list>
+    abstract member ResetSession: host: HostRecord * sessionId: string -> Task<FsiSupervisorResetResult>
 
 module private FsiSupervisorAdapters =
     let private combineErrors (stderr: string) (error: ErrorInfo option) =
@@ -77,6 +83,11 @@ module private FsiSupervisorAdapters =
           LastCheckpointId = session.lastCheckpointId
           RunningSinceUtc = session.runningSinceUtc }
 
+    let toResetResult (result: ResetSessionResult) : FsiSupervisorResetResult =
+        { SessionId = result.session
+          Existed = result.existed
+          Status = result.status }
+
 type FsiSupervisorClient(actorSystem: ActorSystem, ?defaultTimeout: TimeSpan) =
     let defaultTimeout = defaultArg defaultTimeout (TimeSpan.FromSeconds 30.0)
 
@@ -114,13 +125,23 @@ type FsiSupervisorClient(actorSystem: ActorSystem, ?defaultTimeout: TimeSpan) =
         member _.GetSessionInfo(host: HostRecord, sessionId: string) =
             task {
                 let! supervisor = resolveSupervisor host
-                let! info = supervisor.Ask<SessionInfo>({ session = sessionId }, TimeSpan.FromSeconds 5.0)
+                let request: GetSessionInfo = { session = sessionId }
+                let! info = supervisor.Ask<SessionInfo>(request, TimeSpan.FromSeconds 5.0)
                 return FsiSupervisorAdapters.toSessionSnapshot info
             }
 
         member _.ListSessions(host: HostRecord) =
             task {
                 let! supervisor = resolveSupervisor host
-                let! sessions = supervisor.Ask<Sessions>({ all = true }, TimeSpan.FromSeconds 5.0)
+                let request: ListSessions = { all = true }
+                let! sessions = supervisor.Ask<Sessions>(request, TimeSpan.FromSeconds 5.0)
                 return sessions.items |> List.map FsiSupervisorAdapters.toSessionSnapshot
+            }
+
+        member _.ResetSession(host: HostRecord, sessionId: string) =
+            task {
+                let! supervisor = resolveSupervisor host
+                let request: ResetSession = { session = sessionId }
+                let! result = supervisor.Ask<ResetSessionResult>(request, TimeSpan.FromSeconds 5.0)
+                return FsiSupervisorAdapters.toResetResult result
             }

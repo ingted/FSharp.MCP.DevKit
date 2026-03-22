@@ -215,6 +215,15 @@ type private StatefulFakeFsiSupervisorClient() =
                 |> Seq.toList
             )
 
+        member _.ResetSession(host: HostRecord, sessionId: string) =
+            let existed = sessions.TryRemove((host.HostId, sessionId)) |> fst
+
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = existed
+                  Status = if existed then "reset" else "missing" }
+            )
+
 let private waitForCompletion (service: FsiMcpService) asyncId =
     task {
         let mutable attempt = 0
@@ -305,6 +314,27 @@ let ``Smoke multi-session routed execution keeps session state isolated`` () =
 
         Assert.Equal("11", valueA)
         Assert.Equal("22", valueB)
+    }
+
+[<Fact>]
+let ``Smoke net10 routed reset clears session state`` () =
+    task {
+        let service = createNet10SmokeService ()
+        use _cleanup = service :> IDisposable
+
+        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-reset", "Reset Agent")
+
+        let! _ = McpControlPlaneTools.CreateFsiHost(service, "agent-reset", "net10", "dotnet", "", "/srv/fsi", "host-reset", "PING", 1000)
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-reset", "host-reset", "session-reset", "Session Reset")
+
+        let! _ = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-reset", "host-reset", "session-reset", "let resetValue = 33", 30)
+        let! beforeReset = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-reset", "host-reset", "session-reset", "resetValue", 30)
+        let! resetOutput = McpExecutionTools.ResetFsiSessionRouted(service, "agent-reset", "host-reset", "session-reset", 30)
+        let! afterReset = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-reset", "host-reset", "session-reset", "resetValue", 30)
+
+        Assert.Equal("33", beforeReset)
+        Assert.Equal("FSI session reset successfully", resetOutput)
+        Assert.Contains("not defined", afterReset, StringComparison.OrdinalIgnoreCase)
     }
 
 [<Fact>]

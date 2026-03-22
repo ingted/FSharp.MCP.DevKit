@@ -116,6 +116,18 @@
 | `Net10HostBackend maps nuget and path operations into supervisor execution requests` | 建立 fake host registry、fake `IFsiSupervisorClient`、fake `IProcSupervisorClient` | 驗證 `.NET 10` backend 會把高階 operation 轉成 supervisor exec request | 執行 `ReferenceNuget` 與 `AddSearchPath` | 無 | 無 | 斷言 request 內 `Code/Refs/Loads/SessionId` 映射正確 | 無 |
 | `Net10HostBackend maps session snapshot into SessionRecord` | 建立 fake host 與 fake session snapshot client | 驗證 supervisor session snapshot 會被轉為 `SessionRecord` | 呼叫 `GetSessionState` | 無 | 無 | 斷言 `Status/Refs/Loads/SearchPaths/Variables` 正確 | 無 |
 | `Net10HostBackend health check and restart delegate to ProcSupervisor` | 建立 fake proc client 與 fake fsi client | 驗證 health/restart 由 `ProcSupervisor` 負責 | 呼叫 `HealthCheck` 與 `RestartHost` | 無 | 無 | 斷言 health snapshot 與 restart delegation 正確 | 無 |
+| `Net10HostBackend reset session delegates to supervisor and returns success record` | 建立 fake host registry、fake reset-capable `IFsiSupervisorClient`、fake `IProcSupervisorClient` | 驗證 `.NET 10` backend 的 `ResetSession` 已接上 supervisor contract | 呼叫 `ResetSession` | 無 | 無 | 斷言 reset 請求發出且回傳 `FSI session reset` 成功 record | 無 |
+
+## SmokeRegressionTests.fs
+
+| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Smoke old tools remain compatible on default route` | 建立 in-proc `FsiMcpService` | 驗證 legacy tools 經過 routed execution 重構後仍相容 | execute -> evaluate -> reset -> async -> evaluate | poll async status | 若未完成則 `Task.Delay(100)` 再輪詢 | 斷言 binding persistence、reset 後清空、async linkage 正常 | `Dispose service` |
+| `Smoke multi-host routed execution keeps host state isolated` | 建立 net10 fake service，註冊 agent，建立兩個 host 與同名 session | 驗證不同 host 不會互相污染 state | host-a / host-b 各自 execute + evaluate | 無 | 無 | 斷言 host-a=101、host-b=202 | `Dispose service` |
+| `Smoke multi-session routed execution keeps session state isolated` | 建立 net10 fake service，註冊 agent，建立同 host 下兩個 session | 驗證不同 session 不會互相污染 state | session-a / session-b 各自 execute + evaluate | 無 | 無 | 斷言 session-a=11、session-b=22 | `Dispose service` |
+| `Smoke net10 routed reset clears session state` | 建立 net10 fake service，註冊 agent，建立 host 與 session | 驗證 net10 routed reset 會清掉指定 session state | execute -> evaluate -> routed reset -> evaluate | 無 | 無 | 斷言 reset 前為 33，reset 後舊 binding 不再存在 | `Dispose service` |
+| `Smoke async queue remains FIFO and links result ids` | 建立 in-proc `FsiMcpService` | 驗證 async queue 的先後順序與 result id linkage | enqueue 兩筆 mutate code，再 evaluate | poll status1/status2 | 若未完成則 `Task.Delay(100)` 再輪詢 | 斷言 counter=2 且兩筆都有 `ResultId` | `Dispose service` |
+| `Smoke result queries support exists forall and compare` | 建立 in-proc `FsiMcpService` | 驗證 built-in result query 可做 exists/forall/compare | 建立兩筆 result 後依序 query | 無 | 無 | 斷言 query output 與 materialized data 正確 | `Dispose service` |
 
 ## NetFxHostBackendTests.fs
 

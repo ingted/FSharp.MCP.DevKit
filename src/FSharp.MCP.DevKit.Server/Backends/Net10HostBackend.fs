@@ -152,6 +152,7 @@ type Net10HostBackend
         member _.ResetSession(route: ExecutionRoute) =
             task {
                 let host = requireHost route.HostId
+                let submittedAt = DateTime.UtcNow
                 let request =
                     { RequestId = Guid.NewGuid().ToString("N")
                       Route = route
@@ -159,8 +160,29 @@ type Net10HostBackend
                       Payload = ""
                       Timeout = Some(TimeSpan.FromSeconds 30.0)
                       UsePackageTargets = None }
+                let! reset = fsiSupervisorClient.ResetSession(host, route.SessionId)
+                let completedAt = DateTime.UtcNow
 
-                return createUnsupportedRecord request host "ResetSession is not implemented for Net10HostBackend yet."
+                let result =
+                    { Output = "FSI session reset"
+                      Errors = ""
+                      IsSuccess = true
+                      ExecutionTime = Some(completedAt - submittedAt)
+                      Diagnostics = [||]
+                      Value = Some reset.Status }
+
+                return
+                    BackendAdapters.toExecutionRecord
+                        Net10Remote
+                        request
+                        submittedAt
+                        (Some submittedAt)
+                        (Some completedAt)
+                        host.HostId
+                        reset.SessionId
+                        (Guid.NewGuid().ToString("N"))
+                        result
+                        None
             }
 
         member _.RestartHost(host: HostRecord) =

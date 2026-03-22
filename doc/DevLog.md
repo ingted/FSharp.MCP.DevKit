@@ -217,3 +217,33 @@
 - 後續建議：
   - 新增 `samples/` 或獨立 demo client app
   - 在 `DEMO.md` 明確寫出 repo 外 consumer 的依賴前提
+
+## 2026-03-22 22:35:00
+
+- 背景：`.NET 10` 路徑的 `Net10HostBackend.ResetSession` 一直是 stub，代表多 host / 多 session 架構在 net10 host 上缺一個真正可用的 session lifecycle primitive。
+- 動作：
+  - 在上游 `FAkka.Fsi.Contracts` 新增 `ResetSession / ResetSessionResult`
+  - 在上游 `FAkka.FSI.Supervisor` 實作 per-session reset，透過 supervisor 移除 session actor 並回覆 reset result
+  - 修正新增 reset contract 帶來的 record literal 型別歧義，將 `GetSessionInfo/ListSessions/Checkpoint/Fork` 相關 request 顯式標註
+  - 發布 `FAkka.Fsi.Contracts 10.0.103` 與 `FAkka.FSI.Supervisor 1.562.100.201-dgx.3`
+  - 在本 repo 更新 `IFsiSupervisorClient`、`FsiSupervisorClient`、`Net10HostBackend.ResetSession`
+  - 補 `Net10HostBackendTests` 與 `SmokeRegressionTests` 的 reset coverage
+- 結果：
+  - `.NET 10` host reset 已從假實作變成真 contract
+  - `O1` 可以正式從 backlog 移出，只剩 `O2-O5`
+  - 純 `nuget.org` restore/build/test 已確認可用，不需要把本地 package source 寫進 repo
+- 困境：
+  - 發版初期 nuget.org index 有延遲，容易讓人誤以為 package 還不存在
+  - `FAkka.Fsi.Contracts` 原本是 `Exe` 形態，轉為 library 後需要同步修 pack 與空 `Program.fs`
+  - 上游 tests 與 bootstrap helper 大量使用 `{ session = ... }` 這類 record literal，新增同欄位 contract 後很容易被錯誤推斷
+- 解法：
+  - contracts 專案改為真正 library，並補 Linux `pwsh` post-build/push
+  - package push 成功後，再用 flat container 與純 `nuget.org` restore 雙重確認版本可見
+  - 將所有受影響 request record 顯式標註型別，避免未來 message 擴充再次踩雷
+- 關聯：
+  - `src/FSharp.MCP.DevKit.Server/Integration/FsiSupervisorClient.fs`
+  - `src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs`
+  - `tests/Net10HostBackendTests.fs`
+  - `tests/SmokeRegressionTests.fs`
+  - `/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/Contracts.fs`
+  - `/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs`

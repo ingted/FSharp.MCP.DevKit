@@ -121,7 +121,7 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| TT24 | 新增 `Net10HostBackendTests.fs` | fake supervisor/proc client 測試 | request mapping / state / health / restart 可回歸 | done |
+| TT24 | 新增 `Net10HostBackendTests.fs` | fake supervisor/proc client 測試 | request mapping / state / health / restart / reset 可回歸 | done |
 | TT25 | 新增 `ProvisioningServicesTests.fs` | host/session provisioning 測試 | `createHost` / `createSession` 契約可回歸 | done |
 | TT26 | 調整 tests 專案到 `.NET 10` MTP 相容設定 | `FSharp.MCP.DevKit.Tests.fsproj` | `dotnet test -f net10.0` 可正常執行 | done |
 | TT27 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP06` 新增測試後仍全數通過 | done |

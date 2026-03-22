@@ -42,6 +42,13 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
 
         member _.ListSessions(_) = Task.FromResult([])
 
+        member _.ResetSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = true
+                  Status = "reset" }
+            )
+
 [<Fact>]
 let ``McpControlPlaneTools register host session and health flow works`` () =
     task {

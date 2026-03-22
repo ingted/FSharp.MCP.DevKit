@@ -323,13 +323,13 @@ WP01-WP09 -> WP10
 
 這一段是本輪 self-use 與 client/E2E 驗證後，認為下一輪最值得優先收斂的項目。
 
-| ID | 優化項 | 原因 | 建議產出 | 建議優先度 |
+| ID | 優化項 | 原因 | 建議產出 | 建議優先度 | 狀態 |
 | --- | --- | --- | --- | --- |
-| O1 | `.NET 10` session reset 正式化 | `Net10HostBackend.ResetSession` 仍受限於上游 supervisor contract，不能接受永久維持 stub | `FAkka.Fsi.Contracts` 增加 reset message，`FAkka.FSI.Supervisor` 與 `IFsiSupervisorClient` 接上，補 unit/integration/e2e | P0 |
-| O2 | `McpClientHarness` repo 外重用體驗 | 外部 `.fsx` 重用時仍需顯式帶 `ModelContextProtocol.*` 與 logging dependencies | 提供 `samples/` 或 `demo-client` console app，降低外部 consumer bootstrap friction | P1 |
-| O3 | routed execution onboarding | 非 default agent 走 explicit route 時，若未先建 host/session，使用者容易踩 ownership / missing session error | 補 clearer tool description、DEMO flow、可能的 helper tool / bootstrap workflow | P1 |
-| O4 | `FSharpCode` result query 序列化策略 | 現在對不可直接序列化物件採 fallback，足夠可用但還不夠穩 | 補 richer serializer policy 與更多 result-shape regression tests | P1 |
-| O5 | 真 out-of-proc net10 E2E | 目前 `.NET 10` backend 主要靠 fake supervisor/client 測試；真正跨 proc 仍值得補 | 增加可啟動 `FAkka.FSI.Supervisor` 的 integration/e2e suite | P2 |
+| O1 | `.NET 10` session reset 正式化 | 已完成：`Net10HostBackend.ResetSession` 不再是 stub，且 reset contract 已落到上游 `FAkka` packages | `FAkka.Fsi.Contracts 10.0.103`、`FAkka.FSI.Supervisor 1.562.100.201-dgx.3`、本 repo unit/regression 測試 | P0 | done |
+| O2 | `McpClientHarness` repo 外重用體驗 | 外部 `.fsx` 重用時仍需顯式帶 `ModelContextProtocol.*` 與 logging dependencies | 提供 `samples/` 或 `demo-client` console app，降低外部 consumer bootstrap friction | P1 | todo |
+| O3 | routed execution onboarding | 非 default agent 走 explicit route 時，若未先建 host/session，使用者容易踩 ownership / missing session error | 補 clearer tool description、DEMO flow、可能的 helper tool / bootstrap workflow | P1 | todo |
+| O4 | `FSharpCode` result query 序列化策略 | 現在對不可直接序列化物件採 fallback，足夠可用但還不夠穩 | 補 richer serializer policy 與更多 result-shape regression tests | P1 | todo |
+| O5 | 真 out-of-proc net10 E2E | 目前 `.NET 10` backend 主要靠 fake supervisor/client 測試；真正跨 proc 仍值得補 | 增加可啟動 `FAkka.FSI.Supervisor` 的 integration/e2e suite | P2 | todo |
 4. out-of-proc host 建立流程一律經 `ProcSupervisor`
 5. host/session health 可查
 6. path mapping 可查
