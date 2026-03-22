@@ -55,6 +55,7 @@
     <Compile Include="McpControlPlaneTools.fs" />
     <Compile Include="McpExecutionTools.fs" />
     <Compile Include="McpResultTools.fs" />
+    <Compile Include="McpClientHarness.fs" />
     <Compile Include="ControlPlaneResources.fs" />
     <Compile Include="ResultResources.fs" />
     <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />

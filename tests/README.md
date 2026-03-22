@@ -73,7 +73,33 @@
 
 | 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `McpResultTools get list query compare and resources work` | 建立 `FsiMcpService(enableRemoteClient=false)`，產生兩筆可比較 result | 驗證 result get/list/query/compare/resource/materialization 一次到位 | 先產生 result，呼叫 `get/list/query/compare` tools，再呼叫 result resources | 無 | 無 | 斷言 map/diff/materialized synthetic result 與 resources 內容 | `Dispose service` |
+| `McpResultTools get list query compare and resources work` | 建立 `FsiMcpService(enableRemoteClient=false)`，產生兩筆可比較 result | 驗證 result get/list/query/compare/resource/materialization 一次到位，且 `FSharpCode` query 可執行 | 先產生 result，呼叫 `get/list/query/compare`、built-in query、`FSharpCode` query tools，再呼叫 result resources | 無 | 無 | 斷言 built-in map/diff、`FSharpCode` materialized JSON、synthetic result 與 resources 內容 | `Dispose service` |
+
+## McpClientAvailabilityTests.fs
+
+| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `MCP client can ping server and discover core tools and resources` | 透過主專案 `McpClientHarness` 啟動真 server stdio client | 驗證主專案內建 MCP client 能直接打通 server 可用性 | 先 `Ping`，再列 `tools/resources/templates` | 無 | 無 | 斷言核心 tools 與 resource templates 均存在 | `DisposeAsync client` |
+| `MCP client can read direct and templated resources` | 同上，建立真 client | 驗證 resource read path 可直接使用 | 讀 `worldtime` 與 `time/Asia-Taipei` | 無 | 無 | 斷言 JSON 內容含預期 timezone 欄位 | `DisposeAsync client` |
+
+## McpClientSmokeTests.fs
+
+| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Client smoke follows FSI bound-value persistence pattern` | 透過 `McpClientHarness` 啟真 client/server | 驗證互動式 binding 可跨 call 保留 | 先 `execute_f_sharp_code` 定義值，再 `evaluate_f_sharp_expression` | 無 | 無 | 斷言第二次可讀到第一次定義的值 | `DisposeAsync client` |
+| `Client smoke follows implicit it pattern` | 同上 | 驗證 FSI `it` 行為 | 先執行單一表達式，再 evaluate `it` | 無 | 無 | 斷言 `it` 回傳最近表達式值 | `DisposeAsync client` |
+| `Client smoke follows latest-shadowed-value pattern` | 同上 | 驗證 shadowing 後會讀到最新值 | 多次 `execute_f_sharp_code` 重定義相同名稱，再 evaluate | 無 | 無 | 斷言回傳最新 binding | `DisposeAsync client` |
+| `Client smoke follows reset-clears-state pattern` | 同上 | 驗證 reset 真的清掉 session state | define -> evaluate -> `reset_fsi_session` -> evaluate | 無 | 無 | 斷言 reset 後舊 binding 不再可用 | `DisposeAsync client` |
+| `Client smoke covers async status and result linkage` | 同上 | 驗證 async tool / status resource / result lookup 串起來 | 先 async execute，再輪詢 `fsi/async/{asyncId}`，最後查 `get_fsi_result` | 每輪讀一次 async status | 若未完成則 `Task.Delay(100)` 再輪詢 | 斷言 `ResultId` 與 result resource/tool 一致 | `DisposeAsync client` |
+| `Client smoke covers multi-session isolation` | 同上，先 bootstrap default route 並建立兩個 session | 驗證 routed session 隔離 | 在 `session-a` / `session-b` 各自 define + evaluate，再讀 session resources | 無 | 無 | 斷言兩個 session 值互不污染 | `DisposeAsync client` |
+| `Client smoke covers built-in result query` | 同上，先產生兩筆 result | 驗證 built-in result query 真能透過 MCP client 使用 | 讀 result list 後呼叫 `query_fsi_results(kind=exists)` | 無 | 無 | 斷言 built-in query 成功且輸出正確 | `DisposeAsync client` |
+| `Client smoke covers fsharp-code result query` | 同上，先產生兩筆 result | 驗證 `FSharpCode` query 可在真 MCP client path 上執行 | 讀 result list 後呼叫 `query_fsi_results(language=fsharpCode)` | 無 | 無 | 斷言 `records1` query 回傳預期 JSON | `DisposeAsync client` |
+
+## McpClientE2ETests.fs
+
+| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `MCP client E2E runner executes all smoke scenarios without failures` | 建立 scenario catalog，並對每個 scenario 各自起一個真 client/server | 驗證所有 client smoke 案例整體可回歸 | 迭代執行 catalog 內所有 scenario，收集失敗項 | 每輪起一個新 client，執行對應 smoke scenario | 若 scenario 失敗則收集名稱與錯誤訊息 | loop 結束後彙整 failures | 若有 failure 則整體 fail，否則結束 |
 
 ## McpSurfaceTests.fs
 

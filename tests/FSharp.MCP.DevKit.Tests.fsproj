@@ -30,6 +30,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="McpClientTestHelpers.fs" />
+    <Compile Include="McpClientE2ECollection.fs" />
+    <Compile Include="McpClientAvailabilityTests.fs" />
+    <Compile Include="McpClientSmokeTests.fs" />
+    <Compile Include="McpClientE2ETests.fs" />
     <Compile Include="BackendSelectorTests.fs" />
     <Compile Include="BackendAdaptersTests.fs" />
     <Compile Include="ControlPlaneTests.fs" />

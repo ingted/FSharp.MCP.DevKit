@@ -21,7 +21,7 @@
 | M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | done |
 | M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | done |
 | M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | done |
-| M5 | 完成 result plane | result registry, query service | built-in result plane 已可依 `ResultId` 查詢與集合運算，`FSharpCode` query 仍待補 | doing |
+| M5 | 完成 result plane | result registry, query service | built-in result plane 與 `FSharpCode` query 已可依 `ResultId` 查詢與集合運算 | done |
 | M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | doing |
 
 ## phase schedule
@@ -35,7 +35,7 @@
 | P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | done |
 | P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | done |
 | P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | done |
-| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | doing |
+| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | done |
 | P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | doing |
 
 ## work packages
@@ -220,7 +220,7 @@
 |---|---|---|---|---|
 | T39 | 新增 `ResultQueryTypes.fs` | query request/response types | `ResultQueryRequest/Response/Language/Kind/Materialization` 已可編譯 | done |
 | T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 已可用 | done |
-| T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string | todo |
+| T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string | done |
 | T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | built-in query 已支援 `syntheticResult` materialization | done |
 | T42a | parent-level result orchestration | host parent / server orchestration flow | result query 由 server-side `ResultQueryService` 協調，不進 session actor | done |
 

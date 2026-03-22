@@ -47,6 +47,11 @@ type AsyncFsiStatusDto =
       IsCompleted: bool
       Result: AsyncFsiResultDto option }
 
+type FsiObjectEvaluation =
+    { ReflectionValue: obj option
+      ReflectionTypeName: string option
+      Result: FsiResult }
+
 module AsyncFsiStatus =
     let toDto (result: FsiResult) =
         { Output = result.Output
@@ -339,6 +344,116 @@ type FsiService(config: FsiConfig) =
                         else
                             None
                       Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
+            with ex ->
+                let (output, errors) = this.GetAndClearOutput()
+
+                { Output = output
+                  Errors = errors + "" + ex.Message
+                  IsSuccess = false
+                  Value = None
+                  ExecutionTime =
+                    if config.CaptureTimings then
+                        Some(DateTime.Now - startTime)
+                    else
+                        None
+                  Diagnostics = [||] }
+
+    /// Evaluate F# expression and return both the serialized result and the raw reflected object.
+    member this.EvaluateExpressionObject(expression: string) : FsiObjectEvaluation =
+        if not isStarted then
+            failwith "FSI session not started. Call Start() first."
+
+        match fsiSession with
+        | None -> failwith "FSI session not available"
+        | Some session ->
+            let startTime = DateTime.Now
+
+            try
+                let _, checkResults, _ = session.ParseAndCheckInteraction(expression)
+                let diagnostics = checkResults.Diagnostics
+
+                let hasErrors =
+                    diagnostics
+                    |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
+
+                if hasErrors then
+                    let (output, errors) = this.GetAndClearOutput()
+
+                    { ReflectionValue = None
+                      ReflectionTypeName = None
+                      Result =
+                        { Output = output
+                          Errors = errors
+                          IsSuccess = false
+                          Value = None
+                          ExecutionTime =
+                            if config.CaptureTimings then
+                                Some(DateTime.Now - startTime)
+                            else
+                                None
+                          Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics } }
+                else
+                    let result = session.EvalExpression(expression)
+                    let (output, errors) = this.GetAndClearOutput()
+                    let reflectionValue = result |> Option.map (fun value -> value.ReflectionValue)
+                    let reflectionTypeName = result |> Option.map (fun value -> value.ReflectionType.FullName)
+
+                    { ReflectionValue = reflectionValue
+                      ReflectionTypeName = reflectionTypeName
+                      Result =
+                        { Output = output
+                          Errors = errors
+                          IsSuccess = String.IsNullOrEmpty(errors)
+                          Value =
+                            result
+                            |> Option.map (fun value -> value.ReflectionValue |> FsiResultAdapter.serializeValue)
+                          ExecutionTime =
+                            if config.CaptureTimings then
+                                Some(DateTime.Now - startTime)
+                            else
+                                None
+                          Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics } }
+            with ex ->
+                let (output, errors) = this.GetAndClearOutput()
+
+                { ReflectionValue = None
+                  ReflectionTypeName = None
+                  Result =
+                    { Output = output
+                      Errors = errors + "" + ex.Message
+                      IsSuccess = false
+                      Value = None
+                      ExecutionTime =
+                        if config.CaptureTimings then
+                            Some(DateTime.Now - startTime)
+                        else
+                            None
+                      Diagnostics = [||] } }
+
+    /// Add a bound value to the hosted FSI session.
+    member this.AddBoundValue(name: string, value: obj) : FsiResult =
+        if not isStarted then
+            failwith "FSI session not started. Call Start() first."
+
+        match fsiSession with
+        | None -> failwith "FSI session not available"
+        | Some session ->
+            let startTime = DateTime.Now
+
+            try
+                session.AddBoundValue(name, value)
+                let (output, errors) = this.GetAndClearOutput()
+
+                { Output = output
+                  Errors = errors
+                  IsSuccess = String.IsNullOrEmpty(errors)
+                  Value = None
+                  ExecutionTime =
+                    if config.CaptureTimings then
+                        Some(DateTime.Now - startTime)
+                    else
+                        None
+                  Diagnostics = [||] }
             with ex ->
                 let (output, errors) = this.GetAndClearOutput()
 

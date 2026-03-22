@@ -36,6 +36,97 @@ type ResultQueryService() =
 
     let serialize value = JsonSerializer.Serialize(value)
 
+    let trySerializeObject (value: obj option) =
+        value
+        |> Option.map (fun resolved ->
+            if isNull resolved then
+                "null"
+            else
+                JsonSerializer.Serialize(resolved, resolved.GetType()))
+
+    let withQuerySession (work: FsiService -> 'T) =
+        let config =
+            { FsiConfig.defaultConfig with
+                CaptureTimings = true }
+
+        let service = new FsiService(config)
+
+        try
+            service.Start()
+            work service
+        finally
+            service.Stop()
+
+    let requireSuccess (operationName: string) (result: FsiResult) =
+        if not result.IsSuccess then
+            let details =
+                [ if not (String.IsNullOrWhiteSpace result.Errors) then
+                      yield result.Errors
+                  let diagnosticMessages =
+                      result.Diagnostics
+                      |> Array.map (fun diagnostic -> diagnostic.Message)
+                      |> Array.filter (fun message -> not (String.IsNullOrWhiteSpace message))
+
+                  if diagnosticMessages.Length > 0 then
+                      yield String.Join(Environment.NewLine, diagnosticMessages) ]
+                |> List.filter (fun value -> not (String.IsNullOrWhiteSpace value))
+                |> function
+                    | [] -> $"'{operationName}' failed without error details."
+                    | values -> String.Join(Environment.NewLine, values)
+
+            invalidOp $"FSharpCode query setup step '{operationName}' failed: {details}"
+
+    let normalizeQueryExpression (queryText: string) =
+        let trimmed = queryText.Trim()
+
+        if String.IsNullOrWhiteSpace trimmed then
+            invalidOp "FSharpCode query requires a non-empty queryText."
+        elif trimmed.StartsWith("fun ", StringComparison.Ordinal)
+             || trimmed.StartsWith("(fun ", StringComparison.Ordinal) then
+            $"({trimmed}) records1 records2"
+        else
+            trimmed
+
+    let runFSharpCodeQuery (request: ResultQueryRequest) (primaryRecords: FsiExecutionRecord list) (secondaryRecords: FsiExecutionRecord list) =
+        let queryExpression = normalizeQueryExpression request.QueryText
+
+        withQuerySession (fun service ->
+            requireSuccess "reference-core" (service.ReferenceAssembly(typeof<FsiExecutionRecord>.Assembly.Location))
+            requireSuccess "open-core" (service.ExecuteInteraction("open System\nopen FSharp.MCP.DevKit.Core"))
+            requireSuccess "bind-records1" (service.AddBoundValue("records1", box primaryRecords))
+            requireSuccess "bind-records2" (service.AddBoundValue("records2", box secondaryRecords))
+            requireSuccess "bind-primaryRecords" (service.AddBoundValue("primaryRecords", box primaryRecords))
+            requireSuccess "bind-secondaryRecords" (service.AddBoundValue("secondaryRecords", box secondaryRecords))
+
+            let evaluation = service.EvaluateExpressionObject(queryExpression)
+            let output =
+                evaluation.Result.Value
+                |> Option.orElseWith (fun () ->
+                    if String.IsNullOrWhiteSpace evaluation.Result.Output then
+                        None
+                    else
+                        Some evaluation.Result.Output)
+                |> Option.defaultValue ""
+
+            if evaluation.Result.IsSuccess then
+                { QueryId = request.QueryId
+                  IsSuccess = true
+                  Output = output
+                  Errors = evaluation.Result.Errors
+                  ProducedResultIds = []
+                  MaterializedJson =
+                    trySerializeObject evaluation.ReflectionValue
+                    |> Option.orElseWith (fun () ->
+                        evaluation.Result.Value
+                        |> Option.map JsonSerializer.Serialize) }
+            else
+                { QueryId = request.QueryId
+                  IsSuccess = false
+                  Output = output
+                  Errors = evaluation.Result.Errors
+                  ProducedResultIds = []
+                  MaterializedJson = None })
+
     let preferredValue (record: FsiExecutionRecord) =
         record.Result.Value
         |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
@@ -129,7 +220,7 @@ type ResultQueryService() =
         try
             match request.Language with
             | FSharpCode ->
-                failureResponse request.QueryId "FSharpCode result queries are not implemented yet."
+                runFSharpCodeQuery request primaryRecords secondaryRecords
             | BuiltIn ->
                 match request.Kind with
                 | Exists ->

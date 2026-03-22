@@ -760,7 +760,10 @@ fun (records1: FsiExecutionRecord seq) (records2: FsiExecutionRecord seq) ->
 
 - server 收的是 `string`
 - 不直接跨 process 傳 `Expr`
-- 在受控 analysis session 內執行
+- 在受控 query FSI session 內執行
+- 第一版會先綁定 `records1/records2` 與 `primaryRecords/secondaryRecords`
+- 若 `queryText` 是 `fun records1 records2 -> ...` 形式，server 會自動套用兩個結果集參數
+- query 結果優先 materialize 成 JSON；若物件無法直接序列化，至少保留人類可讀的 `Output`
 
 ## MCP tools / resources
 

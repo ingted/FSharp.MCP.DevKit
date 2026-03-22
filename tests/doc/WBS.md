@@ -187,3 +187,15 @@
 | TT38 | 補 multi-host / multi-session smoke | stateful fake supervisor smoke 測試 | host/session state 隔離可回歸 | done |
 | TT39 | 補 async / result query smoke | FIFO/result-plane smoke 測試 | async linkage 與 built-in query 可回歸 | done |
 | TT40 | 重新執行 `dotnet test -f net10.0` | 測試結果 | smoke/regression 補齊後仍全數通過 | done |
+
+## WP-T16 MCP Client / E2E / FSharpCode Result Query Tests
+
+驗證主專案內建 `McpClientHarness`、真 MCP client 可用性，以及 `FSharpCode` result query。
+
+| ID | 工作項目 | 產出 | 驗收標準 | 進度 |
+| --- | --- | --- | --- | --- |
+| TT41 | 新增 `McpClientHarness.fs` 並納入主專案 | 主專案可重用 MCP client harness | tests 與後續 smoke/E2E 不需各自重複起 client | done |
+| TT42 | 新增 `McpClientAvailabilityTests.fs` | 真 MCP client 可用性測試 | `ping/tools/resources/templates` 可回歸 | done |
+| TT43 | 新增 `McpClientSmokeTests.fs` / `McpClientE2ETests.fs` | client-based smoke 與總體 runner | FSI persistence/reset/async/isolation/result query 可回歸 | done |
+| TT44 | 補 `FSharpCode` result query 測試 | tool/service/client 三層測試 | `records1/records2` query 可回歸 | done |
+| TT45 | 重新執行 `dotnet test -f net10.0` | 測試結果 | client/E2E/T41 補齊後仍全數通過 | done |

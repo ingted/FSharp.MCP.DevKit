@@ -41,6 +41,16 @@ let ``McpResultTools get list query compare and resources work`` () =
                 queryText = "value"
             )
 
+        let fsharpJson =
+            McpResultTools.QueryFsiResults(
+                service,
+                "default-agent",
+                "map",
+                $"{first.ResultId}\n{second.ResultId}",
+                queryText = "records1 |> Seq.map (fun record -> record.Result.Value |> Option.defaultValue \"\") |> Seq.toList",
+                language = "fsharpCode"
+            )
+
         let filterMaterializedJson =
             McpResultTools.QueryFsiResults(
                 service,
@@ -60,6 +70,7 @@ let ``McpResultTools get list query compare and resources work`` () =
         let listed = JsonSerializer.Deserialize<FsiExecutionRecord list>(listJson)
         let mapResponse = JsonSerializer.Deserialize<ResultQueryResponse>(mapJson)
         let compareResponse = JsonSerializer.Deserialize<ResultQueryResponse>(compareJson)
+        let fsharpResponse = JsonSerializer.Deserialize<ResultQueryResponse>(fsharpJson)
         let materializedResponse = JsonSerializer.Deserialize<ResultQueryResponse>(filterMaterializedJson)
         let synthetic = materializedResponse.ProducedResultIds |> List.head |> fun resultId -> service.TryGetResult(resultId)
 
@@ -72,6 +83,8 @@ let ``McpResultTools get list query compare and resources work`` () =
         Assert.True(compareResponse.IsSuccess)
         Assert.Contains(first.ResultId, compareResponse.MaterializedJson.Value)
         Assert.Contains(second.ResultId, compareResponse.MaterializedJson.Value)
+        Assert.True(fsharpResponse.IsSuccess)
+        Assert.Equal("[\"10\",\"11\"]", fsharpResponse.MaterializedJson.Value)
         Assert.True(materializedResponse.IsSuccess)
         Assert.Single(materializedResponse.ProducedResultIds) |> ignore
         Assert.True(synthetic.IsSome)

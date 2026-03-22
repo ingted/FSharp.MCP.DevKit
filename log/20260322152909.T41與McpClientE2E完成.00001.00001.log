@@ -1,0 +1,24 @@
+背景：主專案已補入 `McpClientHarness` 與 client-based MCP tests，但主線 `WP09/T41` 的 `FSharpCode` result query 仍是 stub，且本輪 client/E2E 測試成果尚未回寫 `WBS/README/SD` 與 SOP log。
+目標：完成 `FSharpCode` result query、讓主專案內建 MCP client 可驗證 server availability/smoke/E2E，並同步更新文件與證據鏈。
+計畫步驟：
+1. 在 `FSIService` 補上 bound value 與 raw object evaluation 能力，作為 query session 基底。
+2. 在 `ResultQueryService` 實作 `FSharpCode` query，將 `records1/records2` 綁進受控 FSI session 執行。
+3. 補 service/client 兩層測試，覆蓋 `FSharpCode` query 與真 MCP client smoke/E2E。
+4. 更新 `doc/WBS.md`、`doc/SD.md`、`tests/doc/WBS.md`、`tests/README.md`。
+5. 執行 `dotnet build`、`dotnet test`、`dotnet fsi --exec check.fsx`。
+執行命令/參數：
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+結果：
+- 已在主專案新增 `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
+- 已新增真 MCP client availability/smoke/E2E 測試
+- 已完成 `ResultQueryService` 的 `FSharpCode` query 第一版，支援 `records1/records2` 與 lambda-style query
+- 已更新 `doc/WBS.md`、`doc/SD.md`、`tests/doc/WBS.md`、`tests/README.md`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1` 通過
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore` 通過
+- `dotnet fsi --exec check.fsx -- --log-dir ... --repo ...` 通過，`PASS=16 WARN=1 FAIL=0`
+根因判讀：`T41` 卡住的真正原因不是缺 analysis module，而是 server 端缺一條「受控 FSI query session」來承接 `FSharpCode`。只做 built-in query 足夠支撐集合運算，但不夠滿足 agent 對客製 F# query 的需求；補上 bound-value query session 後，才有能力在不污染 execution contract 的前提下執行 `FSharpCode`。
+下一步：commit/push 本輪 client/E2E/T41 變更，之後可進一步擴充 `FSharpCode` query 的 serialization 與 richer quotation-like ergonomics。
+關聯文件/工單/PR：src/FSharp.MCP.DevKit.Server/McpClientHarness.fs、src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryService.fs、src/FSharp.MCP.DevKit.Core/FSIService.fs、tests/McpClientAvailabilityTests.fs、tests/McpClientSmokeTests.fs、tests/McpClientE2ETests.fs、doc/WBS.md、tests/doc/WBS.md、tests/README.md、doc/SD.md
+prompt/上下文摘要：在主專案加入 MCP client，用它驗證 server availability/smoke/E2E，完成後補主線缺口 `T41`。

@@ -1,0 +1,5 @@
+[2026-03-22T15:20:00Z] Added main-project MCP client harness and real client-based availability/smoke/E2E tests.
+[2026-03-22T15:24:00Z] Implemented FSharpCode result query via isolated FSI query session with bound records1/records2 values.
+[2026-03-22T15:27:00Z] dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1 passed.
+[2026-03-22T15:28:00Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore passed.
+[2026-03-22T15:29:00Z] check.fsx passed with PASS=16 WARN=1 FAIL=0.
