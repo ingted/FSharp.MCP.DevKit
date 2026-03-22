@@ -1,0 +1,4 @@
+[2026-03-22T22:50:30Z] Completed upstream FAkka reset contract/supervisor implementation and published FAkka.Fsi.Contracts 10.0.103 plus FAkka.FSI.Supervisor 1.562.100.201-dgx.3.
+[2026-03-22T22:51:10Z] Updated FSharp.MCP.DevKit net10 backend/client to consume reset contract and removed Net10HostBackend reset stub.
+[2026-03-22T22:51:45Z] Added/reset-aligned unit and regression coverage in Net10HostBackendTests, SmokeRegressionTests, and control-plane fake supervisor implementations.
+[2026-03-22T22:52:15Z] Verified pure nuget.org restore, server build, and net10 test suite after package index propagation.

@@ -1,0 +1,50 @@
+背景：`doc/WBS.md` 的 `O1` 指出 `.NET 10` host 的 `Net10HostBackend.ResetSession` 仍為 stub；若不補，multi-host/multi-session 在 net10 路徑下就缺乏真正的 session lifecycle。
+目標：完成 `O1`，使 `.NET 10` 路徑下的 reset 不再是假成功，同時補足上游 `FAkka` contract/supervisor、本 repo backend/client、unit/regression 測試，以及文件追溯。
+計畫步驟：
+1. 在 `/workspace/home/work/PulseTrade.fs` 補 `FAkka.Fsi.Contracts` 的 reset message/result 與 `Akka.FSI.Supervisor` 的 per-session reset。
+2. 針對上游 tests 修正新增 contract 帶來的 record literal 型別歧義，確認 `Akka.FSI.Supervisor.Tests` 綠燈。
+3. 發布 `FAkka.Fsi.Contracts 10.0.103` 與 `FAkka.FSI.Supervisor 1.562.100.201-dgx.3`。
+4. 在本 repo 更新 `IFsiSupervisorClient`、`FsiSupervisorClient`、`Net10HostBackend.ResetSession`，並補 unit/regression 測試。
+5. 以純 `nuget.org` restore/build/test 驗證後，更新 `WBS/DevLog/tests docs`，提交並收尾。
+執行命令/參數：
+- `/workspace/home/work/PulseTrade.fs`
+  - `dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -f net10.0`
+  - `dotnet build Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj -c Release`
+  - `dotnet pack Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj -c Release`
+- `/workspace/home/mcp/FSharp.MCP.DevKit`
+  - `curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.supervisor/index.json`
+  - `curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.contracts/index.json`
+  - `dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-cache`
+  - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1 --no-restore`
+  - `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+結果：
+- 上游已新增 `ResetSession / ResetSessionResult`，`Akka.FSI.Supervisor` 可真正移除指定 session actor 並回覆 reset result。
+- 已發布：
+  - `FAkka.Fsi.Contracts 10.0.103`
+  - `FAkka.FSI.Supervisor 1.562.100.201-dgx.3`
+- 本 repo 已更新：
+  - `src/FSharp.MCP.DevKit.Server/Integration/FsiSupervisorClient.fs`
+  - `src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs`
+  - `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+- 測試已補：
+  - `tests/Net10HostBackendTests.fs`
+  - `tests/SmokeRegressionTests.fs`
+  - `tests/McpControlPlaneToolsTests.fs`
+- 驗證完成：
+  - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1 --no-restore` 通過
+  - `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+  - 純 `nuget.org` restore 可拿到 `dgx.3` / `10.0.103`
+根因判讀：
+- 真正問題不是 server 端少一個 if/else，而是上游 supervisor contract 根本沒有 reset 語意，導致 `.NET 10` backend 無法合法完成 session clear。
+- 新增 `ResetSession` 後，上下游大量 `{ session = ... }` record literal 出現型別歧義；這是同欄位 message contract 在 F# 下的典型維護風險。
+下一步：
+- 讓 `O1` 自優化 backlog 移出，僅保留 `O2-O5`
+- 將本輪 log/op_log 與 commit push 收尾
+關聯文件/工單/PR：
+- `doc/WBS.md`
+- `doc/DevLog.md`
+- `tests/doc/WBS.md`
+- `tests/README.md`
+- `/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/Contracts.fs`
+- `/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs`
+prompt/上下文摘要：使用者要求繼續主線開發；本輪選擇先完成 `O1` `.NET 10` session reset 正式化，並確保具備 unit/regression 測試與可追溯收尾。
