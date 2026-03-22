@@ -1,0 +1,26 @@
+MCP verification against running container
+- `initialize` on `http://localhost:15000/mcp` succeeded.
+- `tools/list` result did not contain `execute_f_sharp_code_async`.
+- `resources/templates/list` result did contain `fsiAsyncStatus`.
+
+Root cause evidence
+- `/workspace/home/mcp/csharp-sdk/src/ModelContextProtocol.Core/Server/AIFunctionMcpServerTool.cs:320`
+- SDK removes the `Async` suffix from async method names before snake_case conversion.
+- Therefore `ExecuteFSharpCodeAsync` derived to `execute_f_sharp_code`, colliding with the existing sync tool.
+
+Build
+- Command: `dotnet build FSharp.MCP.DevKit.sln`
+- Result: success
+- Warnings: existing `NU1510` warnings in `FSharp.MCP.DevKit.Documentation.fsproj`
+
+Local source verification
+- Started local server with:
+  `ASPNETCORE_URLS=http://127.0.0.1:18080 MCP_ENABLE_STDIO=false dotnet run --project /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --framework net10.0 --no-launch-profile`
+- Performed `initialize -> notifications/initialized -> tools/list`
+- Verified response now contains:
+  - `execute_f_sharp_code`
+  - `execute_f_sharp_code_async`
+  - `execute_f_sharp_code_detailed`
+
+Deployment note
+- The currently running Docker container still serves the old build until rebuilt/restarted.

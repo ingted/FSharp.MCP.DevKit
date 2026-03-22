@@ -1,0 +1,37 @@
+Source review
+- Requirement baseline loaded from `doc/Requirement.md`
+- Remote branch design docs loaded from:
+  - `origin/20260319_001.async-merge:doc/SA.md`
+  - `origin/20260319_001.async-merge:doc/SD.md`
+
+Repository observations
+- Current branch: `main`
+- Working tree: clean
+- Remote branch `20260319_001.async-merge` exists and was fetched locally for read-only inspection.
+
+Key findings from prior implementation
+- `main` already has:
+  - async queue
+  - async status resource/endpoint
+  - backward-compatible MCP tool surface
+- `origin/20260319_001.async-merge` already has:
+  - `net472 FsiHost`
+  - Akka remote transport
+  - transport-safe DTO split (`Messages`)
+  - service/deploy documentation baseline
+- Missing in both lines:
+  - agent registry
+  - host registry
+  - session registry
+  - host kind abstraction
+  - explicit execution routing contract
+
+BA decision summary
+- Keep both backends, but only behind a unified abstraction.
+- Treat backward compatibility as a hard requirement.
+- Treat multi-agent / multi-host / multi-session support as the actual product upgrade, not as incidental implementation detail.
+
+Artifacts created
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.00001.00001.log`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.op_log`

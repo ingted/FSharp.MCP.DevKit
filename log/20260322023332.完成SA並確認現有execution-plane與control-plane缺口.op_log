@@ -1,0 +1,26 @@
+Execution-plane findings
+- `FsiMcpService` currently builds an Akka client and always routes to one fixed actor path:
+  `akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor`
+- `FsiHost` creates a single actor named `fsiActor`
+- `FsiActor` creates one `FsiService` at construction time, so actor lifecycle currently equals session lifecycle
+
+Transport findings
+- `Messages/McpActorMessages.fs` already isolates transport-safe DTOs
+- DTOs currently lack any multi-tenant routing metadata such as `AgentId`, `HostId`, `SessionId`, `HostKind`
+
+Control-plane findings
+- `Program.fs` exposes:
+  - `/mcp`
+  - `fsiAsyncStatus` resource
+  - `/fsi/async/{asyncId}`
+  - `/healthz`
+- There is no host/session registry query surface yet
+
+SA conclusion
+- Keep `async-merge` as execution-plane baseline
+- Treat backend abstraction + registries + routing as the true next-layer problem
+
+Artifacts updated
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.00001.00001.log`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.op_log`

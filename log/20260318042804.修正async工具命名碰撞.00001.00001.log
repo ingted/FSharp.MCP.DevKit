@@ -1,0 +1,37 @@
+背景
+- 使用者回報 `tools/list` 裡找不到 async 執行工具，雖然 `resources/templates/list` 已經有 `fsiAsyncStatus`。
+
+目標
+- 找出 async 工具未出現在 MCP tool 清單的原因。
+- 修正工具命名，讓 async 工具穩定以獨立名稱出現在 `tools/list`。
+
+計畫步驟（planned steps）
+1. 驗證容器上的 `tools/list` 與 `resources/templates/list` 實際內容。
+2. 檢查 csharp-sdk 的工具名稱推導規則。
+3. 對 async 工具設定顯式名稱，避免名稱碰撞。
+4. build 驗證並再次列出 `tools/list` 確認修正。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者指出目前 `tools/list` 內沒有 async 執行工具，要求釐清實際工具名稱與可用性。
+
+執行命令/參數
+- `curl` 對 `http://localhost:15000/mcp` 進行 `initialize`、`notifications/initialized`、`tools/list`、`resources/templates/list`
+- `sed -n '312,332p' /workspace/home/mcp/csharp-sdk/src/ModelContextProtocol.Core/Server/AIFunctionMcpServerTool.cs`
+- `dotnet build FSharp.MCP.DevKit.sln`
+
+結果
+- 確認 `tools/list` 原本沒有 async 工具，但 `resources/templates/list` 已有 `fsiAsyncStatus`。
+- 找到根因：SDK 會把 async method 名稱尾碼 `Async` 去掉，導致 `ExecuteFSharpCodeAsync` 與 `ExecuteFSharpCode` 同名碰撞。
+- 已將 async 工具顯式命名為 `execute_f_sharp_code_async`。
+- `SD.md` 已同步寫明 F# 方法名與對外 MCP tool name。
+
+根因判讀
+- `AIFunctionMcpServerTool.DeriveName` 對 async method 會移除 `Async` suffix，再做 snake_case 轉換。
+- 因此 `ExecuteFSharpCodeAsync` 被導成 `execute_f_sharp_code`，與同步工具相同，清單只保留一個名稱。
+
+下一步
+- 重新 build 並重新部署容器，之後重新打 `tools/list` 應可看到 `execute_f_sharp_code_async`。

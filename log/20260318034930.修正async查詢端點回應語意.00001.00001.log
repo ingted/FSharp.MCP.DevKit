@@ -1,0 +1,17 @@
+背景
+- 使用者指出 async HTTP 查詢 route 回 `404 + exists=false` 的語意不對。
+
+目標
+- 將 async 查詢 endpoint 改為一律回傳 status payload，由 JSON 內容表示 `exists` / `isCompleted`。
+
+計畫步驟（planned steps）
+1. 修正 `Program.fs` route 行為。
+2. 同步修正文檔中的 endpoint 回應策略。
+3. 執行 build 驗證。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要求確認 async 查詢 endpoint 對未知 `asyncId` 是否應回 404；結論是不應該。

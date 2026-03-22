@@ -1,0 +1,49 @@
+背景
+- 使用者要求為 `FSharp.MCP.DevKit` 新增非同步 tool calling 能力，避免目前 `execute_f_sharp_code` 阻塞。
+- 需求包含 async API、agent request queue、結果快取，以及 HTTP 查詢 endpoint。
+
+目標
+- 先完成發想、SA、SD、WBS 文件。
+- 實作 `execute_f_sharp_code_async` 與 FIFO queue/scheduler。
+- 以 `asyncId` 查詢結果是否完成，結果型別使用 `FsiResult option`。
+
+計畫步驟（planned steps）
+1. 盤點 `FSIService`、`McpFsiTools`、`Program` 與 HTTP/MCP 路由現況。
+2. 產出 `doc/SA.md`、`doc/SD.md`、`doc/WBS.md`，明確化 queue、cache、endpoint 設計。
+3. 實作 core/service/server 變更，加入 async queue、cache 與 query endpoint。
+4. 驗證 build、目標測試與基本行為。
+5. 更新 log 與執行收尾檢查。
+
+關聯文件/工單/PR
+- `/workspace/ai/instruction/AGENTS.md`
+- `/workspace/ai/instruction/MCP.md`
+- `/workspace/ai/instruction/MCP.KM.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 需求為新增 `execute_f_sharp_code_async`，將 agent request 收進 queue 依序執行。
+- queue 執行結果先寫入 `<asyncId, FsiResult option>` cache，HTTP endpoint 可查該 id 是否已完成。
+
+執行命令/參數
+- `sed -n` 讀取 `FSIService.fs`、`McpFsiTools.fs`、`Program.fs`、`NamedPipeIPC.fs`
+- `dotnet build FSharp.MCP.DevKit.sln`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-build`
+- `dotnet fsi --quiet <<EOF ... EnqueueExecuteCode ... EOF`
+- `dotnet run --framework net10.0 --project src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+- `curl -i http://localhost:57035/fsi/async/not-found`
+
+結果（成功/失敗）
+- 成功：新增 `AsyncFsiResultCache`、`AsyncFsiStatusDto` 與 DTO 轉換 helper。
+- 成功：新增 `ExecuteFSharpCodeAsync` MCP tool，enqueue 後直接回 `asyncId`。
+- 成功：`FsiMcpService` 新增 FIFO queue、單一 background scheduler 與 cache query。
+- 成功：新增 `GET /fsi/async/{asyncId}`，未知 id 會回 `404` 與 `exists=false` JSON。
+- 成功：手動驗證中，async job 狀態由 `INITIAL=false` 變成 `FINAL_COMPLETED=true`，結果成功寫入 cache。
+- 成功：`dotnet build FSharp.MCP.DevKit.sln` 通過。
+- 成功：`dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-build` 通過。
+
+根因判讀
+- blocking 根因在於現有 tool calling 直接同步等待 `PipeClient.ExecuteCode` 完成，沒有中介 queue 與 job cache。
+- queue 若只放在 pipe client 層，仍可能被多 pipe connection 並發打破順序，因此改放在 `FsiMcpService` singleton 邊界。
+
+下一步
+- 若後續需要真正取得完整 async 結果，而不只查完成狀態，可再補 MCP tool 或 HTTP result endpoint。
+- `FsiMcpService.Dispose()` 目前仍沿用既有 pipe server 關閉流程，手動 FSI 腳本驗證時會看到 `CancellationTokenSource has been disposed` 的既有停止警告，可後續再獨立整理。

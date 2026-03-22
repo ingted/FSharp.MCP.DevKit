@@ -1,0 +1,19 @@
+Inspection
+- `.gitignore` line 31 previously ignored `[Ll]og/`
+- `.gitignore` also had global ignores such as `*.log` and `*.tmp`
+
+Changes
+- Removed `[Ll]og/`
+- Added:
+  - `!/log/`
+  - `!/log/**`
+  - retained `!/log/*.log`
+  - retained `!/log/*.op_log`
+
+Verification
+- `git status --short` now shows:
+  - modified `.gitignore`
+  - untracked `doc/BA.md`
+  - untracked `log/`
+- `git check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp`
+  now resolves to the unignore rule `!/log/**`, confirming `log/` content is no longer ignored.

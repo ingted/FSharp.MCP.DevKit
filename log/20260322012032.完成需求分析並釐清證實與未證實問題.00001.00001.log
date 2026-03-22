@@ -1,0 +1,45 @@
+背景
+- 使用者要求先載入 `AGENTS.md`，再讀 `doc4dev/20260320_issues.md`，依 SOP 一步一步進行，且每完成一步先回報、等待確認。
+- 使用者另外提供前一個 agent 的 Requirement Analysis 草稿，以及「大量 `#` / `\"` 是否造成 tool-call JSON 問題」的討論線索。
+
+目標
+- 完成 SOP 第 1 步 Requirement Analysis。
+- 只定義範圍、成功條件、已證實問題與未證實問題，不進 BA/SA/SD 解法。
+
+計畫步驟（planned steps）
+1. 讀取 `AGENTS.md`、`MCP.md`、`MCP.KM.md` 與 issue 文件。
+2. 確認本次 SOP 順序與最低產物要求。
+3. 以 issue 文件為主、程式碼與環境觀測為輔，整理 Requirement Analysis。
+4. 建立 `doc/Requirement.md` 與本次 log/op_log。
+5. 回報第 1 步結果並等待使用者確認後再進 BA。
+
+執行命令/參數
+- `sed -n '1,240p' /workspace/ai/instruction/AGENTS.md`
+- `sed -n '1,240p' /workspace/ai/instruction/MCP.md`
+- `sed -n '1,240p' /workspace/ai/instruction/MCP.KM.md`
+- `sed -n '1,240p' /workspace/home/work/mcp/FSharp.MCP.DevKit/doc4dev/20260320_issues.md`
+- `sed -n '240,420p' /workspace/home/work/mcp/FSharp.MCP.DevKit/doc4dev/20260320_issues.md`
+- `rg --line-number "execute_f_sharp_code_async|fsi/async|session|path mapping|mount mapping|Errors\\\"\\s*:\\s*\\\"\\\"|IsSuccess" /workspace/home/work/mcp/FSharp.MCP.DevKit/src /workspace/home/work/mcp/FSharp.MCP.DevKit/doc4dev -g '*.fs' -g '*.md'`
+- `mkdir -p /workspace/home/work/mcp/FSharp.MCP.DevKit/doc /workspace/home/work/mcp/FSharp.MCP.DevKit/log`
+- `mcp__pulsetrade_mcp__parse_workspace(workspacePath=/workspace/home/work/mcp/FSharp.MCP.DevKit, autoExtract=false)`
+
+結果
+- 已完成 Requirement Analysis，產出 `doc/Requirement.md`。
+- 已將問題分為「已確認」與「懷疑但未證實」兩類。
+- 已記錄兩個前置風險：workspace parse 失敗與目前目錄非 git working tree。
+
+根因判讀
+- 本階段仍以需求與問題定義為主，不做根因定案。
+- 但已可確認：`#` / `\"` JSON escaping 問題目前沒有被 issue 文件直接證實，不能在 Requirement 階段直接當作既定根因。
+
+下一步
+- 若使用者確認本 Requirement Analysis 方向正確，下一步進入 BA，做需求分群、優先順序與問題分類矩陣。
+
+關聯文件/工單/PR
+- `/workspace/home/work/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+- `/workspace/home/work/mcp/FSharp.MCP.DevKit/doc4dev/20260320_issues.md`
+- `/workspace/ai/instruction/AGENTS.md`
+
+使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+- 使用者要求依 AGENTS 定義的 SOP 逐步前進，且每步完成後先回報等待確認。
+- 使用者特別關心「大量 `#` / `\"` 是否真的是 agent tool-call JSON 問題」是否有被記錄證實。

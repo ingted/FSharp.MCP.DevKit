@@ -1,0 +1,13 @@
+Resource DI confirmation
+- `WithResources<T>()` 會為 instance resource type 使用 `ActivatorUtilities.CreateInstance(services, type)` 建立 target，因此可直接透過建構子注入 `FsiMcpService`。
+- `McpServerResourceTests.SupportsServiceFromDI` 證明 resource method 參數也可從 DI 解析，但本次採用建構子注入，讓 `AsyncStatus` 方法只保留 `asyncId` 業務參數。
+
+Build
+- Command: `dotnet build FSharp.MCP.DevKit.sln`
+- Result: success
+- Warnings: `FSharp.MCP.DevKit.Documentation.fsproj` 仍有既存 `NU1510` 警告，與本次 resource 包裝無關。
+
+Check
+- Command: `CODEX_THREAD_ID=019cfeb7-7b04-78c1-a7c6-c859782d0919-resource-wrap dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md`
+- Result: `PASS=16 WARN=2 FAIL=0`
+- Notes: 警告來自 log 欄位未補齊與 repo 既有 dirty 狀態；之後已補齊 log 欄位。

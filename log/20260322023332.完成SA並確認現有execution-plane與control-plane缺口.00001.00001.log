@@ -1,0 +1,45 @@
+背景
+- 使用者確認 BA 後，要求開始 SA。
+- 當前 branch 已切到 `20260322_001.multi-agent-fsi-platform`，基底為 `origin/20260319_001.async-merge`。
+
+目標
+- 完成 SA，只分析現況、可沿用結構、必須重切的責任邊界與風險。
+- 不在本階段定義細部設計解法。
+
+計畫步驟（planned steps）
+1. 讀取目前 branch 的 `SA.md` 與核心程式檔。
+2. 盤點 execution plane、transport DTO、async queue、control plane 現況。
+3. 將「可沿用」與「必須重切」分開。
+4. 更新 `doc/SA.md` 與本次 log/op_log。
+5. 回報 SA 結果，等待使用者確認後再進 SD。
+
+執行命令/參數
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch`
+- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/Program.fs`
+- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs`
+- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs`
+- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs`
+- `rg --line-number "healthz|MapGet|McpServerResource|fsi/async|session|host" /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server -g '*.fs'`
+
+結果
+- 已完成新的 SA，更新 `doc/SA.md`。
+- 已確認本 branch 的 execution plane 值得沿用，但目前只支援單一 remote host / 單一 session。
+- 已確認真正缺口在 control plane，而不是 mixed-runtime execution 可行性本身。
+
+根因判讀
+- `async-merge` 原本要解的是 mixed-runtime execution，因此自然收斂成單一 host / 單一 session。
+- 本輪新增需求屬於 tenancy / routing / observability 問題，不是單純再補幾個 async tool 就能完成。
+
+下一步
+- 若使用者確認 SA 方向正確，下一步進 SD，定義 backend abstraction、registry 模型、host/session lifecycle 與 backward-compatible routing。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+
+使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+- 使用者要求在新 branch 上延續開發，並確認不漏掉 main 分岔後新增的 md / log / notes。
+- 使用者本輪目標是將 server 升級到更接近 production-ready 的多 agent / 多 host / 多 session 平台。

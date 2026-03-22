@@ -1,0 +1,50 @@
+背景
+- 使用者確認 Requirement Analysis 後，要求進入 BA。
+- 額外上下文：
+  1. `20260319_001.async-merge` branch 存在 netfx `FsiHost` + Akka remote actor 雛形。
+  2. 使用者希望保留現有 in-proc 路徑，避免現有 MCP client 失效。
+  3. 新目標不只是補 issue，而是把 server 往 production-ready 推進。
+
+目標
+- 完成 BA，明確定義本輪的 business capability、優先順序、可重用能力與相容策略。
+- 避免把 `async-merge` 已有能力重做一遍。
+
+計畫步驟（planned steps）
+1. 讀取 `Requirement.md` 與 `origin/20260319_001.async-merge` 的 SA/SD。
+2. 盤點 `main` 與 `async-merge` 各自已有的能力。
+3. 將需求分成產品缺口、架構缺口、未證實假說。
+4. 定義 business capability 與優先順序。
+5. 產出 `doc/BA.md`，等待使用者確認後再進 SA。
+
+執行命令/參數
+- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SA.md | sed -n '1,220p'`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SD.md | sed -n '1,220p'`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit branch -a`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit ls-remote --heads origin '*20260319*' '*async*merge*'`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit fetch origin 20260319_001.async-merge:refs/remotes/origin/20260319_001.async-merge`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit diff --name-status main..origin/20260319_001.async-merge`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit grep -n "Akka\\|akka\\|actor\\|host registry\\|session registry\\|Register.*agent\\|host id\\|session id\\|FsiHost\\|HostKind\\|AppDomain\\|Worker\\|MailboxProcessor\\|net fx\\|framework" origin/20260319_001.async-merge -- src doc`
+
+結果
+- 已完成 BA，產出 `doc/BA.md`。
+- 已確認 `20260319_001.async-merge` 有可重用的 remote host 雛形，但仍是單一 host / 單一 session 模型。
+- 已定義本輪 business capability：dual-backend、explicit multi-tenant execution model、backward compatibility、host management first-class feature。
+
+根因判讀
+- 真正的 business problem 不是單一 async bug，而是產品仍缺少多租戶 execution model 與 control plane。
+- 若只補一兩個 async tool，不處理 backend abstraction、registry 與 compatibility，production-ready 程度不會有質變。
+
+下一步
+- 若使用者確認 BA 方向正確，下一步進 SA，分析 `main` 與 `async-merge` 應如何收斂成雙 backend + agent/host/session registry 架構。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+- `origin/20260319_001.async-merge:doc/SA.md`
+- `origin/20260319_001.async-merge:doc/SD.md`
+
+使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+- 使用者要求保留現有 mcp client 可用性，並同時把 out-of-process host 納入正式能力。
+- 使用者新增需求：agent registration、host dictionary、session dictionary、host kind（netfx / net10）、routing 到指定 host/session。

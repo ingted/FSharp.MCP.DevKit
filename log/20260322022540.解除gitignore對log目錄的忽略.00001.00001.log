@@ -1,0 +1,36 @@
+背景
+- 使用者指出 `.gitignore` 不應忽略 `log/`，要求立即處理。
+- 目前 repo 的 `.gitignore` 同時有 `[Ll]og/` 與 `*.log` / `*.tmp` 等規則，會讓 `log/` 內證據檔無法進版控。
+
+目標
+- 讓 repo-root `log/` 及其內容不再被 `.gitignore` 忽略。
+- 保留其他一般 build/runtime log 的忽略行為，不把整個 repo 的所有 `.log` 全部打開。
+
+計畫步驟（planned steps）
+1. 檢查 `.gitignore` 內與 `log/` 相關的規則。
+2. 調整規則，顯式 unignore repo-root `log/` 及其內容。
+3. 驗證 `git status` 與 `git check-ignore` 結果。
+4. 補齊 log/op_log 並執行收尾稽核。
+
+執行命令/參數
+- `nl -ba /workspace/home/mcp/FSharp.MCP.DevKit/.gitignore | sed -n '1,120p'`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short`
+- `git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/* /workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+
+結果
+- 已移除 `.gitignore` 對 `log/` 目錄的忽略，並加入 `!/log/`、`!/log/**`。
+- `log/` 現在會出現在 `git status` 中，表示不再被忽略。
+
+根因判讀
+- 問題不是 `log/` 檔案不存在，而是現有 `.gitignore` 同時命中了目錄規則與全域副檔名規則，導致 log 證據檔永遠無法進版控。
+
+下一步
+- 後續切 branch 時，`log/` 內的新證據檔可隨 branch 一起納入版控。
+- 下一個階段會一併處理 `doc/BA.md` 與需從 `main` 帶往新 branch 的 md/log/notes。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/.gitignore`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/log/`
+
+使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+- 使用者明確要求 `.gitignore` 不應忽略 `log/`，並要求處理。

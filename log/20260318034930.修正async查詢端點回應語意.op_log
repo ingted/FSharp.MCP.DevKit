@@ -1,0 +1,52 @@
+  Determining projects to restore...
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.sln]
+  All projects are up-to-date for restore.
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net8.0]
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net9.0]
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net10.0]
+  FSharp.MCP.DevKit.Core -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/bin/Debug/net8.0/FSharp.MCP.DevKit.Core.dll
+  FSharp.MCP.DevKit.Core -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/bin/Debug/net10.0/FSharp.MCP.DevKit.Core.dll
+  FSharp.MCP.DevKit.Core -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/bin/Debug/net9.0/FSharp.MCP.DevKit.Core.dll
+  ModelContextProtocol.Analyzers -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.Analyzers/Debug/netstandard2.0/ModelContextProtocol.Analyzers.dll
+  FSharp.MCP.DevKit.Communication -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Communication/bin/Debug/net10.0/FSharp.MCP.DevKit.Communication.dll
+  FSharp.MCP.DevKit.Analysis -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Analysis/bin/Debug/net8.0/FSharp.MCP.DevKit.Analysis.dll
+  FSharp.MCP.DevKit.Documentation -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/bin/Debug/net10.0/FSharp.MCP.DevKit.Documentation.dll
+  FSharp.MCP.DevKit.Communication -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Communication/bin/Debug/net9.0/FSharp.MCP.DevKit.Communication.dll
+  FSharp.MCP.DevKit.Analysis -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Analysis/bin/Debug/net9.0/FSharp.MCP.DevKit.Analysis.dll
+  ModelContextProtocol.Core -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.Core/Debug/net8.0/ModelContextProtocol.Core.dll
+  FSharp.MCP.DevKit.Analysis -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Analysis/bin/Debug/net10.0/FSharp.MCP.DevKit.Analysis.dll
+  ModelContextProtocol.Core -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.Core/Debug/net9.0/ModelContextProtocol.Core.dll
+  FSharp.MCP.DevKit.Communication -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Communication/bin/Debug/net8.0/FSharp.MCP.DevKit.Communication.dll
+  ModelContextProtocol.Core -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.Core/Debug/net10.0/ModelContextProtocol.Core.dll
+  FSharp.MCP.DevKit.Documentation -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/bin/Debug/net8.0/FSharp.MCP.DevKit.Documentation.dll
+  ModelContextProtocol.Core -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.Core/Debug/netstandard2.0/ModelContextProtocol.Core.dll
+  FSharp.MCP.DevKit.Documentation -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/bin/Debug/net9.0/FSharp.MCP.DevKit.Documentation.dll
+  FSharp.MCP.DevKit.Documentation.Tool -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation.Tool/bin/Debug/net8.0/FSharp.MCP.DevKit.Documentation.Tool.dll
+  FSharp.MCP.DevKit.Documentation.Tool -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation.Tool/bin/Debug/net9.0/FSharp.MCP.DevKit.Documentation.Tool.dll
+  ModelContextProtocol -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/net10.0/ModelContextProtocol.dll
+  ModelContextProtocol -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/netstandard2.0/ModelContextProtocol.dll
+  FSharp.MCP.DevKit.Documentation.Tool -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation.Tool/bin/Debug/net10.0/FSharp.MCP.DevKit.Documentation.Tool.dll
+  ModelContextProtocol -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/net9.0/ModelContextProtocol.dll
+  ModelContextProtocol.AspNetCore -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.AspNetCore/Debug/net10.0/ModelContextProtocol.AspNetCore.dll
+  ModelContextProtocol -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/net8.0/ModelContextProtocol.dll
+  FSharp.MCP.DevKit.CodeEditing -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.CodeEditing/bin/Debug/net10.0/FSharp.MCP.DevKit.CodeEditing.dll
+  ModelContextProtocol.AspNetCore -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.AspNetCore/Debug/net9.0/ModelContextProtocol.AspNetCore.dll
+  FSharp.MCP.DevKit.CodeEditing -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.CodeEditing/bin/Debug/net9.0/FSharp.MCP.DevKit.CodeEditing.dll
+  ModelContextProtocol.AspNetCore -> /workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol.AspNetCore/Debug/net8.0/ModelContextProtocol.AspNetCore.dll
+  FSharp.MCP.DevKit.CodeEditing -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.CodeEditing/bin/Debug/net8.0/FSharp.MCP.DevKit.CodeEditing.dll
+  FSharp.MCP.DevKit.Tests -> /workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net9.0/FSharp.MCP.DevKit.Tests.dll
+  FSharp.MCP.DevKit.Tests -> /workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net8.0/FSharp.MCP.DevKit.Tests.dll
+  FSharp.MCP.DevKit.Tests -> /workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll
+  FSharp.MCP.DevKit.Server -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0/FSharp.MCP.DevKit.dll
+  FSharp.MCP.DevKit.Server -> /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net9.0/FSharp.MCP.DevKit.dll
+
+Build succeeded.
+
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.sln]
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net8.0]
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net9.0]
+/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [TargetFramework=net10.0]
+    4 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:07.88

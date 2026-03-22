@@ -1,0 +1,56 @@
+背景
+- 使用者要求讀取 `/workspace/ai/instruction/AGENTS.md` 與引用文件，更新本資料夾下各專案依賴到最新，並確認與 `/workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile` 相容。
+
+目標
+- 盤點 solution 內各專案的 NuGet 相依與 target framework。
+- 更新可安全升級且可在目前 Docker 建置條件下相容的相依套件版本。
+- 以 build/test/Docker publish 驗證結果作為交付依據。
+
+計畫步驟（planned steps）
+1. 讀取 AGENTS / MCP / KM 規範與 Dockerfile，確認作業限制。
+2. 建立 log 與 op_log，對基線執行 workspace 解析、restore、build。
+3. 盤點所有 PackageReference 與其最新可用版本，評估是否會影響 `net10.0` 或 Docker base image。
+4. 修改專案檔中的套件版本。
+5. 執行 restore、build、test、publish 與必要 Docker 相容性驗證。
+6. 執行 `/workspace/home/codex/check.fsx` 進行收尾稽核。
+
+關聯文件/工單/PR
+- `/workspace/ai/instruction/AGENTS.md`
+- `/workspace/ai/instruction/MCP.md`
+- `/workspace/ai/instruction/MCP.KM.md`
+- `/workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 需求重點為「讀規範、升級依賴、驗證 Docker 相容」。
+- 工作區目前已有 `nuget.config`，但不可新增新的 `nuget.config`。
+- Dockerfile 使用 `dotnet publish -f net10.0` 建置 `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`。
+
+Correction
+- 使用者補充 `16.1 .NET 專案相依性全面更新規範`：本次全面相依升級必須使用 `dotnet-outdated-tool`，並以 `--version-lock Major` 鎖定 major，不可升到 `.NET 11`；`FSharp.Core` 需對齊 SDK `10.0.201` 對應的 `10.1.201`。
+
+執行命令/參數
+- `dotnet --info`
+- `dotnet build FSharp.MCP.DevKit.sln`
+- `~/.dotnet/tools/dotnet-outdated FSharp.MCP.DevKit.sln --version-lock Major --include-auto-references --include-up-to-date`
+- `~/.dotnet/tools/dotnet-outdated <各 fsproj/csproj> --version-lock Major -u`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-build`
+- `dotnet test /workspace/home/mcp/csharp-sdk/tests/ModelContextProtocol.Tests/ModelContextProtocol.Tests.csproj -f net10.0`
+- `dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --configfile nuget.config`
+- `dotnet publish src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 --no-restore -o /tmp/fsharp-mcp-publish`
+
+結果（成功/失敗）
+- 成功：`FSharp.MCP.DevKit` 內各專案依賴已用 `dotnet-outdated-tool` 升級到鎖 major 的最新版本。
+- 成功：`csharp-sdk` 一併更新，實際變更集中在 `Directory.Packages.props` 與 `nuget.config`。
+- 成功：`dotnet build FSharp.MCP.DevKit.sln` 通過。
+- 成功：`dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-build` 通過，1/1 passed。
+- 成功：`dotnet publish` 產出 `/tmp/fsharp-mcp-publish`，符合 Dockerfile 的 `net10.0 publish` 路徑。
+- 失敗：`csharp-sdk` 的 `ModelContextProtocol.Tests` 在 `net10.0` 下有 2 個 Docker integration tests 失敗，其餘 1839 passed、3 skipped。
+
+根因判讀
+- 初始 build 失敗主因不是套件版本，而是 `tests/FSharp.MCP.DevKit.Tests.fsproj` 對 `Server.fsproj` 的多餘 `ProjectReference` 與 `net8.0` target 不相容；該引用已移除。
+- `pulsetrade` workspace 解析失敗主因是 `examples/ExampleTool/ExampleTool.fsproj` 為 0-byte 壞檔，未納入本次依賴更新。
+- `csharp-sdk` 測試失敗是 Docker 容器在 30 秒內未啟動（`DockerEverythingServerTests`），屬執行環境/容器啟動問題，不是 restore/build/publish 相容性問題。
+
+下一步
+- 若要完全驗證外部 Dockerfile 映像建置，需先取得 `ai:v0.6.2` 與 `ai:v0.5` base image；目前本機 Docker daemon 可用，但 base image 不在本機。
+- 若要消除殘留警告，可後續評估移除 `System.IO.Compression.ZipFile` 或調整相關 F# async state machine 警告。

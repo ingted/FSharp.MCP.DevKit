@@ -1,0 +1,42 @@
+背景
+- 使用者要求把 `GET /fsi/async/{asyncId}` 包成 MCP tool 或 resource，並希望 agent-facing 訊息直接寫出最佳使用流程。
+
+目標
+- 將 async status 查詢包成 MCP resource template。
+- 保留既有 HTTP endpoint，同步讓 MCP agent 可直接透過 resource 輪詢。
+- 更新 tool/resource 描述，明示「先呼叫 async tool 取得 asyncId，再讀取 resource 輪詢」。
+
+計畫步驟（planned steps）
+1. 確認 csharp-sdk 的 resource DI 與註冊方式。
+2. 在 `Program.fs` 新增 async status MCP resource template 並註冊。
+3. 在 `McpFsiTools.fs` 更新 `ExecuteFSharpCodeAsync` 的 agent-facing 描述。
+4. 更新 `SD.md` 讓設計文件反映 MCP resource 包裝。
+5. 執行 build 與 check 驗證。
+
+關聯文件/工單/PR
+- `/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者接受將 status 查詢做成 MCP resource 的方向，並要求把 agent 最順的使用流程直接寫進說明文字。
+
+執行命令/參數
+- `rg --line-number "McpServerResourceType|McpServerResource\\(|UriTemplate|ResourceType" /workspace/home/mcp/csharp-sdk/src /workspace/home/mcp/csharp-sdk/tests /workspace/home/mcp/FSharp.MCP.DevKit/src`
+- `sed -n '388,470p' /workspace/home/mcp/csharp-sdk/src/ModelContextProtocol/McpServerBuilderExtensions.cs`
+- `sed -n '360,520p' /workspace/home/mcp/csharp-sdk/tests/ModelContextProtocol.Tests/Server/McpServerResourceTests.cs`
+- `dotnet build FSharp.MCP.DevKit.sln`
+- `CODEX_THREAD_ID=019cfeb7-7b04-78c1-a7c6-c859782d0919-resource-wrap dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md`
+
+結果
+- 新增 `FsiResources` MCP resource type，將 `fsi/async/{asyncId}` 以 `application/json` resource template 封裝並註冊到 MCP server。
+- `ExecuteFSharpCodeAsync` 的 tool description 與 `code` 參數 description 已補上 agent 最佳流程說明。
+- `SD.md` 已更新為「async tool 取得 `asyncId`，resource 輪詢查詢狀態」的設計敘述。
+- `dotnet build` 通過；`check.fsx` 通過。
+
+根因判讀
+- 既有實作只有 HTTP route，agent 雖可透過外部 HTTP 輪詢，但在 MCP transport 內缺少對等的唯讀查詢介面。
+- csharp-sdk 的 `WithResources<T>()` 支援以 DI 建立 instance resource type，因此可直接把 `FsiMcpService` 注入 resource，而不必新增另一個查詢 tool。
+
+下一步
+- 若要讓 agent 直接列出並探索此 resource，可再補一個簡短的 README 或 MCP 使用範例，示範 `execute_f_sharp_code_async -> read fsi/async/{asyncId}` 的完整互動。

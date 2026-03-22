@@ -1,0 +1,1235 @@
+› 1. 我先 commit 並且 push main 了(怕你把檔案弄不見)
+  2. 建議還是同時維護「本地 FsiService / named pipe」和「remote host」兩套路徑，要增加 out-of-process 的 tool，除非你覺得同時維護其實很不佳，那就後者就好
+  3. 根據 2. 就是讓現有 mcp client 能跑，如果砍掉那就是要改 AGENTS.md 就是
+
+
+• 了解。這樣我這邊的前提就夠了，沒有新的阻塞問題。
+
+  我對第 2 點的判斷是：可以同時維護兩套路徑，但不能再像 20260319_001.async-merge 那樣半混在同一層。雙路徑若要成立，至少要收斂成這個結構：
+
+  - ExecutionBackend 抽象層
+  - InProcBackend 對應現有 FsiService / named pipe
+  - RemoteHostBackend 對應 out-of-process host
+  - tool 層不直接碰具體 backend，只做 routing / contract / auth / diagnostics
+
+  這樣才能同時滿足：
+
+  - 舊 MCP client 繼續可跑
+  - 新的 agent/host/session 模型可以往 production-ready 演進
+  - 未來若真的要淘汰其中一條 backend，不會拆到整個 server
+
+  所以我接下來 BA 會用這個前提展開：
+
+  - 保留 backward compatibility
+  - 新增顯式 agentId / hostId / sessionId / hostKind
+  - 舊工具先對應到 default in-proc backend
+  - 新增 out-of-process 專用工具與資源
+  - backend 與 session/host registry 分層，不讓 McpFsiTools.fs 繼續膨脹成總控類
+
+  我現在就進 BA。完成後我只回 BA，不往 SA 走，等你確認。
+
+
+› go
+
+
+• 我現在只做 BA，不切 branch、不動程式碼。這一步會把需求分群、排優先序，並把「雙 backend 共存」與「agent/host/session registry」整理成可進 SA 的 business framing。
+
+• Explored
+  └ Read Requirement.md
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SA.md | sed -n '1,220p'
+  └ # SA
+
+    … +144 lines
+      - GitHub tracker: https://github.com/EHotwagner/FSharp.MCP.DevKit/issues
+      - 專屬 Jira / PR 仍待補
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SD.md | sed -n '1,220p'
+  └ # SD
+
+    … +187 lines
+      - solution-level `dotnet build`：確認 restore + compile 可過且 `NU1904` 消失
+      - project-level `dotnet list package --vulnerable --no-restore`：確認兩個 Akka consumer 專案都無 vulnerable packages
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch
+  └ ## main...origin/main
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已把 main 現況和 20260319_001.async-merge 的既有設計摸清楚了。接下來 BA 會把「現有可重用能力」和「這次真正新增的 business capability」切開，避免把 already-done 的 single-
+  host remote backend 當成全新需求。
+
+• Ran date -u +%Y%m%d%H%M%S
+  └ 20260322015118
+
+• Edited 3 files (+300 -0)
+  └ doc/BA.md (+213 -0)
+      1 +# BA
+      2 +
+      3 +## 任務定位
+      4 +
+      5 +本次 BA 不是在討論單一 bug fix，而是在決定 `fsharp-devkit` 要不要從「單一 session 的工具型 MCP server」提升成「可供多 agent 並行、安全使用的 execution platform」。
+      6 +
+      7 +這代表本輪的 business value 不只來自補幾個 tool，而是來自三件事：
+      8 +
+      9 +1. 降低 agent 使用成本
+     10 +2. 提高多 agent / 多工作流並行時的穩定性
+     11 +3. 建立 production-ready 的 backend 演進路徑，同時保留既有 client 相容性
+     12 +
+     13 +## 利害關係人與需求視角
+     14 +
+     15 +### 1. Agent / MCP client 使用者
+     16 +
+     17 +需要的是：
+     18 +
+     19 +1. 可預期的 tool 行為
+     20 +2. 可觀測的 session / host 狀態
+     21 +3. 長操作不被 timeout 誤殺
+     22 +4. 發生錯誤時能快速定位，不必大量 bisect
+     23 +
+     24 +### 2. Server 維護者
+     25 +
+     26 +需要的是：
+     27 +
+     28 +1. backend 結構清楚，不要把 transport、queue、session、host lifecycle 混在同一個 service
+     29 +2. 新增 `.NET Framework` host 與 `.NET 10` host 時，不必重寫整層 MCP tool
+     30 +3. 既有 client 不會因架構升級整批壞掉
+     31 +
+     32 +### 3. 部署 / 維運者
+     33 +
+     34 +需要的是：
+     35 +
+     36 +1. 可以同時支援 in-proc 與 out-of-proc backend
+     37 +2. path mapping、mount mapping、host health 都可查
+     38 +3. 異常時能知道是 server 壞、host 壞、session 壞，還是 script 本身壞
+     39 +
+     40 +## 問題分群
+     41 +
+     42 +### A. 已確認的產品缺口
+     43 +
+     44 +1. async diagnostics 太弱
+     45 +2. session observability 不足
+     46 +3. async contract 太薄
+     47 +4. path / mount mapping 不可發現
+     48 +5. 長操作的 async 覆蓋面不足
+     49 +6. stdout / probe 可用性不足
+     50 +
+     51 +### B. 已確認的架構缺口
+     52 +
+     53 +1. 目前 `main` 是單一 in-proc `FsiService` 模型，無法自然支撐多 agent / 多 host / 多 session。
+     54 +2. `20260319_001.async-merge` 雖已有 `net472 FsiHost + Akka remote`，但設計仍是「單一遠端 host 持有唯一 FSI session」，尚未支撐 host dictionary / session dictionary
+         。
+     55 +3. 若不引入 backend abstraction，in-proc 與 remote host 雙路徑會讓 `McpFsiTools.fs` 持續膨脹成混合 transport / execution / cache / orchestration 的 God object。
+     56 +
+     57 +### C. 懷疑但未證實
+     58 +
+     59 +1. 大量 `#` / `"` 是否在 agent tool-call JSON 轉換層造成系統性 escaping 問題。
+     60 +2. 這一項目前不能當主需求，只能在後續 Test / QA 階段設計成驗證假說。
+     61 +
+     62 +## 既有可重用能力
+     63 +
+     64 +### 1. `main` 已有的可重用能力
+     65 +
+     66 +1. `execute_f_sharp_code_async`
+     67 +2. `fsi/async/{asyncId}` status resource / endpoint
+     68 +3. async queue + cache 基本模型
+     69 +4. 現有 MCP tool surface 與 backward-compatible client contract
+     70 +
+     71 +### 2. `20260319_001.async-merge` 已有的可重用能力
+     72 +
+     73 +1. `net472 FsiHost`
+     74 +2. Akka remote actor transport
+     75 +3. `Messages` transport-safe DTO 分層
+     76 +4. server 透過 remote client adapter 呼叫遠端 host 的方向
+     77 +5. 混合 runtime 部署與 service 化文件雛形
+     78 +
+     79 +### 3. 這次真正新增的能力，不應與既有實作重工
+     80 +
+     81 +1. agent registration
+     82 +2. host dictionary
+     83 +3. host kind 抽象（`inproc` / `netfx` / `net10`）
+     84 +4. session dictionary
+     85 +5. execution routing contract（`agentId + hostId + sessionId`）
+     86 +6. 對舊 client 的相容策略
+     87 +
+     88 +## Business Capability 決策
+     89 +
+     90 +### Capability 1. Dual-backend support
+     91 +
+     92 +保留兩套路徑：
+     93 +
+     94 +1. `InProcBackend`
+     95 +2. `RemoteHostBackend`
+     96 +
+     97 +BA 判斷：
+     98 +
+     99 +- 這是必要能力，不是過渡 workaround。
+    100 +- 原因是使用者已明確要求既有 MCP client 不可被破壞；若直接只留 remote host，等於產品契約改版。
+    101 +
+    102 +### Capability 2. Explicit multi-tenant execution model
+    103 +
+    104 +新增顯式模型：
+    105 +
+    106 +1. `agentId`
+    107 +2. `hostId`
+    108 +3. `sessionId`
+    109 +4. `hostKind`
+    110 +
+    111 +BA 判斷：
+    112 +
+    113 +- 這是 production-ready 的核心能力。
+    114 +- 若沒有這層，所謂多 agent 並行實際上只是共用單一 session，會互相污染 state。
+    115 +
+    116 +### Capability 3. Backward compatibility layer
+    117 +
+    118 +保留既有工具可直接跑，但對應到 default routing：
+    119 +
+    120 +1. default agent
+    121 +2. default host
+    122 +3. default session
+    123 +
+    124 +BA 判斷：
+    125 +
+    126 +- 這是本輪必要需求，不是 nice-to-have。
+    127 +- 因為使用者已明確要求現有 mcp client 能跑，且若要破壞相容性，必須先改 AGENTS / 契約文件。
+    128 +
+    129 +### Capability 4. Host management as first-class feature
+    130 +
+    131 +除了 execution tool，產品還需要 host 管理能力：
+    132 +
+    133 +1. register agent
+    134 +2. create host
+    135 +3. list hosts
+    136 +4. create session
+    137 +5. list sessions
+    138 +6. get workspace/path mapping
+    139 +7. get host / session health
+    140 +
+    141 +BA 判斷：
+    142 +
+    143 +- 若只加新的 execute tool 而沒有 registry / observability，產品仍然只是 toy。
+    144 +
+    145 +## 優先順序
+    146 +
+    147 +### P0
+    148 +
+    149 +1. backend abstraction
+    150 +2. agent registration
+    151 +3. host registry
+    152 +4. session registry
+    153 +5. backward compatibility strategy
+    154 +6. async diagnostics 補強
+    155 +
+    156 +### P1
+    157 +
+    158 +1. `.NET 10` FSI host
+    159 +2. host/session 資源查詢與 health model
+    160 +3. path / mount mapping discoverability
+    161 +4. async contract metadata 補強
+    162 +
+    163 +### P2
+    164 +
+    165 +1. explain-last-error 類能力
+    166 +2. stdout/stderr capture 強化
+    167 +3. async 版本的 load/reference/search-path 全面化
+    168 +
+    169 +## 產品邊界與策略
+    170 +
+    171 +### In Scope
+    172 +
+    173 +1. 以 `origin/20260319_001.async-merge` 為基底延續，而不是在 `main` 上重做 remote host 能力。
+    174 +2. 同時保留 in-proc backend 與 remote host backend。
+    175 +3. 新增 `.NET 10` host 類型。
+    176 +4. 新增 agent / host / session 三層 registry。
+    177 +5. 修補 `Requirement.md` 描述的 confirmed issues，尤其是 diagnostics、observability、async contract。
+    178 +
+    179 +### Out of Scope
+    180 +
+    181 +1. 本輪不先淘汰 in-proc backend。
+    182 +2. 本輪不先追求所有舊工具都全面 host-aware；先讓核心 session-bound tools 具備新 routing 能力。
+    183 +3. 本輪不先處理所有歷史 build warning。
+    184 +
+    185 +## 成功定義
+    186 +
+    187 +### 對使用者
+    188 +
+    189 +1. 不改現有 MCP client，也能繼續跑既有流程。
+    190 +2. 新 client 可顯式指定 `agentId / hostId / sessionId`。
+    191 +3. 可以同時存在多個 host，而且 host 可區分 `netfx` 與 `net10`。
+    192 +4. 每個 host 下可有多個 session，執行請求可路由到指定 session。
+    193 +
+    194 +### 對產品
+    195 +
+    196 +1. backend 不再綁死單一 session 模型。
+    197 +2. server 端可清楚區分 control plane 與 execution plane。
+    198 +3. host/session 狀態、mapping、錯誤資訊可查。
+    199 +4. 新能力是延續既有 async-merge 雛形，不是平行重做。
+    200 +
+    201 +## BA 結論
+    202 +
+    203 +本次任務的 business framing 應定義為：
+    204 +
+    205 +1. 把 `fsharp-devkit` 從單機單 session 工具，升級成可支援多 agent / 多 host / 多 session 的 execution platform。
+    206 +2. 技術路線不是推翻既有實作，而是：
+    207 +   - 沿用 `main` 的 MCP tool 面
+    208 +   - 沿用 `20260319_001.async-merge` 的 remote host 雛形
+    209 +   - 在其上補 `registry + routing + observability + compatibility`
+    210 +3. 因此下一步 SA 應聚焦：
+    211 +   - 哪些結構可沿用
+    212 +   - 哪些責任必須重切
+    213 +   - 新的 control plane / execution plane 邊界如何劃分
+
+  └ log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.00001.00001.log (+50 -0)
+     1 +背景
+     2 +- 使用者確認 Requirement Analysis 後，要求進入 BA。
+     3 +- 額外上下文：
+     4 +  1. `20260319_001.async-merge` branch 存在 netfx `FsiHost` + Akka remote actor 雛形。
+     5 +  2. 使用者希望保留現有 in-proc 路徑，避免現有 MCP client 失效。
+     6 +  3. 新目標不只是補 issue，而是把 server 往 production-ready 推進。
+     7 +
+     8 +目標
+     9 +- 完成 BA，明確定義本輪的 business capability、優先順序、可重用能力與相容策略。
+    10 +- 避免把 `async-merge` 已有能力重做一遍。
+    11 +
+    12 +計畫步驟（planned steps）
+    13 +1. 讀取 `Requirement.md` 與 `origin/20260319_001.async-merge` 的 SA/SD。
+    14 +2. 盤點 `main` 與 `async-merge` 各自已有的能力。
+    15 +3. 將需求分成產品缺口、架構缺口、未證實假說。
+    16 +4. 定義 business capability 與優先順序。
+    17 +5. 產出 `doc/BA.md`，等待使用者確認後再進 SA。
+    18 +
+    19 +執行命令/參數
+    20 +- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+    21 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SA.md | sed -n '1,220p'`
+    22 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit show origin/20260319_001.async-merge:doc/SD.md | sed -n '1,220p'`
+    23 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch`
+    24 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit branch -a`
+    25 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit ls-remote --heads origin '*20260319*' '*async*merge*'`
+    26 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit fetch origin 20260319_001.async-merge:refs/remotes/origin/20260319_001.async-merge`
+    27 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit diff --name-status main..origin/20260319_001.async-merge`
+    28 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit grep -n "Akka\\|akka\\|actor\\|host registry\\|session registry\\|Register.*agent\\|host id\\|session id\\|FsiHost\\|H
+        ostKind\\|AppDomain\\|Worker\\|MailboxProcessor\\|net fx\\|framework" origin/20260319_001.async-merge -- src doc`
+    29 +
+    30 +結果
+    31 +- 已完成 BA，產出 `doc/BA.md`。
+    32 +- 已確認 `20260319_001.async-merge` 有可重用的 remote host 雛形，但仍是單一 host / 單一 session 模型。
+    33 +- 已定義本輪 business capability：dual-backend、explicit multi-tenant execution model、backward compatibility、host management first-class feature。
+    34 +
+    35 +根因判讀
+    36 +- 真正的 business problem 不是單一 async bug，而是產品仍缺少多租戶 execution model 與 control plane。
+    37 +- 若只補一兩個 async tool，不處理 backend abstraction、registry 與 compatibility，production-ready 程度不會有質變。
+    38 +
+    39 +下一步
+    40 +- 若使用者確認 BA 方向正確，下一步進 SA，分析 `main` 與 `async-merge` 應如何收斂成雙 backend + agent/host/session registry 架構。
+    41 +
+    42 +關聯文件/工單/PR
+    43 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+    44 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+    45 +- `origin/20260319_001.async-merge:doc/SA.md`
+    46 +- `origin/20260319_001.async-merge:doc/SD.md`
+    47 +
+    48 +使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+    49 +- 使用者要求保留現有 mcp client 可用性，並同時把 out-of-process host 納入正式能力。
+    50 +- 使用者新增需求：agent registration、host dictionary、session dictionary、host kind（netfx / net10）、routing 到指定 host/session。
+
+  └ log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.op_log (+37 -0)
+     1 +Source review
+     2 +- Requirement baseline loaded from `doc/Requirement.md`
+     3 +- Remote branch design docs loaded from:
+     4 +  - `origin/20260319_001.async-merge:doc/SA.md`
+     5 +  - `origin/20260319_001.async-merge:doc/SD.md`
+     6 +
+     7 +Repository observations
+     8 +- Current branch: `main`
+     9 +- Working tree: clean
+    10 +- Remote branch `20260319_001.async-merge` exists and was fetched locally for read-only inspection.
+    11 +
+    12 +Key findings from prior implementation
+    13 +- `main` already has:
+    14 +  - async queue
+    15 +  - async status resource/endpoint
+    16 +  - backward-compatible MCP tool surface
+    17 +- `origin/20260319_001.async-merge` already has:
+    18 +  - `net472 FsiHost`
+    19 +  - Akka remote transport
+    20 +  - transport-safe DTO split (`Messages`)
+    21 +  - service/deploy documentation baseline
+    22 +- Missing in both lines:
+    23 +  - agent registry
+    24 +  - host registry
+    25 +  - session registry
+    26 +  - host kind abstraction
+    27 +  - explicit execution routing contract
+    28 +
+    29 +BA decision summary
+    30 +- Keep both backends, but only behind a unified abstraction.
+    31 +- Treat backward compatibility as a hard requirement.
+    32 +- Treat multi-agent / multi-host / multi-session support as the actual product upgrade, not as incidental implementation detail.
+    33 +
+    34 +Artifacts created
+    35 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+    36 +- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.00001.00001.log`
+    37 +- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.完成BA並確立雙backend多租戶執行平台方向.op_log`
+
+─ Worked for 1m 17s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在跑這一步的 check.fsx，確認 BA 這輪的 log/traceability 都完整，然後就停在 BA 等你確認。
+
+• Ran CODEX_THREAD_ID=019cfeb7-7b04-78c1-a7c6-c859782d0919-ba-step dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  │ --repo /workspace/home/mcp/FSharp.MCP.DevKit
+  └ SessionId   : 019cfeb7-7b04-78c1-a7c6-c859782d0919-ba-step
+    State file  : /workspace/home/codex/019cfeb7-7b04-78c1-a7c6-c859782d0919-ba-step.state.json
+    … +15 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• BA 已完成，產物在 doc/BA.md。這一步的重點不是細部技術解，而是把本輪明確定義成「把 fsharp-devkit 從單機單 session 工具，升級成可支援多 agent / 多 host / 多 session 的
+  execution platform」，同時保留現有 MCP client 的相容性。
+
+  這份 BA 的結論有四個：
+
+  1. 這次應該沿用 origin/20260319_001.async-merge 的 remote host 雛形，不要在 main 上重做。
+  2. 要保留雙 backend，但只能在統一抽象下共存：InProcBackend + RemoteHostBackend，不能再讓 tool 層直接混 transport 與 execution。
+  3. 這次真正新增的能力是 agent registry + host registry + session registry + hostKind + execution routing，而不是單純再加幾個 async tool。
+  4. backward compatibility 是硬需求，所以舊工具先對應到 default agent/default host/default session，新流程再顯式帶 agentId + hostId + sessionId。
+
+  我也已把「哪些是已確認缺口、哪些是現有可重用能力、哪些才是本輪新增能力」分開，避免重工。check.fsx 已跑過，結果是 PASS=14 WARN=1 FAIL=0，唯一警告是工作樹目前有未提交變更，屬
+  預期狀態。
+
+  如果你確認這份 BA 方向可以，我下一步進 SA。
+
+
+› branch 看你是要切過去然後再切新的，或者你覺得那個  branch 有欠周詳考慮，把概念重新在這邊實作都行
+  不過那條應該是有初步驗證過，感覺還行就是
+
+
+• 我建議直接以 origin/20260319_001.async-merge 為基底再開一條新 branch，不要在 main 重新實作。
+
+  理由很直接：
+
+  - 那條線已經做過初步驗證，net472 FsiHost + Akka remote 這個最難踩坑的部分不是紙上談兵。
+  - 這次真正新增的，不是「再做一個 remote host」，而是把它升級成：
+      - dual-backend abstraction
+      - agent registry
+      - host registry
+      - session registry
+      - netfx / net10 host kind
+      - backward-compatible routing
+  - 如果從 main 重做，等於把已驗過的一大段 mixed-runtime 路徑再走一次，重工很高。
+
+  但不會是「照抄那條 branch 接著寫」。我的做法會是：
+
+  1. checkout 20260319_001.async-merge
+  2. 從它開一條新的工作 branch
+  3. 把它當成 execution-plane baseline
+  4. 在 SA 階段明確標記哪些沿用、哪些重切
+
+  會沿用的部分：
+
+  - FsiHost
+  - Messages
+  - remote client / actor 溝通方向
+  - 部署/service 化雛形
+
+  會重切的部分：
+
+  - 單一 host / 單一 session 假設
+  - backend abstraction
+  - control plane / execution plane 邊界
+  - 舊工具對 default agent/default host/default session 的相容層
+
+  我的判斷是這樣最務實，也最符合你要的 production-ready 方向。
+
+  如果你同意，我下一步就是：
+
+  1. 切到 20260319_001.async-merge
+  2. 再開新 branch
+  3. 開始做 SA
+
+  确认後我就執行。
+
+
+› 記得目前的一些新檔案要複製過去
+
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› 記得目前的一些新檔案要複製過去(main 跟 20260319_001.async-merge 分岔點之後 main 的新 md / log / notes 檔案)
+
+
+• 我先做兩件事：確認目前工作樹是否乾淨，以及列出 main 相對 20260319_001.async-merge 分岔後新增的 md / log / notes 檔案。確認清單後我再切 branch，避免把你要保留的文件漏掉。
+
+• Ran BASE=$(git -C /workspace/home/mcp/FSharp.MCP.DevKit merge-base main origin/20260319_001.async-merge) && echo "$BASE" && git -C /workspace/home/mcp/FSharp.MCP.DevKit
+  │ diff --name-status "$BASE"..main -- 'doc/**/*.md' 'doc/*.md' 'log/*' 'notes/*'
+  └ d5b530581640d6c228723f93fc38e1ddbbef8134
+    A    doc/Requirement.md
+    A    notes/00001.txt
+    A    notes/00002.txt
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch
+  └ ## main...origin/main
+    ?? doc/BA.md
+
+• Ran BASE=$(git -C /workspace/home/mcp/FSharp.MCP.DevKit merge-base main origin/20260319_001.async-merge) && git -C /workspace/home/mcp/FSharp.MCP.DevKit log --oneline
+  │ --decorate --graph --max-count=20 "$BASE"..main && echo '---' && git -C /workspace/home/mcp/FSharp.MCP.DevKit log --oneline --decorate --graph --max-count=20
+  │ "$BASE"..origin/20260319_001.async-merge
+  └ * c0dc77f (HEAD -> main, origin/main, origin/HEAD) 20260322
+    ---
+    … +9 lines
+    * 3b26029 Add final merge check logs
+    * 9595364 Merge mixed-runtime async FSI backend
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我發現一個細節：main 相對分岔點，git 只看得到已提交的 doc/Requirement.md 與 notes/00001.txt、notes/00002.txt。但我目前手上還有一個未提交的 doc/BA.md，這個也要一起帶過去，不
+  能只看 git diff。接著我把 log/ 實際新檔也盤出來。
+
+• Explored
+  └ List log
+    List log
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/* /workspace/home/mcp/FSharp.MCP.DevKit/notes/* /workspace/home/
+  │ mcp/FSharp.MCP.DevKit/doc/BA.md
+  └ .gitignore:31:[Ll]og/    "/workspace/home/mcp/FSharp.MCP.DevKit/log/20260318022304.
+    \346\233\264\346\226\260\345\220\204\345\260\210\346\241\210\347\233\270\344\276\235\344\270\246\351\251\227\350\255\211Docker\347\233\270\345\256\271.00001.00001.log"
+    … +26 lines
+    226\271\345\220\221.op_log"
+    .gitignore:31:[Ll]og/    /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我確認到 log/ 被 .gitignore 忽略，所以那些 log/op_log 在切 branch 時工作樹不會消失，但也不會自動進新 branch 的版控。相對地，Requirement.md 和 notes/00001.txt、
+  notes/00002.txt 是 main 上已提交的內容，切到 async-merge 後會消失，這三個要顯式帶過去。我要先看 c0dc77f 這個 main commit 裡到底包含哪些檔，決定是 cherry-pick 還是 path-
+  level checkout。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit show --stat --name-status --oneline c0dc77fcfcbbe3af719328e04fa0e21437d5b7ec | sed -n '1,220p'
+  └ c0dc77f 20260322
+    A    doc/Requirement.md
+    A    doc4dev/20260320_issues.md
+    R100    docs/notes/00001.txt    notes/00001.txt
+    A    notes/00002.txt
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit ls-tree -r --name-only origin/20260319_001.async-merge -- notes doc doc4dev docs/notes | sed -n '1,220p'
+  └ doc/Action.md
+    doc/Deployment.md
+    … +13 lines
+    notes/00005.txt
+    notes/00006.txt
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit ls-tree -r --name-only main -- notes doc doc4dev docs/notes | sed -n '1,220p'
+  └ doc/Ideation.md
+    doc/Requirement.md
+    … +4 lines
+    notes/00001.txt
+    notes/00002.txt
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• async-merge 上其實已經有 notes/00001.txt、notes/00002.txt，所以不能直接無腦 cherry-pick c0dc77f，不然很可能把那邊既有 note 蓋掉。我要先比對這兩個檔的內容是不是同一份，再決
+  定用 rename/copy 還是保留兩邊版本。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit diff --no-index -- /workspace/home/mcp/FSharp.MCP.DevKit/notes/00001.txt <(git -C /workspace/home/mcp/FSharp.MCP.DevKit
+  │ show origin/20260319_001.async-merge:notes/00001.txt)
+  └ diff --git a/workspace/home/mcp/FSharp.MCP.DevKit/notes/00001.txt b/dev/fd/63
+    index 8b51653..0000000 100644
+    … +4552 lines
+    +printfn "%s:%d" bannerFrom472 valueFrom472
+    \ No newline at end of file
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit diff --no-index -- /workspace/home/mcp/FSharp.MCP.DevKit/notes/00002.txt <(git -C /workspace/home/mcp/FSharp.MCP.DevKit
+  │ show origin/20260319_001.async-merge:notes/00002.txt)
+  └ diff --git a/workspace/home/mcp/FSharp.MCP.DevKit/notes/00002.txt b/dev/fd/63
+    index 5fb17db..0000000 100644
+    … +763 lines
+    -
+    -  那我下一步就直接做 BA。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit show main:notes/00001.txt | sed -n '1,80p' && printf '\n---\n' && git -C /workspace/home/mcp/FSharp.MCP.DevKit show
+  │ origin/20260319_001.async-merge:notes/00001.txt | sed -n '1,80p'
+  └ › FSharp.MCP.DevKit 的 tool calling 似乎是 blocking 的，你能加一個 execute_f_sharp_code_async 嗎? 並且把 agent request 用一個 queue 收起來，schedule 依序按收到順序執行，
+    async 把原本要直接吐給 agent 的
+    … +160 lines
+
+    Ran Get-ChildItem doc -Force | Select-Object Name,Length,LastWriteTime
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 有，我已經確認這件事，而且有一個不能省略的細節：
+
+  - doc/Requirement.md 是 main 分岔後新增的，切到 20260319_001.async-merge 後要顯式帶過去。
+  - doc/BA.md 目前是未提交新檔，也要一起帶過去。
+  - log/ 下這兩輪的新 log/op_log 也要帶，但因為 repo 的 .gitignore 目前忽略 log/，它們不會自動進版控，要額外處理。
+  - notes/00001.txt、notes/00002.txt 兩邊都有，但內容完全不同，不能直接覆蓋。這種情況我不會 cherry-pick c0dc77f，而是會把 main 這邊的兩份 notes 另存成新的 note 編號帶過去，避
+    免把 async-merge 原本的 note 歷史蓋掉。
+
+  所以我的搬運策略會是：
+
+  1. 先切到 20260319_001.async-merge 再開新 branch
+  2. 顯式帶過：
+      - doc/Requirement.md
+      - doc/BA.md
+      - doc4dev/20260320_issues.md
+      - 本輪新增的 log/op_log
+  3. notes/00001.txt、notes/00002.txt 不覆蓋，改成新編號保留兩邊歷史
+
+  這樣最安全，也符合你說的「main 跟 async-merge 分岔後 main 的新 md / log / notes 檔案要複製過去」。如果你同意這個搬法，我下一步就開始切 branch。
+
+
+› .gitignore 不應該忽略 log，請處理
+
+
+• 我先把 .gitignore 裡對 log/ 的規則找出來，改成不再忽略，然後確認目前 log/ 下哪些檔案會重新出現在 git 狀態裡。
+
+• Explored
+  └ Read .gitignore
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short
+  └ ?? doc/BA.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我會做成「其他地方的 *.log 照舊忽略，但 repo 根目錄的 log/ 及其 .log/.op_log 不再忽略」，這樣不會把一般 build 雜訊全部打開。
+
+• Edited .gitignore (+5 -1)
+     30  [Oo]bj/
+     31 -[Ll]og/
+     31  [Ll]ogs/
+        ⋮
+    118
+    119 +# Traceability logs must be versioned under repo-root log/
+    120 +!/log/
+    121 +!/log/*.log
+    122 +!/log/*.op_log
+    123 +
+    124  # Visual Studio Trace Files
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short
+  └  M .gitignore
+    ?? doc/BA.md
+    ?? log/
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322012032.完成需求分析並釐清證實與未證實問
+  │ 題.00001.00001.log /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322012032.完成需求分析並釐清證實與未證實問題.op_log /workspace/home/mcp/FSharp.MCP.DevKit/log/
+  │ latest-search.tmp
+  └ .gitignore:121:!/log/*.log    "/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322012032.
+    \345\256\214\346\210\220\351\234\200\346\261\202\345\210\206\346\236\220\344\270\246\351\207\220\346\270\205\350\255\211\345\257\246\350\210\207\346\234\252\350\255\211\3
+    … +3 lines
+    45\257\246\345\225\217\351\241\214.op_log"
+    .gitignore:87:*.tmp    /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再補一刀，讓 log/ 底下所有檔案都不被忽略，包含像 latest-search.tmp 這種不是 .log/.op_log 的證據檔；這樣才符合你說的「log 不應該被忽略」。
+
+• Edited .gitignore (+1 -0)
+    120  !/log/
+    121 +!/log/**
+    122  !/log/*.log
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short
+  └  M .gitignore
+    ?? doc/BA.md
+    ?? log/
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+  └ .gitignore:121:!/log/**    /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我補一組 log/op_log，把 .gitignore 放開 log/ 這件事留痕，然後跑一次 check.fsx 收尾。
+
+• Ran date -u +%Y%m%d%H%M%S
+  └ 20260322022540
+
+• Edited 2 files (+55 -0)
+  └ log/20260322022540.解除gitignore對log目錄的忽略.00001.00001.log (+36 -0)
+     1 +背景
+     2 +- 使用者指出 `.gitignore` 不應忽略 `log/`，要求立即處理。
+     3 +- 目前 repo 的 `.gitignore` 同時有 `[Ll]og/` 與 `*.log` / `*.tmp` 等規則，會讓 `log/` 內證據檔無法進版控。
+     4 +
+     5 +目標
+     6 +- 讓 repo-root `log/` 及其內容不再被 `.gitignore` 忽略。
+     7 +- 保留其他一般 build/runtime log 的忽略行為，不把整個 repo 的所有 `.log` 全部打開。
+     8 +
+     9 +計畫步驟（planned steps）
+    10 +1. 檢查 `.gitignore` 內與 `log/` 相關的規則。
+    11 +2. 調整規則，顯式 unignore repo-root `log/` 及其內容。
+    12 +3. 驗證 `git status` 與 `git check-ignore` 結果。
+    13 +4. 補齊 log/op_log 並執行收尾稽核。
+    14 +
+    15 +執行命令/參數
+    16 +- `nl -ba /workspace/home/mcp/FSharp.MCP.DevKit/.gitignore | sed -n '1,120p'`
+    17 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short`
+    18 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/* /workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+    19 +
+    20 +結果
+    21 +- 已移除 `.gitignore` 對 `log/` 目錄的忽略，並加入 `!/log/`、`!/log/**`。
+    22 +- `log/` 現在會出現在 `git status` 中，表示不再被忽略。
+    23 +
+    24 +根因判讀
+    25 +- 問題不是 `log/` 檔案不存在，而是現有 `.gitignore` 同時命中了目錄規則與全域副檔名規則，導致 log 證據檔永遠無法進版控。
+    26 +
+    27 +下一步
+    28 +- 後續切 branch 時，`log/` 內的新證據檔可隨 branch 一起納入版控。
+    29 +- 下一個階段會一併處理 `doc/BA.md` 與需從 `main` 帶往新 branch 的 md/log/notes。
+    30 +
+    31 +關聯文件/工單/PR
+    32 +- `/workspace/home/mcp/FSharp.MCP.DevKit/.gitignore`
+    33 +- `/workspace/home/mcp/FSharp.MCP.DevKit/log/`
+    34 +
+    35 +使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+    36 +- 使用者明確要求 `.gitignore` 不應忽略 `log/`，並要求處理。
+
+  └ log/20260322022540.解除gitignore對log目錄的忽略.op_log (+19 -0)
+     1 +Inspection
+     2 +- `.gitignore` line 31 previously ignored `[Ll]og/`
+     3 +- `.gitignore` also had global ignores such as `*.log` and `*.tmp`
+     4 +
+     5 +Changes
+     6 +- Removed `[Ll]og/`
+     7 +- Added:
+     8 +  - `!/log/`
+     9 +  - `!/log/**`
+    10 +  - retained `!/log/*.log`
+    11 +  - retained `!/log/*.op_log`
+    12 +
+    13 +Verification
+    14 +- `git status --short` now shows:
+    15 +  - modified `.gitignore`
+    16 +  - untracked `doc/BA.md`
+    17 +  - untracked `log/`
+    18 +- `git check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp`
+    19 +  now resolves to the unignore rule `!/log/**`, confirming `log/` content is no longer ignored.
+
+
+› 開始切，另外切過去之後也要確報之後的 .gitignore 不會忽略 log
+
+
+• 我開始切了。做法是先暫存會阻擋 checkout 的 .gitignore 與 BA.md，切到 20260319_001.async-merge 後再開新 branch，最後把 Requirement.md、issue 文件、notes 與 .gitignore 修正一
+  起帶過去。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit stash push --include-untracked -m 'carry-ba-and-gitignore-before-async-branch' -- .gitignore doc/BA.md
+  └ Saved working directory and index state On main: carry-ba-and-gitignore-before-async-branch
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit switch -c 20260322_001.multi-agent-fsi-platform origin/20260319_001.async-merge
+  └ fatal: Unable to create '/workspace/home/mcp/FSharp.MCP.DevKit/.git/index.lock': File exists.
+
+    … +3 lines
+    may have crashed in this repository earlier:
+    remove the file manually to continue.
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit stash pop
+  └ On branch main
+    Your branch is up to date with 'origin/main'.
+    … +11 lines
+    no changes added to commit (use "git add" and/or "git commit -a")
+    Dropped refs/stash@{0} (842b3460ba7473fb19f71a5fa4a10c886867e117)
+
+─ Worked for 1m 11s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 切 branch 時被一個殘留的 .git/index.lock 卡住了，所以切換失敗，但我已把 .gitignore 與 BA.md 恢復回工作樹，沒有丟失。現在先確認 repo 裡沒有活著的 git process，再清掉那個
+  stale lock 繼續。
+
+• Ran ps -ef | rg 'git .*FSharp\.MCP\.DevKit|git -C /workspace/home/mcp/FSharp\.MCP\.DevKit|[g]it'
+  └ root      256046       1  0 01:55 ?        00:00:00 [git] <defunct>
+    root      256076       1  0 01:55 ?        00:00:00 [git] <defunct>
+    root      258818   21162  0 02:26 ?        00:00:00 /bin/bash -lc ps -ef | rg 'git .*FSharp\.MCP\.DevKit|git -C /workspace/home/mcp/FSharp\.MCP\.DevKit|[g]it'
+    root      258836  258818  0 02:26 ?        00:00:00 rg git .*FSharp\.MCP\.DevKit|git -C /workspace/home/mcp/FSharp\.MCP\.DevKit|[g]it
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch
+  └ ## main...origin/main
+     M .gitignore
+    ?? doc/BA.md
+    ?? log/
+
+• Explored
+  └ List index.lock
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• index.lock 已經不在了。我改成只暫存 .gitignore，讓 untracked 的 BA.md 和 log/ 留在工作樹，這樣切 branch 之後再把 .gitignore 放回來即可。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit stash push -m 'carry-gitignore-log-unignore' -- .gitignore
+  └ Saved working directory and index state On main: carry-gitignore-log-unignore
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit switch -c 20260322_001.multi-agent-fsi-platform origin/20260319_001.async-merge
+  └ Switched to a new branch '20260322_001.multi-agent-fsi-platform'
+    branch '20260322_001.multi-agent-fsi-platform' set up to track 'origin/20260319_001.async-merge'.
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit stash pop
+  └ On branch 20260322_001.multi-agent-fsi-platform
+    Your branch is up to date with 'origin/20260319_001.async-merge'.
+    … +27 lines
+    no changes added to commit (use "git add" and/or "git commit -a")
+    Dropped refs/stash@{0} (f179bd46abf7f27a81ab64f9529fc7a90b005c44)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• branch 已切好，.gitignore 修正也已成功帶過來。接著我把 main 分岔後新增的文件顯式帶進這條新 branch，並把 notes/00001、00002 另存成新編號，避免覆蓋 async-merge 既有 notes。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit checkout main -- doc/Requirement.md doc4dev/20260320_issues.md
+  └ (no output)
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit show main:notes/00001.txt > /workspace/home/mcp/FSharp.MCP.DevKit/notes/00007.txt && git -C /workspace/home/mcp/
+  │ FSharp.MCP.DevKit show main:notes/00002.txt > /workspace/home/mcp/FSharp.MCP.DevKit/notes/00008.txt
+  └ (no output)
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit check-ignore -v /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.完成BA並確立雙backend多租戶執行平台方
+  │ 向.00001.00001.log /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+  └ .gitignore:122:!/log/*.log    "/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322015118.
+    \345\256\214\346\210\220BA\344\270\246\347\242\272\347\253\213\351\233\231backend\345\244\232\347\247\237\346\210\266\345\237\267\350\241\214\345\271\263\345\217\260\346\
+    226\271\345\220\221.00001.00001.log"
+    .gitignore:121:!/log/**    /workspace/home/mcp/FSharp.MCP.DevKit/log/latest-search.tmp
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch
+  └ ## 20260322_001.multi-agent-fsi-platform...origin/20260319_001.async-merge
+     M .gitignore
+    … +20 lines
+    ?? notes/00007.txt
+    ?? notes/00008.txt
+
+• Explored
+  └ List notes
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已切到新 branch：20260322_001.multi-agent-fsi-platform，基底是 origin/20260319_001.async-merge。
+
+  目前狀態如下：
+
+  - .gitignore 的修正已成功帶過來，log/ 在這個 branch 上也不再被忽略。
+  - 我已驗證：
+      - log/*.log 會被 !/log/*.log 放行
+      - log/latest-search.tmp 也會被 !/log/** 放行
+  - 已帶過來的 main-side 新檔：
+      - doc/Requirement.md
+      - doc/BA.md
+      - doc4dev/20260320_issues.md
+      - 目前工作樹中的 log/ 新檔
+  - notes/00001.txt、notes/00002.txt 因為和 async-merge 既有檔衝突，我沒有覆蓋，而是另存成：
+      - notes/00007.txt
+      - notes/00008.txt
+
+  也就是說，你提醒的兩件事都已處理：
+
+  1. 新檔有帶過來
+  2. 之後這個 branch 的 .gitignore 不會再忽略 log/
+
+  如果你要，我下一步就正式開始 SA。
+
+
+› 開始吧
+
+
+• 我開始做 SA，只分析現況、責任邊界、可沿用與必須重切的結構，不進設計解法。先讀現有 async-merge 的關鍵檔與文件，整理成新的 SA 基線。
+
+• Explored
+  └ Read SA.md
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch
+  └ ## 20260322_001.multi-agent-fsi-platform...origin/20260319_001.async-merge
+     M .gitignore
+    … +20 lines
+    ?? notes/00007.txt
+    ?? notes/00008.txt
+
+• Explored
+  └ Read McpFsiTools.fs, Program.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 第一輪閱讀結果很清楚：這條 branch 已經不是 toy 純 in-proc，而是單一 remote host 雛形。但目前還沒有你要的 control plane，只有「server 直連一個固定 remote actor」。我再把
+  Messages、FsiActor、Program 跟 health/resource 面補齊看完，再落 SA。
+
+• Explored
+  └ Read McpActorMessages.fs, FsiActor.fs, Program.fs
+    Search healthz|MapGet|McpServerResource|fsi/async|session|host in FSharp.MCP.DevKit.Server
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已把 execution plane 看清楚了：目前這條 branch 的核心是 RemoteFsiClient -> Akka DTO -> net472 FsiHost(FsiActor) -> FsiService，而不是多 host / 多 session。接下來我會把這
+  些現況、缺口與風險收斂成新的 SA。
+
+• Ran date -u +%Y%m%d%H%M%S
+  └ 20260322023332
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要更新 doc/SA.md，把舊的「收斂成單一 remote backend」分析，改成這次的「雙 backend + 多租戶 execution platform」現況分析。新增 log 也會一起補。
+
+• Edited 3 files (+326 -0)
+  └ doc/SA.md (+255 -0)
+      1 +# SA
+      2 +
+      3 +## 任務摘要
+      4 +
+      5 +- 目前工作 branch：`20260322_001.multi-agent-fsi-platform`
+      6 +- 基底：`origin/20260319_001.async-merge`
+      7 +- 本輪目標不是重做 mixed-runtime，而是在既有 `async-merge` 雛形之上，分析如何升級成：
+      8 +  - dual-backend
+      9 +  - 多 agent / 多 host / 多 session
+     10 +  - 保留既有 MCP client 相容性
+     11 +  - 補強 Requirement/BA 指出的 diagnostics / observability / contract 缺口
+     12 +
+     13 +## 分析範圍
+     14 +
+     15 +本次 SA 聚焦三條主線：
+     16 +
+     17 +1. 現有 execution plane 現況
+     18 +2. 現有 MCP/control plane 現況
+     19 +3. 往多租戶、多 host execution platform 演進時，哪些結構可沿用、哪些責任必須重切
+     20 +
+     21 +## 現況觀察
+     22 +
+     23 +### A. 目前 branch 的 execution plane 已是單一 remote host 架構
+     24 +
+     25 +- [McpFsiTools.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs) 內的 `FsiMcpService` 會：
+     26 +  - 建立 `ActorSystem`
+     27 +  - 連到固定 `remoteActorPath = akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor`
+     28 +  - 透過 `RemoteFsiClient` 發送 `FsiRemoteCommandRequest`
+     29 +- [FsiHost/Program.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/Program.fs) 啟動 `FsiExecutionSystem` 並建立固定名稱 `fsiActor`
+     30 +- [FsiActor.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs) 在 actor 建構時建立單一 `FsiService(config)`，並持有單一 FSI session
+     31 +
+     32 +結論：
+     33 +
+     34 +- 目前 branch 已不是 in-proc server 直接跑 FSI
+     35 +- 但它仍是「單一 remote host + 單一 actor + 單一 FSI session」模型
+     36 +
+     37 +### B. transport contract 已有跨 runtime 安全分層
+     38 +
+     39 +- [McpActorMessages.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs) 已將 transport-safe DTO 抽出：
+     40 +  - `FsiRemoteCommandRequest`
+     41 +  - `FsiRemoteResult`
+     42 +  - `FsiRemoteCommandResponse`
+     43 +- 目前 DTO 只承載：
+     44 +  - `RequestId`
+     45 +  - `CommandType`
+     46 +  - `Payload`
+     47 +  - `UsePackageTargets`
+     48 +  - execution result / diagnostics
+     49 +
+     50 +結論：
+     51 +
+     52 +- 這層非常值得沿用
+     53 +- 但它目前沒有任何 multi-tenant routing 欄位，例如：
+     54 +  - `AgentId`
+     55 +  - `HostId`
+     56 +  - `SessionId`
+     57 +  - `HostKind`
+     58 +
+     59 +### C. async queue 已存在，但仍屬單 session 語意
+     60 +
+     61 +- `FsiMcpService` 已有：
+     62 +  - `AsyncFsiResultCache`
+     63 +  - `Channel<AsyncFsiExecutionRequest>`
+     64 +  - 單 worker FIFO processor
+     65 +- queue item 目前只包含：
+     66 +  - `AsyncId`
+     67 +  - `Code`
+     68 +  - `Timeout`
+     69 +  - `EnqueuedAt`
+     70 +- 查詢面目前是：
+     71 +  - MCP resource `fsi/async/{asyncId}`
+     72 +  - HTTP GET `/fsi/async/{asyncId}`
+     73 +
+     74 +結論：
+     75 +
+     76 +- async queue 與 polling model 已可沿用
+     77 +- 但目前沒有辦法把 job 綁到某個 agent / host / session
+     78 +
+     79 +### D. MCP/control plane 目前幾乎沒有租戶概念
+     80 +
+     81 +- [Program.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs) 目前提供：
+     82 +  - `/mcp`
+     83 +  - `fsiAsyncStatus` resource
+     84 +  - `/fsi/async/{asyncId}`
+     85 +  - `/healthz`
+     86 +- 現有 tool surface 仍是假設「只有一個 FSI backend」
+     87 +- `healthz` 只回：
+     88 +  - `status`
+     89 +  - `transport`
+     90 +  - `isWindowsService`
+     91 +  - `serviceName`
+     92 +
+     93 +結論：
+     94 +
+     95 +- control plane 目前只有 server process 本身健康狀態
+     96 +- 沒有 host registry、session registry、mapping registry
+     97 +
+     98 +### E. 與 `main` 的關係
+     99 +
+    100 +- `main` 仍保留較新的 in-proc queue/resource 改動與 Requirement/BA 相關文件
+    101 +- 本 branch 保留的是較成熟的 remote host mixed-runtime execution path
+    102 +- 因此這次不是單純在某一條線上修 bug，而是要把：
+    103 +  - `main` 的文件與問題意識
+    104 +  - `async-merge` 的 remote host execution 雛形
+    105 +  組合成新的正式架構
+    106 +
+    107 +## 已確認可沿用的部分
+    108 +
+    109 +### 1. Remote host 執行骨架
+    110 +
+    111 +可沿用：
+    112 +
+    113 +1. `FsiHost`
+    114 +2. `FsiActor`
+    115 +3. `Messages` transport DTO
+    116 +4. `RemoteFsiClient`
+    117 +5. async queue + async status polling
+    118 +
+    119 +理由：
+    120 +
+    121 +- 這些已初步驗證過 mixed-runtime execution 可行，不應在 `main` 上重做一遍
+    122 +
+    123 +### 2. 現有 MCP tool surface
+    124 +
+    125 +可沿用：
+    126 +
+    127 +1. 現有 sync tools 名稱
+    128 +2. `execute_f_sharp_code_async`
+    129 +3. `fsi/async/{asyncId}` resource
+    130 +
+    131 +理由：
+    132 +
+    133 +- 使用者已明確要求現有 MCP client 要繼續可跑
+    134 +
+    135 +## 已確認必須重切的責任邊界
+    136 +
+    137 +### 1. `FsiMcpService` 目前責任過重
+    138 +
+    139 +它現在同時負責：
+    140 +
+    141 +1. Akka client 連線
+    142 +2. remote execution client
+    143 +3. async queue
+    144 +4. async cache
+    145 +5. default timeout
+    146 +6. 對外提供 tool 使用入口
+    147 +
+    148 +這代表：
+    149 +
+    150 +- execution adapter
+    151 +- queue orchestration
+    152 +- lifecycle 管理
+    153 +- control plane 查詢
+    154 +
+    155 +都混在同一個類型裡。
+    156 +
+    157 +### 2. 缺少 backend abstraction
+    158 +
+    159 +目前 branch 只有 remote backend，main 則是 in-proc backend。
+    160 +如果要保留雙 backend，現在沒有任何正式抽象層可掛這兩條路徑。
+    161 +
+    162 +### 3. 缺少 registry 分層
+    163 +
+    164 +目前沒有獨立概念來管理：
+    165 +
+    166 +1. agent
+    167 +2. host
+    168 +3. session
+    169 +
+    170 +因此所有 execution 都被隱含地路由到：
+    171 +
+    172 +- 固定 host
+    173 +- 固定 actor
+    174 +- 固定單一 session
+    175 +
+    176 +### 4. host 與 session 生命周期未分離
+    177 +
+    178 +目前 `FsiActor` 啟動即建立單一 `FsiService`，actor lifecycle 等同 session lifecycle。
+    179 +這對單 session 模型成立，但不適合多 session host。
+    180 +
+    181 +## 問題定義
+    182 +
+    183 +目前這條 branch 解的是：
+    184 +
+    185 +- 如何把 MCP server 與 net472 FSI host 用 Akka 接起來
+    186 +
+    187 +但本輪真正要解的是：
+    188 +
+    189 +- 如何把它升級成一個多租戶 execution platform
+    190 +
+    191 +具體差異在於：
+    192 +
+    193 +1. 現況只有 execution path，沒有 tenancy model
+    194 +2. 現況只有單一 host address，沒有 host inventory
+    195 +3. 現況只有單一 session，沒有 session routing
+    196 +4. 現況只有 async job cache，沒有 job 與 agent/host/session 的關聯
+    197 +5. 現況沒有 `.NET 10` host 類型
+    198 +
+    199 +## 根因判讀
+    200 +
+    201 +1. `async-merge` 的設計出發點是把 mixed-runtime 跑通，不是解 multi-tenant 問題，所以自然收斂成單一 host / 單一 session。
+    202 +2. 先前 Requirement 中提到的 diagnostics、observability、mapping 問題，本質上都是「control plane 不足」的症狀。
+    203 +3. 若只在現有 `McpFsiTools.fs` 上繼續疊功能，而不切出 backend / registry / routing 邊界，複雜度會快速失控。
+    204 +
+    205 +## 假設
+    206 +
+    207 +1. 本輪仍以 `origin/20260319_001.async-merge` 為 execution-plane baseline。
+    208 +2. 舊 client 必須能繼續使用既有 tool/resource 名稱。
+    209 +3. 新的 multi-tenant 能力可以先以顯式 tool/resource 補入，不必立刻把所有舊工具全面改成顯式 routing。
+    210 +4. `.NET 10` host 與 `net472` host 需要共用同一份高層 contract，而不是各自發展一套 MCP tool surface。
+    211 +
+    212 +## 風險
+    213 +
+    214 +1. 若 `AgentId / HostId / SessionId` 直接滲透到所有既有 tool 簽名，會造成大面積 contract churn。
+    215 +2. 若 `FsiActor` 繼續維持「actor = session」，多 session host 會很難落地。
+    216 +3. 若 dual-backend 沒有共同抽象，之後會出現：
+    217 +   - 某些 tools 只支援 in-proc
+    218 +   - 某些 tools 只支援 remote host
+    219 +   - state / diagnostics 表現不一致
+    220 +4. path mapping 若只做文件、不做可查詢能力，production ready 仍不足。
+    221 +
+    222 +## 分析結論
+    223 +
+    224 +### 結論 1
+    225 +
+    226 +`origin/20260319_001.async-merge` 應保留作為 execution-plane baseline，不應拋棄重做。
+    227 +
+    228 +### 結論 2
+    229 +
+    230 +本輪的真正缺口不在 mixed-runtime execution，而在 control plane：
+    231 +
+    232 +1. backend abstraction
+    233 +2. agent registry
+    234 +3. host registry
+    235 +4. session registry
+    236 +5. observability / mapping / diagnostics query surface
+    237 +
+    238 +### 結論 3
+    239 +
+    240 +下一步 SD 不應直接從「加哪些 tool」開始，而應先定義：
+    241 +
+    242 +1. backend 介面
+    243 +2. registry 模型
+    244 +3. host / session lifecycle
+    245 +4. 舊工具如何映射到 default routing
+    246 +
+    247 +## 關聯追溯
+    248 +
+    249 +- Requirement: [Requirement.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md)
+    250 +- BA: [BA.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md)
+    251 +- 基底 branch 既有實作：
+    252 +  - [McpFsiTools.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs)
+    253 +  - [McpActorMessages.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs)
+    254 +  - [FsiActor.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs)
+    255 +  - [Program.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs)
+
+  └ log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.00001.00001.log (+45 -0)
+     1 +背景
+     2 +- 使用者確認 BA 後，要求開始 SA。
+     3 +- 當前 branch 已切到 `20260322_001.multi-agent-fsi-platform`，基底為 `origin/20260319_001.async-merge`。
+     4 +
+     5 +目標
+     6 +- 完成 SA，只分析現況、可沿用結構、必須重切的責任邊界與風險。
+     7 +- 不在本階段定義細部設計解法。
+     8 +
+     9 +計畫步驟（planned steps）
+    10 +1. 讀取目前 branch 的 `SA.md` 與核心程式檔。
+    11 +2. 盤點 execution plane、transport DTO、async queue、control plane 現況。
+    12 +3. 將「可沿用」與「必須重切」分開。
+    13 +4. 更新 `doc/SA.md` 與本次 log/op_log。
+    14 +5. 回報 SA 結果，等待使用者確認後再進 SD。
+    15 +
+    16 +執行命令/參數
+    17 +- `git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch`
+    18 +- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+    19 +- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+    20 +- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/Program.fs`
+    21 +- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs`
+    22 +- `sed -n '1,260p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs`
+    23 +- `sed -n '1,240p' /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs`
+    24 +- `rg --line-number "healthz|MapGet|McpServerResource|fsi/async|session|host" /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server -g '*.fs'`
+    25 +
+    26 +結果
+    27 +- 已完成新的 SA，更新 `doc/SA.md`。
+    28 +- 已確認本 branch 的 execution plane 值得沿用，但目前只支援單一 remote host / 單一 session。
+    29 +- 已確認真正缺口在 control plane，而不是 mixed-runtime execution 可行性本身。
+    30 +
+    31 +根因判讀
+    32 +- `async-merge` 原本要解的是 mixed-runtime execution，因此自然收斂成單一 host / 單一 session。
+    33 +- 本輪新增需求屬於 tenancy / routing / observability 問題，不是單純再補幾個 async tool 就能完成。
+    34 +
+    35 +下一步
+    36 +- 若使用者確認 SA 方向正確，下一步進 SD，定義 backend abstraction、registry 模型、host/session lifecycle 與 backward-compatible routing。
+    37 +
+    38 +關聯文件/工單/PR
+    39 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+    40 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/Requirement.md`
+    41 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/BA.md`
+    42 +
+    43 +使用者 prompt 摘要與本次關鍵上下文（需摘要化記錄）
+    44 +- 使用者要求在新 branch 上延續開發，並確認不漏掉 main 分岔後新增的 md / log / notes。
+    45 +- 使用者本輪目標是將 server 升級到更接近 production-ready 的多 agent / 多 host / 多 session 平台。
+
+  └ log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.op_log (+26 -0)
+     1 +Execution-plane findings
+     2 +- `FsiMcpService` currently builds an Akka client and always routes to one fixed actor path:
+     3 +  `akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor`
+     4 +- `FsiHost` creates a single actor named `fsiActor`
+     5 +- `FsiActor` creates one `FsiService` at construction time, so actor lifecycle currently equals session lifecycle
+     6 +
+     7 +Transport findings
+     8 +- `Messages/McpActorMessages.fs` already isolates transport-safe DTOs
+     9 +- DTOs currently lack any multi-tenant routing metadata such as `AgentId`, `HostId`, `SessionId`, `HostKind`
+    10 +
+    11 +Control-plane findings
+    12 +- `Program.fs` exposes:
+    13 +  - `/mcp`
+    14 +  - `fsiAsyncStatus` resource
+    15 +  - `/fsi/async/{asyncId}`
+    16 +  - `/healthz`
+    17 +- There is no host/session registry query surface yet
+    18 +
+    19 +SA conclusion
+    20 +- Keep `async-merge` as execution-plane baseline
+    21 +- Treat backend abstraction + registries + routing as the true next-layer problem
+    22 +
+    23 +Artifacts updated
+    24 +- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md`
+    25 +- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.00001.00001.log`
+    26 +- `/workspace/home/mcp/FSharp.MCP.DevKit/log/20260322023332.完成SA並確認現有execution-plane與control-plane缺口.op_log`
+
+─ Worked for 1m 16s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• SA 文件已落下來。我先做一次稽核，確認新的 doc/SA.md 與本輪 log 都完整，再停在 SA 等你確認。
+
+• Ran ls -l /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md && git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short --branch | sed -n '1,120p'
+  └ -rw-rw-r--+ 1 root root 8085 Mar 22 02:34 /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md
+    ## 20260322_001.multi-agent-fsi-platform...origin/20260319_001.async-merge
+    … +26 lines
+    ?? notes/00007.txt
+    ?? notes/00008.txt
+
+• Ran CODEX_THREAD_ID=019cfeb7-7b04-78c1-a7c6-c859782d0919-sa-step dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  │ --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md
+  └ SessionId   : 019cfeb7-7b04-78c1-a7c6-c859782d0919-sa-step
+    State file  : /workspace/home/codex/019cfeb7-7b04-78c1-a7c6-c859782d0919-sa-step.state.json
+    … +16 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• SA 已完成，文件在 doc/SA.md。這一步的核心結論是：
+
+  - 這條 branch 已經有可沿用的 execution plane：RemoteFsiClient -> Akka DTO -> net472 FsiHost(FsiActor) -> FsiService
+  - 但它本質上仍是「單一 remote host + 單一 actor + 單一 FSI session」
+  - 真正缺的不是 mixed-runtime execution，而是 control plane：
+      - backend abstraction
+      - agent registry
+      - host registry
+      - session registry
+      - routing / observability / mapping query surface
+
+  也就是說，async-merge 值得保留當 execution baseline，但不能直接拿它當最終 production-ready 架構。這份 SA 已把「可沿用」和「必須重切」分開，避免下一步設計時把遠端 host 雛形
+  整個推翻。check.fsx 已跑過，結果是 PASS=15 WARN=1 FAIL=0，唯一警告仍是工作樹有未提交變更。
+
+  如果你確認這份 SA 方向沒問題，我下一步做 SD。

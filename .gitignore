@@ -28,7 +28,6 @@ x86/
 bld/
 [Bb]in/
 [Oo]bj/
-[Ll]og/
 [Ll]ogs/
 
 # Visual Studio 2015/2017 cache/options directory
@@ -116,6 +115,12 @@ ipch/
 *.vsp
 *.vspx
 *.sap
+
+# Traceability logs must be versioned under repo-root log/
+!/log/
+!/log/**
+!/log/*.log
+!/log/*.op_log
 
 # Visual Studio Trace Files
 *.e2e
