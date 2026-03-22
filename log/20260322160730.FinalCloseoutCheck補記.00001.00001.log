@@ -1,0 +1,17 @@
+背景：前一輪已完成 `DEMO.md`、`DevLog`、`WBS` 優化排程與 `notes` 進版控，但 `check.fsx` 第二次重跑時因最新 `log/op_log` 未前進而產生 SOP 失敗。
+目標：補一筆最終 closeout log/op_log，重新執行 `check.fsx`，讓本輪以乾淨工作樹與完整 SOP 證據收尾。
+計畫步驟：
+1. 補新的 closeout log/op_log，描述 commit/push、測試、check 與剩餘優化 backlog。
+2. 重新執行 `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`。
+3. 若通過，將新 log/op_log commit 並 push 到目前 branch。
+執行命令/參數：
+- `git push origin 20260322_001.multi-agent-fsi-platform`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+結果：
+- 已確認 `docs: add demo devlog closeout and optimization backlog` commit 已推到遠端 branch。
+- 工作樹目前乾淨。
+- 剩餘未完成項已收斂成 `doc/WBS.md` 內的優化 backlog `O1-O5`，不再有主線功能項目遺漏。
+根因判讀：前一次 `push` 因與 `commit` 平行啟動而先看到舊 `HEAD`，後續已補推；`check.fsx` 失敗則純屬 SOP 需要最新 log/op_log 前進，不是產品程式錯誤。
+下一步：重跑 `check.fsx`，通過後將本筆 log/op_log 納入最終提交。
+關聯文件/工單/PR：doc/WBS.md、doc/DevLog.md、DEMO.md、notes/00017.txt
+prompt/上下文摘要：notes 都需要 commit push；完成後確認還有哪些沒完成並繼續；補 DEMO 與 DevLog；完成後自試並優化 WBS。
