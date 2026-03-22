@@ -1,0 +1,9 @@
+背景=使用者確認 host 建立流程應強制經 ProcSupervisor，且所有 host session 採 actor per session，result_op 由 parent 協調處理
+目標=把上述決策正式回寫到 doc/SD.md 與 doc/WBS.md，作為後續實作約束
+計畫步驟=1. 定位 SD/WBS 中 host provisioning 與 session actor 相關段落 2. 更新設計約束與偽碼 3. 更新 WBS 任務與驗收 4. 跑 check.fsx 驗證
+執行命令/參數=rg -n doc/SD.md doc/WBS.md; apply_patch 更新文件; dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+結果=進行中
+根因判讀=上一版雖已接近最終方向，但尚未把 ProcSupervisor 強制性與 actor-per-session 原則寫成明確約束
+下一步=完成回寫後交付確認
+關聯文件/工單/PR=doc/SD.md; doc/WBS.md
+prompt/上下文摘要=使用者確認 out-of-proc host 一律經 ProcSupervisor，session 一律 actor per session，result_op 由 parent 處理

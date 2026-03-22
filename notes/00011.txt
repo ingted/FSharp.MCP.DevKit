@@ -1,0 +1,1463 @@
+› 上面的我都覺得挺好，請加入 SD.md
+  不過你的 SD 我覺得很不夠具體，我期待的 SD 是落實到描繪/勾勒出新的 type 大概要有什麼， function 有哪些，function 的虛擬碼之類的， module 怎麼包，階層為何
+  還是你 SD  先按照目前的風格/形式完成之後，最後面加上具體落地指引的 SECTION?
+
+  完成之後撰寫 WBS ，我看完跟你討論
+
+
+• 我先把 SD.md 補成你要的落地版本：型別、module 分層、核心 function、偽碼、tool/resource contract 都寫明。之後我會接著重寫 WBS.md，讓它直接對應這份具體設計。
+
+• Ran ts=$(date -u +%Y%m%d%H%M%S); base="/workspace/home/mcp/FSharp.MCP.DevKit/log/${ts}.細化SD並撰寫新WBS"; cat > "${base}.00001.00001.log" <<'EOF'
+  │ 背景=使用者確認 SD 方向正確，但要求 SD 必須落實到 type/module/function/pseudocode 層級，並在完成後撰寫對應的新 WBS
+  │ 目標=細化 doc/SD.md 成可直接導向實作的詳細設計，並重寫 doc/WBS.md 對應新的 control-plane/execution-plane 架構
+  │ … +17 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322093240.細化SD並撰寫新WBS.00001.00001.log
+    /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322093240.細化SD並撰寫新WBS.op_log
+
+• Explored
+  └ Read WBS.md, SD.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已經把舊版 SD/WBS 的缺口收斂出來了。下一步我會直接把 SD.md 換成「架構 + 具體落地指引」雙層版本，然後把 WBS.md 重排成可直接實作與驗收的工作包。
+
+• Edited 2 files (+1328 -0)
+  └ doc/SD.md (+1010 -0)
+       1 +# SD
+       2 +
+       3 +## 設計定位
+       4 +
+       5 +本輪設計不是補幾個 MCP tool，而是把 `FSharp.MCP.DevKit` 重構成：
+       6 +
+       7 +1. `control plane`
+       8 +2. `execution plane`
+       9 +3. `result plane`
+      10 +
+      11 +三層分離的系統。
+      12 +
+      13 +目標能力：
+      14 +
+      15 +1. 多 agent
+      16 +2. 多 host
+      17 +3. 多 session
+      18 +4. dual-backend
+      19 +5. backward compatibility
+      20 +6. async-first
+      21 +7. diagnostics-first
+      22 +8. result traceability 與 result set operation
+      23 +
+      24 +## 核心決策摘要
+      25 +
+      26 +### 決策 1. `FsiResult` 保持純 payload
+      27 +
+      28 +`FsiResult` 不直接混入 routing metadata。
+      29 +原因：
+      30 +
+      31 +1. 它應代表單次 FSI 執行的語意結果
+      32 +2. `backendKind/hostId/sessionId/resultId` 是 trace metadata，不是 payload
+      33 +3. 若直接混入，cache、比對、集合運算、序列化都會被污染
+      34 +
+      35 +因此改為兩層：
+      36 +
+      37 +1. `FsiResult`
+      38 +2. `FsiExecutionRecord`
+      39 +
+      40 +### 決策 2. execution metadata 進 `FsiExecutionRecord`
+      41 +
+      42 +新增 envelope：
+      43 +
+      44 +- `ResultId`
+      45 +- `RequestId`
+      46 +- `AgentId`
+      47 +- `BackendKind`
+      48 +- `HostId`
+      49 +- `SessionId`
+      50 +- `OperationKind`
+      51 +- `SubmittedAt`
+      52 +- `StartedAt`
+      53 +- `CompletedAt`
+      54 +- `RawErrorType option`
+      55 +- `Result : FsiResult`
+      56 +
+      57 +### 決策 3. quotation / result set operation 不直接污染 execution contract
+      58 +
+      59 +允許 agent 對結果集做 query，但不把 F# quotation object 直接當 transport payload。
+      60 +
+      61 +第一階段：
+      62 +
+      63 +- 以 `ResultId seq` 做 query input
+      64 +- query language 先支援：
+      65 +  - built-in ops
+      66 +  - `fsharpCode : string`
+      67 +
+      68 +第二階段才考慮顯式 quotation text，例如：
+      69 +
+      70 +- `<@ fun op_req_id bk1 hid1 sid1 rid1 bk2 hid2 sid2 rid2 -> ... @>`
+      71 +
+      72 +但 transport 層仍然只收字串與結構化 request，不直接跨 runtime 傳 `Expr`
+      73 +
+      74 +### 決策 4. `.NET 10` host / proc lifecycle 採外部套件
+      75 +
+      76 +正式納入：
+      77 +
+      78 +- `FAkka.FSI.Supervisor 1.562.100.201-dgx.1`
+      79 +- `FAkka.Proc.Supervisor 1.562.100.201-dgx.2`
+      80 +
+      81 +角色：
+      82 +
+      83 +- `FAkka.FSI.Supervisor`
+      84 +  - `.NET 10` host 內的 multi-session FSI execution runtime
+      85 +- `FAkka.Proc.Supervisor`
+      86 +  - process start / probe / restart / registry
+      87 +
+      88 +### 決策 5. `netfx` host 沿用現有程式碼，但補 multi-session
+      89 +
+      90 +`src/FSharp.MCP.DevKit.FsiHost` 不重做，只升級為：
+      91 +
+      92 +- host actor
+      93 +- session actor dictionary
+      94 +- route-aware transport
+      95 +
+      96 +### 決策 6. 舊工具維持 implicit default routing
+      97 +
+      98 +舊工具仍可用，對應：
+      99 +
+     100 +- `default-agent`
+     101 +- `default-host`
+     102 +- `default-session`
+     103 +
+     104 +新工具才顯式收：
+     105 +
+     106 +- `agentId`
+     107 +- `hostId`
+     108 +- `sessionId`
+     109 +
+     110 +## 系統分層
+     111 +
+     112 +```text
+     113 +MCP Client / Agent
+     114 +    |
+     115 +    v
+     116 +Server Tools / Resources / HTTP
+     117 +    |
+     118 +    v
+     119 +Control Plane
+     120 +    |
+     121 +    +-- AgentRegistry
+     122 +    +-- HostRegistry
+     123 +    +-- SessionRegistry
+     124 +    +-- AsyncJobRegistry
+     125 +    +-- ResultRegistry
+     126 +    +-- PathMappingRegistry
+     127 +    +-- ExecutionRouter
+     128 +    |
+     129 +    v
+     130 +Execution Plane
+     131 +    |
+     132 +    +-- InProcBackend
+     133 +    +-- NetFxHostBackend
+     134 +    +-- Net10HostBackend
+     135 +            |
+     136 +            +-- FAkka.Proc.Supervisor
+     137 +            +-- FAkka.FSI.Supervisor
+     138 +    |
+     139 +    v
+     140 +Result Plane
+     141 +    |
+     142 +    +-- FsiExecutionRecord
+     143 +    +-- ResultQueryService
+     144 +    +-- ResultSet operations
+     145 +```
+     146 +
+     147 +## 專案與 module hierarchy
+     148 +
+     149 +## `src/FSharp.MCP.DevKit.Core`
+     150 +
+     151 +保留：
+     152 +
+     153 +- `FSIService.fs`
+     154 +
+     155 +新增：
+     156 +
+     157 +- `ExecutionTypes.fs`
+     158 +- `ResultTypes.fs`
+     159 +
+     160 +責任：
+     161 +
+     162 +- 純 domain types
+     163 +- 不碰 Akka
+     164 +- 不碰 ASP.NET
+     165 +- 不碰 MCP SDK
+     166 +
+     167 +建議 module：
+     168 +
+     169 +```fsharp
+     170 +namespace FSharp.MCP.DevKit.Core
+     171 +
+     172 +module ExecutionTypes
+     173 +module ResultTypes
+     174 +```
+     175 +
+     176 +## `src/FSharp.MCP.DevKit.Messages`
+     177 +
+     178 +擴充：
+     179 +
+     180 +- remote DTO
+     181 +- route metadata DTO
+     182 +
+     183 +責任：
+     184 +
+     185 +- host/server 之間的 transport-safe messages
+     186 +
+     187 +建議 module：
+     188 +
+     189 +```fsharp
+     190 +namespace FSharp.MCP.DevKit.Messages
+     191 +
+     192 +module RemoteContracts
+     193 +```
+     194 +
+     195 +## `src/FSharp.MCP.DevKit.Server`
+     196 +
+     197 +新增子目錄：
+     198 +
+     199 +```text
+     200 +Server/
+     201 +  ControlPlane/
+     202 +    AgentRegistry.fs
+     203 +    HostRegistry.fs
+     204 +    SessionRegistry.fs
+     205 +    AsyncJobRegistry.fs
+     206 +    ResultRegistry.fs
+     207 +    PathMappingRegistry.fs
+     208 +  Routing/
+     209 +    ExecutionRouter.fs
+     210 +    DefaultRouting.fs
+     211 +  Backends/
+     212 +    IBackend.fs
+     213 +    InProcBackend.fs
+     214 +    NetFxHostBackend.fs
+     215 +    Net10HostBackend.fs
+     216 +  Integration/
+     217 +    RemoteFsiClient.fs
+     218 +    FsiSupervisorClient.fs
+     219 +    ProcSupervisorClient.fs
+     220 +  ResultQuery/
+     221 +    ResultQueryTypes.fs
+     222 +    ResultQueryService.fs
+     223 +  Tools/
+     224 +    McpFsiTools.fs
+     225 +    McpControlPlaneTools.fs
+     226 +    McpResultTools.fs
+     227 +  Resources/
+     228 +    FsiResources.fs
+     229 +```
+     230 +
+     231 +## `src/FSharp.MCP.DevKit.FsiHost`
+     232 +
+     233 +新增：
+     234 +
+     235 +- `HostSupervisorActor.fs`
+     236 +- `SessionActor.fs`
+     237 +- `HostContracts.fs` 若需要
+     238 +
+     239 +現有：
+     240 +
+     241 +- `Program.fs`
+     242 +
+     243 +責任：
+     244 +
+     245 +- `netfx` host runtime
+     246 +- 單 host 多 session
+     247 +
+     248 +## domain types
+     249 +
+     250 +### 1. execution result types
+     251 +
+     252 +```fsharp
+     253 +namespace FSharp.MCP.DevKit.Core
+     254 +
+     255 +type FsiDiagnostic =
+     256 +    { FileName: string
+     257 +      StartLine: int
+     258 +      EndLine: int
+     259 +      StartColumn: int
+     260 +      EndColumn: int
+     261 +      Severity: string
+     262 +      Message: string }
+     263 +
+     264 +type FsiResult =
+     265 +    { Output: string
+     266 +      Errors: string
+     267 +      IsSuccess: bool
+     268 +      ExecutionTime: System.TimeSpan option
+     269 +      Diagnostics: FsiDiagnostic array
+     270 +      Value: string option }
+     271 +
+     272 +type BackendKind =
+     273 +    | InProc
+     274 +    | NetFxRemote
+     275 +    | Net10Remote
+     276 +
+     277 +type OperationKind =
+     278 +    | ExecuteCode
+     279 +    | EvaluateExpression
+     280 +    | LoadScript
+     281 +    | ReferenceAssembly
+     282 +    | ReferenceNuget
+     283 +    | AddSearchPath
+     284 +    | ResetSession
+     285 +    | RestartHost
+     286 +    | GetState
+     287 +    | ResultQuery
+     288 +
+     289 +type FsiExecutionRecord =
+     290 +    { ResultId: string
+     291 +      RequestId: string
+     292 +      AgentId: string
+     293 +      BackendKind: BackendKind
+     294 +      HostId: string
+     295 +      SessionId: string
+     296 +      OperationKind: OperationKind
+     297 +      SubmittedAt: System.DateTime
+     298 +      StartedAt: System.DateTime option
+     299 +      CompletedAt: System.DateTime option
+     300 +      RawErrorType: string option
+     301 +      Result: FsiResult }
+     302 +```
+     303 +
+     304 +### 2. routing types
+     305 +
+     306 +```fsharp
+     307 +namespace FSharp.MCP.DevKit.Core
+     308 +
+     309 +type AgentRecord =
+     310 +    { AgentId: string
+     311 +      DisplayName: string option
+     312 +      CreatedAt: System.DateTime
+     313 +      LastSeenAt: System.DateTime
+     314 +      DefaultHostId: string option
+     315 +      Metadata: Map<string, string> }
+     316 +
+     317 +type HostKind =
+     318 +    | InProcHost
+     319 +    | NetFxHost
+     320 +    | Net10Host
+     321 +
+     322 +type HostStatus =
+     323 +    | Creating
+     324 +    | Ready
+     325 +    | Busy
+     326 +    | Degraded
+     327 +    | Stopped
+     328 +    | Faulted
+     329 +
+     330 +type HostRecord =
+     331 +    { HostId: string
+     332 +      AgentId: string
+     333 +      HostKind: HostKind
+     334 +      BackendKind: BackendKind
+     335 +      Status: HostStatus
+     336 +      Address: string option
+     337 +      ProcId: int option
+     338 +      CreatedAt: System.DateTime
+     339 +      LastHealthCheckAt: System.DateTime option
+     340 +      LastError: string option }
+     341 +
+     342 +type SessionStatus =
+     343 +    | SessionReady
+     344 +    | SessionBusy
+     345 +    | SessionFaulted
+     346 +    | SessionMissing
+     347 +
+     348 +type SessionRecord =
+     349 +    { SessionId: string
+     350 +      AgentId: string
+     351 +      HostId: string
+     352 +      SessionName: string
+     353 +      Status: SessionStatus
+     354 +      Refs: string list
+     355 +      Loads: string list
+     356 +      SearchPaths: string list
+     357 +      Variables: (string * string) list
+     358 +      LastCheckpointId: string option
+     359 +      RunningSinceUtc: System.DateTime option
+     360 +      LastExecutionAt: System.DateTime option }
+     361 +
+     362 +type ExecutionRoute =
+     363 +    { AgentId: string
+     364 +      HostId: string
+     365 +      SessionId: string }
+     366 +```
+     367 +
+     368 +### 3. async job types
+     369 +
+     370 +```fsharp
+     371 +namespace FSharp.MCP.DevKit.Core
+     372 +
+     373 +type AsyncJobStatus =
+     374 +    | Queued
+     375 +    | Running
+     376 +    | Completed
+     377 +    | Failed
+     378 +
+     379 +type AsyncFsiJob =
+     380 +    { AsyncId: string
+     381 +      RequestId: string
+     382 +      Route: ExecutionRoute
+     383 +      OperationKind: OperationKind
+     384 +      Payload: string
+     385 +      SubmittedAt: System.DateTime
+     386 +      StartedAt: System.DateTime option
+     387 +      CompletedAt: System.DateTime option
+     388 +      Status: AsyncJobStatus
+     389 +      ResultId: string option
+     390 +      Result: FsiResult option }
+     391 +```
+     392 +
+     393 +### 4. result query types
+     394 +
+     395 +```fsharp
+     396 +namespace FSharp.MCP.DevKit.Server.ResultQuery
+     397 +
+     398 +type ResultQueryLanguage =
+     399 +    | BuiltIn
+     400 +    | FSharpCode
+     401 +
+     402 +type ResultQueryKind =
+     403 +    | Filter
+     404 +    | Map
+     405 +    | Exists
+     406 +    | ForAll
+     407 +    | Zip
+     408 +    | Diff
+     409 +    | GroupBy
+     410 +    | Custom
+     411 +
+     412 +type ResultQueryRequest =
+     413 +    { QueryId: string
+     414 +      AgentId: string
+     415 +      PrimaryResultIds: string list
+     416 +      SecondaryResultIds: string list
+     417 +      Language: ResultQueryLanguage
+     418 +      Kind: ResultQueryKind
+     419 +      QueryText: string }
+     420 +
+     421 +type ResultQueryResponse =
+     422 +    { QueryId: string
+     423 +      IsSuccess: bool
+     424 +      Output: string
+     425 +      Errors: string
+     426 +      ProducedResultIds: string list
+     427 +      MaterializedJson: string option }
+     428 +```
+     429 +
+     430 +## transport DTO
+     431 +
+     432 +### current issue
+     433 +
+     434 +現有 `FsiRemoteCommandRequest` 只有：
+     435 +
+     436 +- `RequestId`
+     437 +- `CommandType`
+     438 +- `Payload`
+     439 +- `UsePackageTargets`
+     440 +
+     441 +這不夠支援 multi-tenant routing。
+     442 +
+     443 +### new DTO
+     444 +
+     445 +```fsharp
+     446 +namespace FSharp.MCP.DevKit.Messages
+     447 +
+     448 +type FsiRemoteRouteDto =
+     449 +    { AgentId: string option
+     450 +      HostId: string option
+     451 +      SessionId: string option }
+     452 +
+     453 +type FsiRemoteCommandRequest =
+     454 +    { RequestId: string
+     455 +      CommandType: string
+     456 +      Payload: string
+     457 +      Route: FsiRemoteRouteDto option
+     458 +      UsePackageTargets: bool option
+     459 +      TimeoutMs: int option }
+     460 +
+     461 +type FsiRemoteResult =
+     462 +    { Output: string
+     463 +      Errors: string
+     464 +      IsSuccess: bool
+     465 +      ExecutionTimeMs: float option
+     466 +      Diagnostics: FsiRemoteDiagnostic array
+     467 +      Value: string option
+     468 +      RawErrorType: string option }
+     469 +
+     470 +type FsiRemoteCommandResponse =
+     471 +    { RequestId: string
+     472 +      HostId: string option
+     473 +      SessionId: string option
+     474 +      Result: FsiRemoteResult }
+     475 +```
+     476 +
+     477 +## backend contracts
+     478 +
+     479 +```fsharp
+     480 +namespace FSharp.MCP.DevKit.Server.Backends
+     481 +
+     482 +type ExecutionRequest =
+     483 +    { RequestId: string
+     484 +      Route: ExecutionRoute
+     485 +      OperationKind: OperationKind
+     486 +      Payload: string
+     487 +      Timeout: System.TimeSpan option
+     488 +      UsePackageTargets: bool option }
+     489 +
+     490 +type BackendHealth =
+     491 +    { BackendKind: BackendKind
+     492 +      IsAvailable: bool
+     493 +      Message: string option
+     494 +      HostId: string option
+     495 +      CheckedAt: System.DateTime }
+     496 +
+     497 +type IFsiExecutionBackend =
+     498 +    abstract member BackendKind : BackendKind
+     499 +    abstract member Execute : ExecutionRequest -> System.Threading.Tasks.Task<FsiExecutionRecord>
+     500 +    abstract member GetSessionState : ExecutionRoute -> System.Threading.Tasks.Task<SessionRecord>
+     501 +    abstract member ResetSession : ExecutionRoute -> System.Threading.Tasks.Task<FsiExecutionRecord>
+     502 +    abstract member RestartHost : HostRecord -> System.Threading.Tasks.Task<unit>
+     503 +    abstract member HealthCheck : HostRecord -> System.Threading.Tasks.Task<BackendHealth>
+     504 +```
+     505 +
+     506 +## registries
+     507 +
+     508 +### interfaces
+     509 +
+     510 +```fsharp
+     511 +namespace FSharp.MCP.DevKit.Server.ControlPlane
+     512 +
+     513 +type IAgentRegistry =
+     514 +    abstract member Register : AgentRecord -> AgentRecord
+     515 +    abstract member TryGet : string -> AgentRecord option
+     516 +    abstract member Touch : string -> unit
+     517 +    abstract member List : unit -> AgentRecord list
+     518 +
+     519 +type IHostRegistry =
+     520 +    abstract member Create : HostRecord -> HostRecord
+     521 +    abstract member Update : HostRecord -> unit
+     522 +    abstract member TryGet : string -> HostRecord option
+     523 +    abstract member ListByAgent : string -> HostRecord list
+     524 +
+     525 +type ISessionRegistry =
+     526 +    abstract member Create : SessionRecord -> SessionRecord
+     527 +    abstract member Update : SessionRecord -> unit
+     528 +    abstract member TryGet : string * string -> SessionRecord option
+     529 +    abstract member ListByHost : string -> SessionRecord list
+     530 +
+     531 +type IAsyncJobRegistry =
+     532 +    abstract member Create : AsyncFsiJob -> AsyncFsiJob
+     533 +    abstract member MarkRunning : string * System.DateTime -> unit
+     534 +    abstract member Complete : string * string * FsiResult * System.DateTime -> unit
+     535 +    abstract member Fail : string * FsiResult * System.DateTime -> unit
+     536 +    abstract member TryGet : string -> AsyncFsiJob option
+     537 +
+     538 +type IResultRegistry =
+     539 +    abstract member Put : FsiExecutionRecord -> unit
+     540 +    abstract member TryGet : string -> FsiExecutionRecord option
+     541 +    abstract member ListBySession : ExecutionRoute -> FsiExecutionRecord list
+     542 +    abstract member ListByAgent : string -> FsiExecutionRecord list
+     543 +```
+     544 +
+     545 +### initial implementation strategy
+     546 +
+     547 +第一版先用 in-memory concurrent dictionary。
+     548 +第二版再考慮 durable storage。
+     549 +
+     550 +## routing functions
+     551 +
+     552 +### `DefaultRouting.resolve`
+     553 +
+     554 +```fsharp
+     555 +val resolve :
+     556 +    agentRegistry: IAgentRegistry ->
+     557 +    hostRegistry: IHostRegistry ->
+     558 +    sessionRegistry: ISessionRegistry ->
+     559 +    requestedRoute: ExecutionRoute option ->
+     560 +    ExecutionRoute
+     561 +```
+     562 +
+     563 +偽碼：
+     564 +
+     565 +```fsharp
+     566 +match requestedRoute with
+     567 +| Some route -> validate route and return route
+     568 +| None ->
+     569 +    let agentId = "default-agent"
+     570 +    ensure default agent exists
+     571 +    ensure default host exists
+     572 +    ensure default session exists
+     573 +    { AgentId = agentId; HostId = "default-host"; SessionId = "default-session" }
+     574 +```
+     575 +
+     576 +### `ExecutionRouter.routeAndExecute`
+     577 +
+     578 +```fsharp
+     579 +val routeAndExecute :
+     580 +    request: ExecutionRequest ->
+     581 +    Task<FsiExecutionRecord>
+     582 +```
+     583 +
+     584 +偽碼：
+     585 +
+     586 +```fsharp
+     587 +let host = hostRegistry.TryGet request.Route.HostId |> require
+     588 +let backend = backendSelector.Resolve host
+     589 +let result = backend.Execute request
+     590 +resultRegistry.Put result
+     591 +sessionRegistry.Update (deriveSessionUpdate result)
+     592 +return result
+     593 +```
+     594 +
+     595 +## host lifecycle functions
+     596 +
+     597 +### `HostProvisioningService.createHost`
+     598 +
+     599 +```fsharp
+     600 +val createHost :
+     601 +    agentId: string ->
+     602 +    hostKind: HostKind ->
+     603 +    requestedHostId: string option ->
+     604 +    Task<HostRecord>
+     605 +```
+     606 +
+     607 +偽碼：
+     608 +
+     609 +```fsharp
+     610 +register or validate agent
+     611 +let hostId = requestedHostId |> defaultGuidBased
+     612 +let hostRecord = create Creating record
+     613 +hostRegistry.Create hostRecord
+     614 +
+     615 +match hostKind with
+     616 +| InProcHost ->
+     617 +    mark Ready without external process
+     618 +| NetFxHost ->
+     619 +    start existing netfx host process/service
+     620 +    wait until health check ok
+     621 +    update address/proc/state
+     622 +| Net10Host ->
+     623 +    procSupervisorClient.StartProc(...)
+     624 +    wait for proc snapshot ready
+     625 +    bind host to returned address/procId
+     626 +
+     627 +return updatedHost
+     628 +```
+     629 +
+     630 +### `SessionProvisioningService.createSession`
+     631 +
+     632 +```fsharp
+     633 +val createSession :
+     634 +    routeBase: { AgentId: string; HostId: string } ->
+     635 +    sessionName: string option ->
+     636 +    sessionId: string option ->
+     637 +    Task<SessionRecord>
+     638 +```
+     639 +
+     640 +偽碼：
+     641 +
+     642 +```fsharp
+     643 +validate host exists and belongs to agent
+     644 +let sessionId = provided or generated
+     645 +backend.EnsureSession(route)
+     646 +let initialState = backend.GetSessionState(route)
+     647 +sessionRegistry.Create initialState
+     648 +return initialState
+     649 +```
+     650 +
+     651 +## async queue functions
+     652 +
+     653 +### `AsyncExecutionService.enqueue`
+     654 +
+     655 +```fsharp
+     656 +val enqueue :
+     657 +    request: ExecutionRequest ->
+     658 +    Task<{ AsyncId: string; RequestId: string; Route: ExecutionRoute; SubmittedAt: DateTime }>
+     659 +```
+     660 +
+     661 +偽碼：
+     662 +
+     663 +```fsharp
+     664 +let asyncId = guid()
+     665 +let job = create queued job
+     666 +jobRegistry.Create job
+     667 +channel.Writer.TryWrite(jobRequest)
+     668 +return ack
+     669 +```
+     670 +
+     671 +### `AsyncExecutionService.processLoop`
+     672 +
+     673 +```fsharp
+     674 +val processLoop : CancellationToken -> Task
+     675 +```
+     676 +
+     677 +偽碼：
+     678 +
+     679 +```fsharp
+     680 +while not cancelled do
+     681 +    let jobRequest = read channel
+     682 +    jobRegistry.MarkRunning(...)
+     683 +    try
+     684 +        let resultRecord = router.routeAndExecute(jobRequest.ExecutionRequest)
+     685 +        jobRegistry.Complete(jobRequest.AsyncId, resultRecord.ResultId, resultRecord.Result, now)
+     686 +    with ex ->
+     687 +        let failed = map ex -> FsiResult
+     688 +        jobRegistry.Fail(jobRequest.AsyncId, failed, now)
+     689 +```
+     690 +
+     691 +## result query design
+     692 +
+     693 +### design goal
+     694 +
+     695 +支援 agent 對歷史結果做：
+     696 +
+     697 +1. 單筆 trace
+     698 +2. 多筆集合運算
+     699 +3. 比較不同 backend / host / session 的行為差異
+     700 +
+     701 +### why record IDs first
+     702 +
+     703 +agent 不應自己保整包結果再計算。
+     704 +更合理的是：
+     705 +
+     706 +1. execution 產出 `ResultId`
+     707 +2. agent 用 `ResultId seq` 提 query
+     708 +3. server 在受控 query session 中計算
+     709 +
+     710 +### exposed API
+     711 +
+     712 +```fsharp
+     713 +val runQuery :
+     714 +    ResultQueryRequest ->
+     715 +    Task<ResultQueryResponse>
+     716 +```
+     717 +
+     718 +### built-in ops
+     719 +
+     720 +第一版內建：
+     721 +
+     722 +1. `exists`
+     723 +2. `forall`
+     724 +3. `map`
+     725 +4. `filter`
+     726 +5. `zip`
+     727 +6. `diff`
+     728 +7. `groupBy`
+     729 +
+     730 +### custom fsharp query
+     731 +
+     732 +第二版支援 `QueryLanguage = FSharpCode`
+     733 +
+     734 +輸入範例概念上可長成：
+     735 +
+     736 +```fsharp
+     737 +fun (records1: FsiExecutionRecord seq) (records2: FsiExecutionRecord seq) ->
+     738 +    Seq.forall2 (fun r1 r2 -> r1.Result.IsSuccess = r2.Result.IsSuccess) records1 records2
+     739 +```
+     740 +
+     741 +注意：
+     742 +
+     743 +- server 收的是 `string`
+     744 +- 不直接跨 process 傳 `Expr`
+     745 +- 在受控 analysis session 內執行
+     746 +
+     747 +## MCP tools / resources
+     748 +
+     749 +### backward-compatible tools
+     750 +
+     751 +保留：
+     752 +
+     753 +1. `execute_f_sharp_code`
+     754 +2. `execute_f_sharp_code_async`
+     755 +3. `evaluate_f_sharp_expression`
+     756 +4. `load_f_sharp_script`
+     757 +5. `reference_assembly`
+     758 +6. `reference_nu_get_package`
+     759 +7. `add_search_path`
+     760 +8. `restart_fsi_session`
+     761 +
+     762 +內部流程：
+     763 +
+     764 +```fsharp
+     765 +resolve default route
+     766 +build ExecutionRequest
+     767 +router.routeAndExecute or asyncService.enqueue
+     768 +return old shape response
+     769 +```
+     770 +
+     771 +### new control-plane tools
+     772 +
+     773 +```text
+     774 +register_fsi_agent
+     775 +create_fsi_host
+     776 +list_fsi_hosts
+     777 +create_fsi_session
+     778 +list_fsi_sessions
+     779 +delete_fsi_session
+     780 +execute_f_sharp_code_routed
+     781 +execute_f_sharp_code_routed_async
+     782 +get_fsi_host_health
+     783 +get_fsi_path_mappings
+     784 +```
+     785 +
+     786 +### new result-plane tools
+     787 +
+     788 +```text
+     789 +get_fsi_result
+     790 +list_fsi_results
+     791 +query_fsi_results
+     792 +compare_fsi_results
+     793 +```
+     794 +
+     795 +### resource templates
+     796 +
+     797 +```text
+     798 +fsi/async/{asyncId}
+     799 +fsi/agents/{agentId}
+     800 +fsi/hosts/{hostId}
+     801 +fsi/hosts/{hostId}/sessions
+     802 +fsi/hosts/{hostId}/sessions/{sessionId}
+     803 +fsi/results/{resultId}
+     804 +fsi/path-mappings
+     805 +```
+     806 +
+     807 +## server-side function grouping
+     808 +
+     809 +### `McpControlPlaneTools`
+     810 +
+     811 +應包含：
+     812 +
+     813 +```fsharp
+     814 +static member RegisterFsiAgent(...)
+     815 +static member CreateFsiHost(...)
+     816 +static member ListFsiHosts(...)
+     817 +static member CreateFsiSession(...)
+     818 +static member ListFsiSessions(...)
+     819 +```
+     820 +
+     821 +### `McpFsiTools`
+     822 +
+     823 +應只保留 execution-oriented tools：
+     824 +
+     825 +```fsharp
+     826 +static member ExecuteFSharpCode(...)
+     827 +static member ExecuteFSharpCodeAsync(...)
+     828 +static member EvaluateFSharpExpression(...)
+     829 +static member LoadFSharpScript(...)
+     830 +static member ReferenceAssembly(...)
+     831 +static member ReferenceNuGetPackage(...)
+     832 +static member AddSearchPath(...)
+     833 +static member RestartFsiSession(...)
+     834 +```
+     835 +
+     836 +### `McpResultTools`
+     837 +
+     838 +應包含：
+     839 +
+     840 +```fsharp
+     841 +static member GetFsiResult(...)
+     842 +static member ListFsiResults(...)
+     843 +static member QueryFsiResults(...)
+     844 +static member CompareFsiResults(...)
+     845 +```
+     846 +
+     847 +## netfx host refactor
+     848 +
+     849 +### current state
+     850 +
+     851 +現在 `FsiActor` 直接持有單一 `FsiService`，等於：
+     852 +
+     853 +- actor lifecycle = host lifecycle = session lifecycle
+     854 +
+     855 +### target state
+     856 +
+     857 +改成：
+     858 +
+     859 +```text
+     860 +HostSupervisorActor
+     861 +    |
+     862 +    +-- session-1 -> SessionActor(FsiService)
+     863 +    +-- session-2 -> SessionActor(FsiService)
+     864 +    +-- session-3 -> SessionActor(FsiService)
+     865 +```
+     866 +
+     867 +### host-side functions
+     868 +
+     869 +```fsharp
+     870 +member GetOrCreateSessionActor : sessionId:string -> IActorRef
+     871 +member TryGetSessionActor : sessionId:string -> IActorRef option
+     872 +member HandleRemoteCommand : FsiRemoteCommandRequest -> unit
+     873 +```
+     874 +
+     875 +偽碼：
+     876 +
+     877 +```fsharp
+     878 +match request.Route with
+     879 +| None -> route to default session
+     880 +| Some route -> route to route.SessionId
+     881 +```
+     882 +
+     883 +## net10 host integration
+     884 +
+     885 +### `ProcSupervisorClient`
+     886 +
+     887 +責任：
+     888 +
+     889 +1. start host process
+     890 +2. stop host process
+     891 +3. get host snapshot
+     892 +4. trigger restart
+     893 +
+     894 +### `FsiSupervisorClient`
+     895 +
+     896 +責任：
+     897 +
+     898 +1. execute code
+     899 +2. get session info
+     900 +3. list sessions
+     901 +4. checkpoint / fork / join
+     902 +
+     903 +### `Net10HostBackend.Execute`
+     904 +
+     905 +偽碼：
+     906 +
+     907 +```fsharp
+     908 +map ExecutionRequest -> FAkka ExecCode
+     909 +let execResult = fsiSupervisorClient.Execute(...)
+     910 +let record = adapter.ToExecutionRecord(...)
+     911 +resultRegistry.Put record
+     912 +return record
+     913 +```
+     914 +
+     915 +## path mapping design
+     916 +
+     917 +### type
+     918 +
+     919 +```fsharp
+     920 +type PathMappingRecord =
+     921 +    { MappingId: string
+     922 +      AgentId: string option
+     923 +      HostId: string option
+     924 +      ContainerPath: string
+     925 +      HostPath: string
+     926 +      MappingKind: string
+     927 +      CreatedAt: System.DateTime }
+     928 +```
+     929 +
+     930 +### usage
+     931 +
+     932 +1. host 建立時可註冊 mount roots
+     933 +2. execution 失敗時可用於把 host-side path 映回 caller 可理解的 path
+     934 +3. MCP resource `fsi/path-mappings` 直接暴露
+     935 +
+     936 +## concrete implementation guidance
+     937 +
+     938 +### phase 1. 先落 type 與 interfaces
+     939 +
+     940 +先做：
+     941 +
+     942 +1. `Core/ExecutionTypes.fs`
+     943 +2. `Core/ResultTypes.fs`
+     944 +3. `Server/Backends/IBackend.fs`
+     945 +4. `Server/ControlPlane/*Registry.fs`
+     946 +5. `Server/ResultQuery/ResultQueryTypes.fs`
+     947 +
+     948 +此階段不改行為，只建立編譯基礎。
+     949 +
+     950 +### phase 2. 切 `McpFsiTools.fs`
+     951 +
+     952 +目標：
+     953 +
+     954 +1. 把 registry / routing / queue 從 `FsiMcpService` 拆出
+     955 +2. `FsiMcpService` 最後只保留 facade 或被淘汰
+     956 +
+     957 +### phase 3. 讓舊工具先走 default routing
+     958 +
+     959 +先不改舊 tool signature，只把內部改成：
+     960 +
+     961 +```fsharp
+     962 +let route = defaultRouting.Resolve None
+     963 +router.routeAndExecute { Route = route; ... }
+     964 +```
+     965 +
+     966 +### phase 4. 補 control-plane tools
+     967 +
+     968 +這一步完成後，多 agent / 多 host / 多 session 才真正可用。
+     969 +
+     970 +### phase 5. 補 result plane
+     971 +
+     972 +先做：
+     973 +
+     974 +1. `ResultId`
+     975 +2. `ResultRegistry`
+     976 +3. `get/list/compare/query`
+     977 +
+     978 +quotation style query 可先以 `FSharpCode` 字串落地。
+     979 +
+     980 +## 驗證策略
+     981 +
+     982 +### 最低驗收
+     983 +
+     984 +1. 舊工具仍可用
+     985 +2. 同一 agent 可建立兩個 host
+     986 +3. 同一 host 可建立兩個 session
+     987 +4. async job 可查 `agentId/hostId/sessionId/resultId`
+     988 +5. 單筆 result 可用 `resultId` 查回
+     989 +6. 兩組 resultId 可做 compare / forall / exists
+     990 +
+     991 +### production-readiness 驗收
+     992 +
+     993 +1. `net10` host 由 `FAkka.Proc.Supervisor` 管理
+     994 +2. `net10` host 內可列出多個 session
+     995 +3. `netfx` host 也能多 session
+     996 +4. `/healthz` 不只回 server 狀態，也能查 host/session health resource
+     997 +
+     998 +## SD 結論
+     999 +
+    1000 +本版 SD 的落點是：
+    1001 +
+    1002 +1. `FsiResult` 保持乾淨
+    1003 +2. trace metadata 進 `FsiExecutionRecord`
+    1004 +3. result set operation 走 `ResultRegistry + ResultQueryService`
+    1005 +4. dual-backend 透過 `IFsiExecutionBackend` 收斂
+    1006 +5. `net10` host / proc lifecycle 交給 `FAkka.*`
+    1007 +6. `netfx` host 補 multi-session
+    1008 +7. 舊工具保相容，新工具顯式多租戶
+    1009 +
+    1010 +下一步 `WBS` 將直接按這份 type/module/function 分解。
+
+  └ doc/WBS.md (+318 -0)
+      1 +# WBS
+      2 +
+      3 +## 工作原則
+      4 +
+      5 +本輪 WBS 依照新的 SD 拆成：
+      6 +
+      7 +1. 先建型別與抽象
+      8 +2. 再建 registry 與 router
+      9 +3. 再接 backend
+     10 +4. 再接 tools/resources
+     11 +5. 最後補 result plane 與驗證
+     12 +
+     13 +避免一開始就直接改 `McpFsiTools.fs` 成大泥球。
+     14 +
+     15 +## 里程碑
+     16 +
+     17 +| ID | 里程碑 | 產出 | 驗收 |
+     18 +|---|---|---|---|
+     19 +| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 |
+     20 +| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session |
+     21 +| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行 |
+     22 +| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing |
+     23 +| M5 | 完成 result plane | result registry, query service | 可依 `ResultId` 查詢與集合運算 |
+     24 +| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL |
+     25 +
+     26 +## phase schedule
+     27 +
+     28 +| Phase | 內容 | 主要檔案 | 依賴 |
+     29 +|---|---|---|---|
+     30 +| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 |
+     31 +| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 |
+     32 +| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 |
+     33 +| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 |
+     34 +| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 |
+     35 +| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 |
+     36 +| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 |
+     37 +| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 |
+     38 +| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 |
+     39 +
+     40 +## work packages
+     41 +
+     42 +## WP01 Shared Domain Types
+     43 +
+     44 +目標：
+     45 +
+     46 +建立新的 shared types，讓後續重構有穩定基底。
+     47 +
+     48 +子任務：
+     49 +
+     50 +| ID | 工作 | 產出 | 驗收 |
+     51 +|---|---|---|---|
+     52 +| T01 | 新增 `Core/ExecutionTypes.fs` | `AgentRecord`, `HostRecord`, `SessionRecord`, `ExecutionRoute`, `AsyncFsiJob` | 可編譯 |
+     53 +| T02 | 新增 `Core/ResultTypes.fs` | `FsiResult`, `FsiExecutionRecord` | 可編譯 |
+     54 +| T03 | 對齊現有 `FSIService.fs` 所用 `FsiResult` 映射 | adapter helpers | 現有結果可映到新契約 |
+     55 +| T04 | 擴充 `Messages/McpActorMessages.fs` | route-aware DTO | host/server 可共用 |
+     56 +
+     57 +依賴：
+     58 +
+     59 +- 無
+     60 +
+     61 +## WP02 Backend Abstraction
+     62 +
+     63 +目標：
+     64 +
+     65 +建立 `IFsiExecutionBackend`，避免 backend 差異直接滲進 tools。
+     66 +
+     67 +子任務：
+     68 +
+     69 +| ID | 工作 | 產出 | 驗收 |
+     70 +|---|---|---|---|
+     71 +| T05 | 新增 `Backends/IBackend.fs` | `ExecutionRequest`, `BackendHealth`, `IFsiExecutionBackend` | 可編譯 |
+     72 +| T06 | 新增 backend selector | `BackendSelector` | 可依 `HostKind` resolve |
+     73 +| T07 | 補 shared adapter helpers | result mapping / error mapping | `RawErrorType` 可填 |
+     74 +
+     75 +依賴：
+     76 +
+     77 +- WP01
+     78 +
+     79 +## WP03 Control Plane Registries
+     80 +
+     81 +目標：
+     82 +
+     83 +建立四個 registry 與 default routing。
+     84 +
+     85 +子任務：
+     86 +
+     87 +| ID | 工作 | 產出 | 驗收 |
+     88 +|---|---|---|---|
+     89 +| T08 | 新增 `AgentRegistry.fs` | in-memory agent registry | 可 register/list/get |
+     90 +| T09 | 新增 `HostRegistry.fs` | host registry | 可 create/update/list |
+     91 +| T10 | 新增 `SessionRegistry.fs` | session registry | 可 create/update/list |
+     92 +| T11 | 新增 `AsyncJobRegistry.fs` | async job registry | 可 create/running/complete/fail |
+     93 +| T12 | 新增 `ResultRegistry.fs` | result registry | 可 put/get/list |
+     94 +| T13 | 新增 `PathMappingRegistry.fs` | path mapping registry | 可 list mappings |
+     95 +| T14 | 新增 `DefaultRouting.fs` | implicit default route resolver | 舊工具 route 可自動補齊 |
+     96 +| T15 | 新增 `ExecutionRouter.fs` | 統一 route + execute orchestration | 所有 execution 經同一路徑 |
+     97 +
+     98 +依賴：
+     99 +
+    100 +- WP01
+    101 +- WP02
+    102 +
+    103 +## WP04 InProc Backend
+    104 +
+    105 +目標：
+    106 +
+    107 +讓現有 `FsiService` 可掛到新抽象下，作為 fallback/backward-compatible backend。
+    108 +
+    109 +子任務：
+    110 +
+    111 +| ID | 工作 | 產出 | 驗收 |
+    112 +|---|---|---|---|
+    113 +| T16 | 實作 `InProcBackend.fs` | in-proc backend | 可 execute/get state/reset |
+    114 +| T17 | 加上 session dictionary | per-session in-proc handles | 不同 session state 可隔離 |
+    115 +| T18 | 對齊 result record | `ResultId` 與 metadata 正常寫入 | result registry 有資料 |
+    116 +
+    117 +依賴：
+    118 +
+    119 +- WP02
+    120 +- WP03
+    121 +
+    122 +## WP05 NetFx Host Multi-Session
+    123 +
+    124 +目標：
+    125 +
+    126 +把現有 `FsiHost` 從單 session 升成 multi-session。
+    127 +
+    128 +子任務：
+    129 +
+    130 +| ID | 工作 | 產出 | 驗收 |
+    131 +|---|---|---|---|
+    132 +| T19 | 新增 `HostSupervisorActor.fs` | host-level router actor | 可接 route-aware request |
+    133 +| T20 | 新增 `SessionActor.fs` | per-session actor | 每個 session 各持一個 `FsiService` |
+    134 +| T21 | 修改 `Program.fs` | host 啟動 supervisor actor | 不再只固定 `fsiActor` 單 session |
+    135 +| T22 | 修改 remote DTO handling | `AgentId/HostId/SessionId` 路由 | 指定 session 可執行 |
+    136 +| T23 | 實作 `NetFxHostBackend.fs` | server-side adapter | 可透過新抽象呼叫 netfx host |
+    137 +
+    138 +依賴：
+    139 +
+    140 +- WP01
+    141 +- WP02
+    142 +- WP03
+    143 +
+    144 +## WP06 Net10 Host Integration
+    145 +
+    146 +目標：
+    147 +
+    148 +把 `FAkka.FSI.Supervisor` / `FAkka.Proc.Supervisor` 納入正式 backend。
+    149 +
+    150 +子任務：
+    151 +
+    152 +| ID | 工作 | 產出 | 驗收 |
+    153 +|---|---|---|---|
+    154 +| T24 | 新增 `ProcSupervisorClient.fs` | proc lifecycle adapter | 可 start/stop/query snapshot |
+    155 +| T25 | 新增 `FsiSupervisorClient.fs` | net10 host execution adapter | 可 execute/list sessions/get session |
+    156 +| T26 | 實作 `Net10HostBackend.fs` | backend adapter | 可 execute/get state/health |
+    157 +| T27 | 建立 host provisioning flow | `createHost(net10)` | 會啟動 proc 並註冊 host |
+    158 +| T28 | 建立 session provisioning flow | `createSession(net10)` | 可在同 host 建多 session |
+    159 +
+    160 +依賴：
+    161 +
+    162 +- WP01
+    163 +- WP02
+    164 +- WP03
+    165 +
+    166 +## WP07 Async Queue Refactor
+    167 +
+    168 +目標：
+    169 +
+    170 +把現有 `<asyncId, FsiResult option>` queue/caching 升級成 route-aware async job model。
+    171 +
+    172 +子任務：
+    173 +
+    174 +| ID | 工作 | 產出 | 驗收 |
+    175 +|---|---|---|---|
+    176 +| T29 | 重定義 async job type | `AsyncFsiJob` | job 含 route metadata |
+    177 +| T30 | 重寫 queue worker | route-aware execution loop | FIFO 仍成立 |
+    178 +| T31 | 完成 result linkage | async 完成可產出 `ResultId` | `fsi/async/{asyncId}` 可看到 `ResultId` |
+    179 +| T32 | 保留舊 async tool 相容 | `execute_f_sharp_code_async` | 舊 client 可不改使用 |
+    180 +
+    181 +依賴：
+    182 +
+    183 +- WP03
+    184 +- WP04/WP05/WP06
+    185 +
+    186 +## WP08 MCP Tool / Resource Surface
+    187 +
+    188 +目標：
+    189 +
+    190 +把 control-plane、execution-plane、result-plane 暴露成 MCP 工具與資源。
+    191 +
+    192 +子任務：
+    193 +
+    194 +| ID | 工作 | 產出 | 驗收 |
+    195 +|---|---|---|---|
+    196 +| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | `McpFsiTools.fs` 不再是 god object |
+    197 +| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理 |
+    198 +| T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` |
+    199 +| T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 |
+    200 +| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | resource 可讀 |
+    201 +| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 |
+    202 +
+    203 +依賴：
+    204 +
+    205 +- WP03
+    206 +- WP07
+    207 +
+    208 +## WP09 Result Query Capability
+    209 +
+    210 +目標：
+    211 +
+    212 +把你提到的 quotation / result-set operations 納入可實作設計。
+    213 +
+    214 +子任務：
+    215 +
+    216 +| ID | 工作 | 產出 | 驗收 |
+    217 +|---|---|---|---|
+    218 +| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | 可編譯 |
+    219 +| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 可用 |
+    220 +| T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string |
+    221 +| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | agent 可串下一步 |
+    222 +
+    223 +依賴：
+    224 +
+    225 +- WP01
+    226 +- WP03
+    227 +- WP08
+    228 +
+    229 +## WP10 Verification / Regression
+    230 +
+    231 +目標：
+    232 +
+    233 +建立最低驗收與回歸測試，避免新 control plane 破壞既有功能。
+    234 +
+    235 +子任務：
+    236 +
+    237 +| ID | 工作 | 產出 | 驗收 |
+    238 +|---|---|---|---|
+    239 +| T43 | 舊工具 smoke | default route regression tests | 舊 client 不壞 |
+    240 +| T44 | multi-host smoke | 兩個 host 並行 | state 不互相污染 |
+    241 +| T45 | multi-session smoke | 同 host 兩個 session | state 隔離 |
+    242 +| T46 | async job smoke | queue FIFO + result linkage | `asyncId -> ResultId` |
+    243 +| T47 | result query smoke | compare / forall / exists | result plane 可用 |
+    244 +| T48 | `check.fsx` / DevLog / docs closeout | SOP evidence | 無 FAIL |
+    245 +
+    246 +依賴：
+    247 +
+    248 +- WP01-WP09
+    249 +
+    250 +## 依賴圖
+    251 +
+    252 +```text
+    253 +WP01 -> WP02 -> WP03
+    254 +WP03 -> WP04
+    255 +WP03 -> WP05
+    256 +WP03 -> WP06
+    257 +WP04/WP05/WP06 -> WP07
+    258 +WP03/WP07 -> WP08
+    259 +WP01/WP03/WP08 -> WP09
+    260 +WP01-WP09 -> WP10
+    261 +```
+    262 +
+    263 +## 建議實作順序
+    264 +
+    265 +### Sprint A
+    266 +
+    267 +1. WP01
+    268 +2. WP02
+    269 +3. WP03
+    270 +4. WP04
+    271 +
+    272 +交付條件：
+    273 +
+    274 +- in-proc 路徑先跑起來
+    275 +- 舊工具仍能工作
+    276 +
+    277 +### Sprint B
+    278 +
+    279 +1. WP05
+    280 +2. WP06
+    281 +3. WP07
+    282 +4. WP08
+    283 +
+    284 +交付條件：
+    285 +
+    286 +- netfx/net10 雙 remote backend 都能路由
+    287 +- MCP surface 完整
+    288 +
+    289 +### Sprint C
+    290 +
+    291 +1. WP09
+    292 +2. WP10
+    293 +
+    294 +交付條件：
+    295 +
+    296 +- result plane 可用
+    297 +- regression evidence 完整
+    298 +
+    299 +## 完成定義
+    300 +
+    301 +### SD 對應完成定義
+    302 +
+    303 +1. `FsiResult` 與 `FsiExecutionRecord` 已分層
+    304 +2. `IFsiExecutionBackend` 已落地
+    305 +3. `Agent/Host/Session/AsyncJob/Result` 五個 registry 已落地
+    306 +4. `netfx` host 多 session 可用
+    307 +5. `net10` host 可由 `FAkka.*` 跑起來
+    308 +6. `ResultId` 可追 result
+    309 +7. `query_fsi_results` 可做集合運算
+    310 +
+    311 +### production-ready 最低門檻
+    312 +
+    313 +1. 舊工具不破
+    314 +2. 新工具可顯式 route
+    315 +3. host/session health 可查
+    316 +4. path mapping 可查
+    317 +5. async queue 有 trace metadata
+    318 +6. logs/check/doc 可追溯
+
+─ Worked for 2m 59s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• SD.md 和 WBS.md 已重寫成可落地版本。我現在跑 SOP 檢查，確認這一步的 log/doc 也過關。
+
+• Ran printf '%s
+  │ ' 'operation=apply detailed SD/WBS rewrite' 'targets=doc/SD.md,doc/WBS.md' >> /workspace/home/mcp/FSharp.MCP.DevKit/log/20260322093240.細化SD並撰寫新WBS.op_log && dotnet
+  │ fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  └ SessionId   : 019cfeb7-7b04-78c1-a7c6-c859782d0919
+    State file  : /workspace/home/codex/019cfeb7-7b04-78c1-a7c6-c859782d0919.state.json
+    … +17 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已把 SD.md 補成你要的版本，不只是架構敘述，還落到：
+
+  - 新的 type 分層
+  - module / file hierarchy
+  - registry / backend / router 的 interface
+  - host / session / async / result 的資料模型
+  - MCP tools / resources 的切分
+  - FsiExecutionRecord 與 ResultQueryService
+  - 核心 function signature
+  - 主要流程的偽碼
+  - 最後再補一段 concrete implementation guidance
+
+  你剛剛提的點也正式納進去了：
+
+  - FsiResult 保持純 payload
+  - backendKind/hostId/sessionId/resultId 進 FsiExecutionRecord
+  - result query / result set operation 另做一層
+  - quotation 先不以 raw Expr 跨 transport，而是走 ResultId seq + FSharpCode string
+
+  文件在：
+
+  - doc/SD.md
+  - doc/WBS.md
+
+  WBS.md 也已重寫，現在是直接對應新 SD 的 work packages，不再是舊版那種偏歷史回顧式的任務表。現在拆成：
+
+  - shared types
+  - backend abstraction
+  - control plane registries
+  - inproc backend
+  - netfx multi-session host
+  - net10 host integration
+  - async queue refactor
+  - MCP surface
+  - result plane
+  - verification / regression
+
+  SOP 驗證已跑過，check.fsx 目前是 PASS=15 WARN=2 FAIL=0，只有工作樹尚未 commit 的預期警告。
+
+  你先看這兩份：
+
+  - doc/SD.md
+  - doc/WBS.md
+
+  你看完後，我們再討論要不要先微調：
+
+  1. ResultQueryService 的第一版 scope
+  2. netfx host 多 session 是 actor-per-session 還是 dictionary-per-session
+  3. net10 host 建立流程要不要強制經 ProcSupervisor，還是允許直連已存在 host
+
+
+› 1. host 建立流程要強制經 ProcSupervisor
+  2. 所有  host session 都是 actor per session (result_op 由 parent 處理)
+
+  有問題嗎?
+
+
+• 大方向沒問題，但有一個地方要切清楚，不然實作會自撞。
+
+  actor per session 我認為是正解。
+  result_op 由 parent 處理也合理，但 parent 不應直接在 actor thread 內做重 query；比較好的做法是：
+
+  1. parent 收 result_op
+  2. 驗證 agentId/hostId/resultIds
+  3. 從 ResultRegistry materialize records
+  4. 把計算丟給 ResultQueryService
+  5. parent 回覆結果
+
+  這樣 session actors 只專注 execution/state，不背結果集運算。
+
+  真正有問題的是第 1 點如果你是字面上的「所有 host 都必須經 ProcSupervisor」：
+
+  - net10 host：完全合理，應強制經 ProcSupervisor
+  - netfx host：也合理，應強制經 ProcSupervisor
+  - inproc host：這不是實體 process，字面上不能真的經 ProcSupervisor
+
+  所以這裡我建議收斂成下面這句，設計上最乾淨：
+
+  - 所有 out-of-proc host 建立流程一律強制經 ProcSupervisor
+  - inproc 不視為正式 host provisioning 目標，只保留給 backward compatibility 的 default route
+
+  也就是說新世界裡：
+
+  - create_fsi_host 只支援 netfx / net10
+  - inproc 不讓使用者顯式建立
+  - 舊工具若沒指定 route，才落到 legacy inproc default-host
+
+  這樣沒有矛盾，而且更符合你要把它從 toy 拉到 production-ready 的方向。
+
+  如果你同意，我下一步就把這兩點正式回寫到 doc/SD.md 和 doc/WBS.md。

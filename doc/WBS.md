@@ -1,60 +1,325 @@
 # WBS
 
+## 工作原則
+
+本輪 WBS 依照新的 SD 拆成：
+
+1. 先建型別與抽象
+2. 再建 registry 與 router
+3. 再接 backend
+4. 再接 tools/resources
+5. 再補 result plane 與 parent-level result operation
+6. 最後做驗證
+
+避免一開始就直接改 `McpFsiTools.fs` 成大泥球。
+
 ## 里程碑
 
-| ID | 項目 | 產出 | 狀態 |
-|---|---|---|---|
-| M1 | 完成 SA/SD/WBS/Test/Policy/Action/DevLog | `doc/*.md` | done |
-| M2 | 收斂 mixed-runtime backend | server / core / host / messages code | done |
-| M3 | 完成 build / smoke test / check | build log / test log / check result | done |
-| M4 | 完成 service hosting / deployment / scripts 盤點 | deployment script / docs / verification log | done |
-
-## Schedule
-
-| ID | 時間 | 工作 | 驗收 |
-|---|---|---|---|
-| W01 | 2026-03-19 AM | 建立基線、review 三版結構與 build 現況 | 有 SA 問題列表與 build baseline |
-| W02 | 2026-03-19 AM | 寫 SA / SD / WBS / Test / Policy / Action / DevLog | 文件可作為實作依據 |
-| W03 | 2026-03-19 PM | 修正 message / actor / core target framework compile path | `FsiHost` 與 server 共享 transport contract |
-| W04 | 2026-03-19 PM | 導入 remote client adapter，移除 server 內本地 FSI backend 依賴 | sync / async tools 共用單一 backend |
-| W05 | 2026-03-19 PM | 修正 async queue 型別與 polling 路徑 | `execute_f_sharp_code_async` 能回傳 `asyncId` 並查狀態 |
-| W06 | 2026-03-19 PM | 執行 build / smoke test / check | 有 `.op_log`、`DevLog`、`check.fsx` 結果 |
-| W07 | 2026-03-19 PM | 更新上游套件相依並重新執行 audit | `Akka.Remote` critical warning 消失，build 不再依賴該 workaround |
-| W08 | 2026-03-19 PM | 完成 Windows service hosting、部署腳本與 scripts 盤點 | 可 publish / 可 `-WhatIf` / 有 Deployment / Runbook |
-
-## Work Items
-
-| ID | 工作 | 依賴 | 驗收 | 狀態 |
+| ID | 里程碑 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T01 | 記錄 baseline build 與 review 結果 | 無 | `log/*.log`、`log/*.op_log` | done |
-| T02 | 重寫 `doc/SA.md` | T01 | 問題、根因、scope 清楚 | done |
-| T03 | 重寫 `doc/SD.md` | T02 | backend / data flow / rollback 清楚 | done |
-| T04 | 重寫 `doc/WBS.md` | T02-T03 | 任務可執行 | done |
-| T05 | 建立 `doc/Test.md` | T02-T03 | 正常/異常/回歸案例齊備 | done |
-| T06 | 建立 `doc/Policy.md` | T02-T04 | scope / retention / 例外條件清楚 | done |
-| T07 | 建立 `doc/Action.md` | T04 | phase / status 可追蹤 | done |
-| T08 | 建立 `doc/DevLog.md` 初始條目 | T01-T04 | 有本輪任務紀錄 | done |
-| T09 | 擴充 `Messages` transport DTO | T03 | actor 可接收統一 command | done |
-| T10 | 修正 `Core.fsproj` target framework 與 `FsiActor` 編譯條件 | T03 | host compile path 恢復 | done |
-| T11 | 更新 `FsiActor.fs` 支援 remote command dispatch | T09-T10 | host 能處理 sync / async 同一套命令 | done |
-| T12 | 更新 `McpFsiTools.fs` 的 remote client adapter | T09-T11 | 不再依賴 server 本地 FSI session | done |
-| T13 | 修正 async queue 型別與 cache 更新流程 | T12 | queue worker 可執行與回填結果 | done |
-| T14 | 修正 Akka port 與 host / server 設定一致性 | T10-T12 | server 可連到 host | done |
-| T15 | local build workaround 下執行 compile 驗證 | T09-T14 | 真實 compile error 收斂 | done |
-| T16 | 執行 smoke test 與 `check.fsx` | T15 | 無與本輪目標衝突的 FAIL/WARN | done |
-| T17 | 升級 `Akka` / `Akka.Remote` 到安全版本 | T16 | `dotnet build` 不再出現 `NU1904` | done |
-| T18 | 重新執行 vulnerability audit 與文件同步 | T17 | project-level audit 無 vulnerable packages | done |
-| T19 | 將 `FsiActor.fs` 實體移入 `FsiHost` | T11 | compile ownership 與實體路徑一致 | done |
-| T20 | 讓 `FsiHost` / `Server` 支援 Windows service 名稱設定 | T19 | `fsihost` / `fsharp-devkit` 可由 SCM 正確啟動 | done |
-| T21 | 建立 `scripts/deploy-remote-services.ps1` | T20 | 可 publish、複製、註冊、健康檢查 | done |
-| T22 | 盤點 `scripts/` 既有腳本並標示 placeholder | T21 | 不再有 demo 腳本假裝成功 | done |
-| T23 | 補齊 `doc/Deployment.md` 與 `doc/Runbook.md` | T21-T22 | 部署方式、回滾與驗證步驟可追溯 | done |
+| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 | todo |
+| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | todo |
+| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | todo |
+| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | todo |
+| M5 | 完成 result plane | result registry, query service | 可依 `ResultId` 查詢與集合運算 | todo |
+| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | todo |
+
+## phase schedule
+
+| Phase | 內容 | 主要檔案 | 依賴 | 進度 |
+|---|---|---|---|---|
+| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 | todo |
+| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 | todo |
+| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 | todo |
+| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 | todo |
+| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | todo |
+| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | todo |
+| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | todo |
+| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | todo |
+| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | todo |
+
+## work packages
+
+## WP01 Shared Domain Types
+
+目標：
+
+建立新的 shared types，讓後續重構有穩定基底。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T01 | 新增 `Core/ExecutionTypes.fs` | `AgentRecord`, `HostRecord`, `SessionRecord`, `ExecutionRoute`, `AsyncFsiJob` | 可編譯 | todo |
+| T02 | 新增 `Core/ResultTypes.fs` | `FsiResult`, `FsiExecutionRecord` | 可編譯 | todo |
+| T03 | 對齊現有 `FSIService.fs` 所用 `FsiResult` 映射 | adapter helpers | 現有結果可映到新契約 | todo |
+| T04 | 擴充 `Messages/McpActorMessages.fs` | route-aware DTO | host/server 可共用 | todo |
+
+依賴：
+
+- 無
+
+## WP02 Backend Abstraction
+
+目標：
+
+建立 `IFsiExecutionBackend`，避免 backend 差異直接滲進 tools。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T05 | 新增 `Backends/IBackend.fs` | `ExecutionRequest`, `BackendHealth`, `IFsiExecutionBackend` | 可編譯 | todo |
+| T06 | 新增 backend selector | `BackendSelector` | 可依 `HostKind` resolve | todo |
+| T07 | 補 shared adapter helpers | result mapping / error mapping | `RawErrorType` 可填 | todo |
+
+依賴：
+
+- WP01
+
+## WP03 Control Plane Registries
+
+目標：
+
+建立四個 registry 與 default routing。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T08 | 新增 `AgentRegistry.fs` | in-memory agent registry | 可 register/list/get | todo |
+| T09 | 新增 `HostRegistry.fs` | host registry | 可 create/update/list | todo |
+| T10 | 新增 `SessionRegistry.fs` | session registry | 可 create/update/list | todo |
+| T11 | 新增 `AsyncJobRegistry.fs` | async job registry | 可 create/running/complete/fail | todo |
+| T12 | 新增 `ResultRegistry.fs` | result registry | 可 put/get/list | todo |
+| T13 | 新增 `PathMappingRegistry.fs` | path mapping registry | 可 list mappings | todo |
+| T14 | 新增 `DefaultRouting.fs` | implicit default route resolver | 舊工具 route 可自動補齊 | todo |
+| T15 | 新增 `ExecutionRouter.fs` | 統一 route + execute orchestration | 所有 execution 經同一路徑 | todo |
+
+依賴：
+
+- WP01
+- WP02
+
+## WP04 InProc Backend
+
+目標：
+
+讓現有 `FsiService` 可掛到新抽象下，作為 fallback/backward-compatible backend。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T16 | 實作 `InProcBackend.fs` | in-proc backend | 可 execute/get state/reset | todo |
+| T17 | 加上 session dictionary | per-session in-proc handles | 不同 session state 可隔離 | todo |
+| T18 | 對齊 result record | `ResultId` 與 metadata 正常寫入 | result registry 有資料 | todo |
+
+依賴：
+
+- WP02
+- WP03
+
+## WP05 NetFx Host Multi-Session
+
+目標：
+
+把現有 `FsiHost` 從單 session 升成 multi-session，且採 `actor per session`。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T19 | 新增 `HostSupervisorActor.fs` | host-level router actor | 可接 route-aware request，並協調 result operations | todo |
+| T20 | 新增 `SessionActor.fs` | per-session actor | 每個 session 各持一個 `FsiService` | todo |
+| T21 | 修改 `Program.fs` | host 啟動 supervisor actor | 不再只固定 `fsiActor` 單 session | todo |
+| T22 | 修改 remote DTO handling | `AgentId/HostId/SessionId` 路由 | 指定 session 可執行 | todo |
+| T22a | 將 `result_op` 留在 parent 層 | parent -> `ResultQueryService` | result operation 不阻塞 session actor | todo |
+| T23 | 實作 `NetFxHostBackend.fs` | server-side adapter | 可透過新抽象呼叫 netfx host | todo |
+
+依賴：
+
+- WP01
+- WP02
+- WP03
+
+## WP06 Net10 Host Integration
+
+目標：
+
+把 `FAkka.FSI.Supervisor` / `FAkka.Proc.Supervisor` 納入正式 backend，且 out-of-proc host 建立流程一律經 `ProcSupervisor`。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T24 | 新增 `ProcSupervisorClient.fs` | proc lifecycle adapter | 可 start/stop/query snapshot，且為唯一 out-of-proc provisioning 入口 | todo |
+| T25 | 新增 `FsiSupervisorClient.fs` | net10 host execution adapter | 可 execute/list sessions/get session | todo |
+| T26 | 實作 `Net10HostBackend.fs` | backend adapter | 可 execute/get state/health | todo |
+| T27 | 建立 host provisioning flow | `createHost(net10)` | 一律透過 `ProcSupervisor` 啟動 proc 並註冊 host | todo |
+| T28 | 建立 session provisioning flow | `createSession(net10)` | 可在同 host 建多 session | todo |
+| T28a | 禁止顯式建立 `inproc` host | control-plane validation | `create_fsi_host(inproc)` 會明確失敗 | todo |
+
+依賴：
+
+- WP01
+- WP02
+- WP03
+
+## WP07 Async Queue Refactor
+
+目標：
+
+把現有 `<asyncId, FsiResult option>` queue/caching 升級成 route-aware async job model。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T29 | 重定義 async job type | `AsyncFsiJob` | job 含 route metadata | todo |
+| T30 | 重寫 queue worker | route-aware execution loop | FIFO 仍成立 | todo |
+| T31 | 完成 result linkage | async 完成可產出 `ResultId` | `fsi/async/{asyncId}` 可看到 `ResultId` | todo |
+| T32 | 保留舊 async tool 相容 | `execute_f_sharp_code_async` | 舊 client 可不改使用 | todo |
+
+依賴：
+
+- WP03
+- WP04/WP05/WP06
+
+## WP08 MCP Tool / Resource Surface
+
+目標：
+
+把 control-plane、execution-plane、result-plane 暴露成 MCP 工具與資源。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | `McpFsiTools.fs` 不再是 god object | todo |
+| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | todo |
+| T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` | todo |
+| T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 | todo |
+| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | resource 可讀 | todo |
+| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | todo |
+
+依賴：
+
+- WP03
+- WP07
+
+## WP09 Result Query Capability
+
+目標：
+
+把你提到的 quotation / result-set operations 納入可實作設計，並由 parent / supervisor 層協調。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | 可編譯 | todo |
+| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 可用 | todo |
+| T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string | todo |
+| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | agent 可串下一步 | todo |
+| T42a | parent-level result orchestration | host parent / server orchestration flow | result query 不進 session actor | todo |
+
+依賴：
+
+- WP01
+- WP03
+- WP08
+
+## WP10 Verification / Regression
+
+目標：
+
+建立最低驗收與回歸測試，避免新 control plane 破壞既有功能。
+
+子任務：
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| T43 | 舊工具 smoke | default route regression tests | 舊 client 不壞 | todo |
+| T44 | multi-host smoke | 兩個 host 並行 | state 不互相污染 | todo |
+| T45 | multi-session smoke | 同 host 兩個 session | state 隔離 | todo |
+| T46 | async job smoke | queue FIFO + result linkage | `asyncId -> ResultId` | todo |
+| T47 | result query smoke | compare / forall / exists | result plane 可用 | todo |
+| T48 | `check.fsx` / DevLog / docs closeout | SOP evidence | 無 FAIL | todo |
+
+依賴：
+
+- WP01-WP09
+
+## 依賴圖
+
+```text
+WP01 -> WP02 -> WP03
+WP03 -> WP04
+WP03 -> WP05
+WP03 -> WP06
+WP04/WP05/WP06 -> WP07
+WP03/WP07 -> WP08
+WP01/WP03/WP08 -> WP09
+WP01-WP09 -> WP10
+```
+
+## 建議實作順序
+
+### Sprint A
+
+1. WP01
+2. WP02
+3. WP03
+4. WP04
+
+交付條件：
+
+- in-proc 路徑先跑起來
+- 舊工具仍能工作
+
+### Sprint B
+
+1. WP05
+2. WP06
+3. WP07
+4. WP08
+
+交付條件：
+
+- netfx/net10 雙 remote backend 都能路由
+- MCP surface 完整
+
+### Sprint C
+
+1. WP09
+2. WP10
+
+交付條件：
+
+- result plane 可用
+- regression evidence 完整
 
 ## 完成定義
 
-- `FSharp.MCP.DevKit - Async` 的 sync / async FSI tools 不再混用 local FSI 與 remote FSI 兩條 backend。
-- net472 host 與 .NET 9/10 server 的責任邊界恢復清楚。
-- async queue / polling 可在單一遠端 session 上工作。
-- `fsihost` 與 `fsharp-devkit` 可作為 Windows services 部署。
-- `scripts/` 內的正式部署腳本與 placeholder 腳本界線清楚。
-- 文件、log、DevLog、check 皆可追溯。
+### SD 對應完成定義
+
+1. `FsiResult` 與 `FsiExecutionRecord` 已分層
+2. `IFsiExecutionBackend` 已落地
+3. `Agent/Host/Session/AsyncJob/Result` 五個 registry 已落地
+4. `netfx` host 多 session可用，且採 `actor per session`
+5. `net10` host 可由 `FAkka.*` 跑起來，且建立流程一律經 `ProcSupervisor`
+6. `ResultId` 可追 result
+7. `query_fsi_results` 可做集合運算
+8. `result_op` 由 parent / supervisor 協調，不進 session actor
+
+### production-ready 最低門檻
+
+1. 舊工具不破
+2. 新工具可顯式 route
+3. `create_fsi_host` 僅支援 `netfx/net10`
+4. out-of-proc host 建立流程一律經 `ProcSupervisor`
+5. host/session health 可查
+6. path mapping 可查
+7. async queue 有 trace metadata
+8. logs/check/doc 可追溯

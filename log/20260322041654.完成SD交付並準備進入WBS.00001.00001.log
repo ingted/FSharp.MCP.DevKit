@@ -1,0 +1,9 @@
+背景=Requirement/BA/SA 已確認本輪要把 fsharp-devkit 升級成多 agent / 多 host / 多 session execution platform，且需保留舊 MCP client 相容
+目標=完成 SD，定義 control plane、execution plane、dual-backend、agent/host/session registry 與 FAkka.* 整合邊界
+計畫步驟=1. 讀 Requirement/BA/SA 與現況 Program/FsiHost 2. 決定是否沿用現有 mixed-runtime host 3. 決定 net10 host/proc 是否採用 FAkka.FSI.Supervisor/FAkka.Proc.Supervisor 4. 定義 registry/routing/tool/resource/backward compatibility 5. 重寫 doc/SD.md 6. 跑 check.fsx 驗證
+執行命令/參數=sed -n doc/Requirement.md doc/BA.md doc/SA.md doc/SD.md; sed -n src/FSharp.MCP.DevKit.Server/Program.fs; sed -n src/FSharp.MCP.DevKit.FsiHost/Program.fs; apply_patch 重寫 doc/SD.md; dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+結果=完成新的 SD，正式採 dual-backend + control-plane/execution-plane 分離，並將 net10 host 與 proc lifecycle 設計成採用 FAkka.FSI.Supervisor/FAkka.Proc.Supervisor
+根因判讀=既有設計真正缺的不是 mixed-runtime execution，而是 control plane；先前 async diagnostics/observability/path mapping 問題本質上都是 registry/routing/query surface 不足
+下一步=進入 WBS，將 registry/backend/host/session/tool/resource/compatibility 拆成可實作工作包
+關聯文件/工單/PR=doc/Requirement.md; doc/BA.md; doc/SA.md; doc/SD.md; PulseTrade.fs packages FAkka.FSI.Supervisor 1.562.100.201-dgx.1 / FAkka.Proc.Supervisor 1.562.100.201-dgx.2
+prompt/上下文摘要=使用者要求在繼續 fsharp-devkit 開發前先確認是否採用 PulseTrade.fs 內兩個現成 package；已驗證可用並先升級、打包、推上 NuGet，現在 SD 正式納入該決策

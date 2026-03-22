@@ -1,0 +1,5 @@
+timestamp=20260322093240
+operation=start detailed SD + WBS rewrite
+artifacts=doc/SD.md,doc/WBS.md
+operation=apply detailed SD/WBS rewrite
+targets=doc/SD.md,doc/WBS.md

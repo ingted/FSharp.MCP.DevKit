@@ -1,0 +1,9 @@
+背景=使用者要求 WBS 每個驗收欄右側補上開發進度欄，並於修改後立即 commit/push 再開工
+目標=為 doc/WBS.md 所有表格補上進度欄，預設填 todo，並完成本輪文件與 log 的 commit/push
+計畫步驟=1. 更新 WBS 所有表格欄位 2. 建立新 log/op_log 記錄本步 3. 跑 check.fsx 4. commit/push 5. 開始 WP01 實作
+執行命令/參數=apply_patch 更新 doc/WBS.md; dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log; git add/commit/push
+結果=進行中
+根因判讀=原 WBS 缺少 execution tracking 欄位，不利於後續逐項回報與管理 work package 狀態
+下一步=完成 check 後 commit/push，然後進 WP01 shared types
+關聯文件/工單/PR=doc/WBS.md; doc/SD.md
+prompt/上下文摘要=使用者確認 ProcSupervisor 與 actor-per-session 約束後，要求為 WBS 表格補上進度欄並立即進入開發

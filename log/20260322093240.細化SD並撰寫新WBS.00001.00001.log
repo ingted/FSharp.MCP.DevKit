@@ -1,0 +1,9 @@
+背景=使用者確認 SD 方向正確，但要求 SD 必須落實到 type/module/function/pseudocode 層級，並在完成後撰寫對應的新 WBS
+目標=細化 doc/SD.md 成可直接導向實作的詳細設計，並重寫 doc/WBS.md 對應新的 control-plane/execution-plane 架構
+計畫步驟=1. 讀現有 SD/WBS 2. 補出 type 與 module hierarchy 3. 補出核心 function signature 與偽碼 4. 定義 tool/resource contract 與資料流 5. 重寫 WBS 成 work packages + 依賴順序 + 驗收 6. 跑 check.fsx 驗證
+執行命令/參數=sed -n doc/SD.md doc/WBS.md; apply_patch 更新 doc/SD.md/doc/WBS.md; dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+結果=進行中
+根因判讀=上一版 SD 已確立方向，但對實作者而言仍偏架構敘述，缺少型別與模組落點，無法直接拿去排實作任務
+下一步=完成 SD 細化與 WBS 後交付審閱
+關聯文件/工單/PR=doc/SD.md; doc/WBS.md; doc/Requirement.md; doc/BA.md; doc/SA.md
+prompt/上下文摘要=使用者要求把 execution metadata 從純 FsiResult 分層到 envelope/record，並希望 SD 更具體，同時完成 WBS 供後續討論

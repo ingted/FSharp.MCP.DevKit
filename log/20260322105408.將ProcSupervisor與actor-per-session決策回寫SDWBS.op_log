@@ -1,0 +1,7 @@
+timestamp=20260322105408
+operation=start SD/WBS constraint update
+artifacts=doc/SD.md,doc/WBS.md
+operation=write ProcSupervisor + actor-per-session constraints into SD/WBS
+targets=doc/SD.md,doc/WBS.md
+operation=add progress column to WBS tables
+target=doc/WBS.md

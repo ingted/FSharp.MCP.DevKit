@@ -1,0 +1,3 @@
+timestamp=20260322111847
+operation=record WBS progress-column update as new append-only step
+artifacts=doc/WBS.md

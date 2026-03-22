@@ -1,0 +1,4 @@
+[SD] Start
+branch=20260322_001.multi-agent-fsi-platform
+scope=control-plane execution-plane host-registry session-registry dual-backend
+decision=integrate FAkka.FSI.Supervisor for net10 host and FAkka.Proc.Supervisor for proc lifecycle
