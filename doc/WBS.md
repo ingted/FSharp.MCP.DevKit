@@ -17,26 +17,26 @@
 
 | ID | 里程碑 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 | todo |
-| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | todo |
-| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | todo |
-| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | todo |
-| M5 | 完成 result plane | result registry, query service | 可依 `ResultId` 查詢與集合運算 | todo |
-| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | todo |
+| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 | done |
+| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | done |
+| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | done |
+| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | done |
+| M5 | 完成 result plane | result registry, query service | built-in result plane 已可依 `ResultId` 查詢與集合運算，`FSharpCode` query 仍待補 | doing |
+| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | doing |
 
 ## phase schedule
 
 | Phase | 內容 | 主要檔案 | 依賴 | 進度 |
 |---|---|---|---|---|
-| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 | todo |
-| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 | todo |
-| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 | todo |
-| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 | todo |
-| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | todo |
-| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | todo |
-| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | todo |
-| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | todo |
-| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | todo |
+| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 | done |
+| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 | done |
+| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 | done |
+| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 | done |
+| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | done |
+| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | done |
+| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | done |
+| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | doing |
+| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | doing |
 
 ## work packages
 
@@ -240,11 +240,11 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T43 | 舊工具 smoke | default route regression tests | 舊 client 不壞 | todo |
-| T44 | multi-host smoke | 兩個 host 並行 | state 不互相污染 | todo |
-| T45 | multi-session smoke | 同 host 兩個 session | state 隔離 | todo |
-| T46 | async job smoke | queue FIFO + result linkage | `asyncId -> ResultId` | todo |
-| T47 | result query smoke | compare / forall / exists | result plane 可用 | todo |
+| T43 | 舊工具 smoke | default route regression tests | smoke 測試已覆蓋舊工具 execute/eval/restart/async 相容性 | done |
+| T44 | multi-host smoke | 兩個 host 並行 | smoke 測試已驗證兩個 host 狀態不互相污染 | done |
+| T45 | multi-session smoke | 同 host 兩個 session | smoke 測試已驗證同 host 不同 session state 隔離 | done |
+| T46 | async job smoke | queue FIFO + result linkage | smoke 測試已驗證 FIFO 與 `asyncId -> ResultId` linkage | done |
+| T47 | result query smoke | compare / forall / exists | smoke 測試已驗證 built-in result plane | done |
 | T48 | `check.fsx` / DevLog / docs closeout | SOP evidence | 無 FAIL | todo |
 
 依賴：

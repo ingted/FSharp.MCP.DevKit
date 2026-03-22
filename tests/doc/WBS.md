@@ -176,3 +176,14 @@
 | TT34 | 新增 `McpExecutionToolsTests.fs` | explicit route tool 測試 | routed execute/evaluate/reset/async 可回歸 | done |
 | TT35 | 新增 `McpResultToolsTests.fs` | result tool/resource 測試 | get/list/query/compare/materialization 可回歸 | done |
 | TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | done |
+
+## WP-T15 Smoke / Regression
+
+驗證目前主進度已完成功能的高階 smoke/regression 場景。
+
+| ID | 工作項目 | 產出 | 驗收標準 | 進度 |
+| --- | --- | --- | --- | --- |
+| TT37 | 新增 `SmokeRegressionTests.fs` 舊工具 smoke | default route regression 測試 | 舊工具相容性可回歸 | done |
+| TT38 | 補 multi-host / multi-session smoke | stateful fake supervisor smoke 測試 | host/session state 隔離可回歸 | done |
+| TT39 | 補 async / result query smoke | FIFO/result-plane smoke 測試 | async linkage 與 built-in query 可回歸 | done |
+| TT40 | 重新執行 `dotnet test -f net10.0` | 測試結果 | smoke/regression 補齊後仍全數通過 | done |

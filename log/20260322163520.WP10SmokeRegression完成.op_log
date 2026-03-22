@@ -1,0 +1,3 @@
+[2026-03-22T16:35:20Z] Updated WBS milestone/phase aggregate progress.
+[2026-03-22T16:36:11Z] Added SmokeRegressionTests covering old tools, multi-host, multi-session, async FIFO, and result query smoke.
+[2026-03-22T16:36:54Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 passed.

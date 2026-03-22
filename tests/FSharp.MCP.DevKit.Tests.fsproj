@@ -44,6 +44,7 @@
     <Compile Include="Net10HostBackendTests.fs" />
     <Compile Include="ProvisioningServicesTests.fs" />
     <Compile Include="RemoteMessageContractTests.fs" />
+    <Compile Include="SmokeRegressionTests.fs" />
     <Compile Include="SmartSymbolDetectionServiceTests.fs" />
   </ItemGroup>
 

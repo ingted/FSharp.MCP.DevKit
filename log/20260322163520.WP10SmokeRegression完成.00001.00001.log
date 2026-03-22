@@ -1,0 +1,19 @@
+背景：`WP08/WP09` 的 control-plane、routed execution、result plane 已落地，但 `WBS` 尚有 `WP10` 的 smoke/regression 未收尾，而且 milestone/phase 進度表也沒同步。
+目標：補齊 `T43-T47` smoke/regression、更新 `WBS` aggregate 進度，並新增 tests README 讓測試案例流程可追溯。
+計畫步驟：
+1. 修正 `doc/WBS.md` 的里程碑與 phase 進度，讓 aggregate status 與 task-level status 一致。
+2. 新增 `tests/SmokeRegressionTests.fs`，覆蓋舊工具 smoke、multi-host、multi-session、async FIFO、result query smoke。
+3. 更新 `tests/doc/WBS.md` 與 `tests/README.md`。
+4. 執行 `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+結果：
+- 已更新 `doc/WBS.md` 里程碑與 phase 進度
+- 已新增 `tests/SmokeRegressionTests.fs`
+- 已更新 `tests/doc/WBS.md`
+- 已新增 `tests/README.md`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+根因判讀：里程碑仍是 `todo` 不是因為功能沒做，而是前面只同步了 `Txx` 層級，漏掉 aggregate 層。這輪順手把 smoke/regression 補齊後，`WBS` 才能真實反映目前完成度，而不是只靠零散 task 狀態。
+下一步：commit/push/check 本輪 smoke/regression 與 README 文件，再回到剩餘主線缺口 `T41` 或更完整的 closeout。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、tests/README.md、tests/SmokeRegressionTests.fs
+prompt/上下文摘要：先回答為什麼 WBS 里程碑還是 todo，然後繼續主線開發。

@@ -1,0 +1,1372 @@
+• 我開始實作第二段：會新增 McpExecutionTools、McpResultTools、ResultQueryService 與 result resources，然後把 FsiMcpService 補上 result-query/materialization 入口。之後再補測
+  試和 WBS/log。
+
+• Edited 15 files (+891 -6)
+  └ doc/WBS.md (+6 -6)
+    200  | T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | done |
+    201 -| T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` | todo |
+    202 -| T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 | todo |
+    201 +| T35 | 新增 routed execution tools | explicit route tools | 已新增 `execute/evaluate/reset/get_state/add_search_path/reference_assembly` routed tools，可指定 `agent
+         Id/hostId/sessionId` | done |
+    202 +| T36 | 新增 result tools | `get/list/query/compare` | 已新增 `get/list/query/compare` result tools，且支援 synthetic result materialization | done |
+    203  | T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`, `fsi/hosts/*`, `fsi/path-mappings` 已可讀 | done |
+        ⋮
+    220  |---|---|---|---|---|
+    221 -| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | 可編譯 | todo |
+    222 -| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 可用 | todo |
+    221 +| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | `ResultQueryRequest/Response/Language/Kind/Materialization` 已可編譯 | done |
+    222 +| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 已可用 | done |
+    223  | T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string | todo |
+    224 -| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | agent 可串下一步 | todo |
+    225 -| T42a | parent-level result orchestration | host parent / server orchestration flow | result query 不進 session actor | todo |
+    224 +| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | built-in query 已支援 `syntheticResult` materialization | done |
+    225 +| T42a | parent-level result orchestration | host parent / server orchestration flow | result query 由 server-side `ResultQueryService` 協調，不進 session actor | do
+         ne |
+    226
+
+  └ log/20260322152010.WP08第二段與WP09第一段實作開始.00001.00001.log (+17 -0)
+     1 +背景：`WP08` 第一段已完成 control-plane tools/resources。下一段要讓 agent 能顯式指定 route 執行，並把 `ResultId` 真正變成可查、可比、可串接的 result plane。
+     2 +目標：完成 `McpExecutionTools`、`McpResultTools`、`ResultQueryService`、`ResultResources`，並補對應測試。
+     3 +計畫步驟：
+     4 +1. 新增 `ResultQueryTypes.fs` / `ResultQueryService.fs`，先支援 built-in `exists/forall/map/filter/zip/diff/groupBy`。
+     5 +2. 更新 `FsiMcpService`，提供 agent-scoped result 查詢、list、query 與 synthetic result materialization。
+     6 +3. 新增 `McpExecutionTools.fs`，提供 explicit route tools。
+     7 +4. 新增 `McpResultTools.fs` 與 `ResultResources.fs`，暴露 result plane。
+     8 +5. 補 `McpExecutionToolsTests.fs` / `McpResultToolsTests.fs`，跑 `dotnet test -f net10.0`。
+     9 +執行命令/參數：
+    10 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+    11 +- `dotnet build FSharp.MCP.DevKit.Async.sln`
+    12 +結果：
+    13 +- 進行中
+    14 +根因判讀：若沒有 routed execution tools，agent 雖能建立 host/session，仍必須退回隱式 default route。若沒有 result plane，`asyncId -> ResultId` 的追蹤也停在半套，無法
+        進一步做 compare/filter/groupBy 等集合運算。
+    15 +下一步：完成 compile/test 後，更新 WBS 並跑 `check.fsx`。
+    16 +關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/ResultQuery/*、src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs、src/FSharp.MCP.DevKit.S
+        erver/McpResultTools.fs、src/FSharp.MCP.DevKit.Server/ResultResources.fs
+    17 +prompt/上下文摘要：在 `WP08` 第一段已 commit/push 後，繼續補 routed execution 與 result plane。
+
+  └ log/20260322152010.WP08第二段與WP09第一段實作開始.op_log (+2 -0)
+    1 +[2026-03-22T15:20:10Z] Started routed execution and result-plane implementation.
+    2 +[2026-03-22T15:21:03Z] Planned ResultQueryService, McpExecutionTools, McpResultTools, and ResultResources.
+
+  └ src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj (+5 -0)
+    50      <Compile Include="ControlPlane\ProvisioningServices.fs" />
+    51 +    <Compile Include="ResultQuery\ResultQueryTypes.fs" />
+    52 +    <Compile Include="ResultQuery\ResultQueryService.fs" />
+    53      <Compile Include="Backends\Net10HostBackend.fs" />
+       ⋮
+    55      <Compile Include="McpControlPlaneTools.fs" />
+    56 +    <Compile Include="McpExecutionTools.fs" />
+    57 +    <Compile Include="McpResultTools.fs" />
+    58      <Compile Include="ControlPlaneResources.fs" />
+    59 +    <Compile Include="ResultResources.fs" />
+    60      <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />
+
+  └ src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs (+148 -0)
+      1 +namespace FSharp.MCP.DevKit.Server
+      2 +
+      3 +open System
+      4 +open System.ComponentModel
+      5 +open System.Threading.Tasks
+      6 +open FSharp.MCP.DevKit.Core
+      7 +open FSharp.MCP.DevKit.Server.McpFsiTools
+      8 +open ModelContextProtocol.Server
+      9 +
+     10 +[<McpServerToolType>]
+     11 +type McpExecutionTools =
+     12 +
+     13 +    static member private route agentId hostId sessionId =
+     14 +        { AgentId = agentId
+     15 +          HostId = hostId
+     16 +          SessionId = sessionId }
+     17 +
+     18 +    static member private resolveTimeout (fsiService: FsiMcpService) timeoutSeconds =
+     19 +        match timeoutSeconds with
+     20 +        | Some seconds -> TimeSpan.FromSeconds(float seconds)
+     21 +        | None -> fsiService.DefaultTimeout
+     22 +
+     23 +    static member private formatResultError (fallbackMessage: string) (result: FsiResult) =
+     24 +        if String.IsNullOrWhiteSpace result.Errors then
+     25 +            fallbackMessage
+     26 +        else
+     27 +            result.Errors
+     28 +
+     29 +    [<McpServerTool(Name = "execute_f_sharp_code_routed"); Description("Execute F# code against an explicit agentId/hostId/sessionId route.")>]
+     30 +    static member ExecuteFSharpCodeRouted
+     31 +        (
+     32 +            fsiService: FsiMcpService,
+     33 +            [<Description("Owning agent id.")>] agentId: string,
+     34 +            [<Description("Target host id.")>] hostId: string,
+     35 +            [<Description("Target session id.")>] sessionId: string,
+     36 +            [<Description("F# code to execute.")>] code: string,
+     37 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     38 +        ) : Task<string> =
+     39 +        task {
+     40 +            let route = McpExecutionTools.route agentId hostId sessionId
+     41 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+     42 +            let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout, requestedRoute = route)
+     43 +            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatResultError "Execution failed" record.Result
+     44 +        }
+     45 +
+     46 +    [<McpServerTool(Name = "execute_f_sharp_code_async_routed"); Description("Enqueue F# code execution against an explicit route and return an async id immediately.
+         ")>]
+     47 +    static member ExecuteFSharpCodeAsyncRouted
+     48 +        (
+     49 +            fsiService: FsiMcpService,
+     50 +            [<Description("Owning agent id.")>] agentId: string,
+     51 +            [<Description("Target host id.")>] hostId: string,
+     52 +            [<Description("Target session id.")>] sessionId: string,
+     53 +            [<Description("F# code to execute asynchronously.")>] code: string,
+     54 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     55 +        ) : Task<string> =
+     56 +        task {
+     57 +            let route = McpExecutionTools.route agentId hostId sessionId
+     58 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+     59 +            return fsiService.EnqueueExecuteCode(code, timeout, requestedRoute = route)
+     60 +        }
+     61 +
+     62 +    [<McpServerTool(Name = "evaluate_f_sharp_expression_routed"); Description("Evaluate an F# expression against an explicit route.")>]
+     63 +    static member EvaluateFSharpExpressionRouted
+     64 +        (
+     65 +            fsiService: FsiMcpService,
+     66 +            [<Description("Owning agent id.")>] agentId: string,
+     67 +            [<Description("Target host id.")>] hostId: string,
+     68 +            [<Description("Target session id.")>] sessionId: string,
+     69 +            [<Description("F# expression to evaluate.")>] expression: string,
+     70 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     71 +        ) : Task<string> =
+     72 +        task {
+     73 +            let route = McpExecutionTools.route agentId hostId sessionId
+     74 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+     75 +            let! record = fsiService.ExecuteOperation(EvaluateExpression, expression, timeout = timeout, requestedRoute = route)
+     76 +
+     77 +            return
+     78 +                if record.Result.IsSuccess then
+     79 +                    record.Result.Value |> Option.defaultValue record.Result.Output
+     80 +                else
+     81 +                    McpExecutionTools.formatResultError "Expression evaluation failed" record.Result
+     82 +        }
+     83 +
+     84 +    [<McpServerTool(Name = "add_search_path_routed"); Description("Add an F# search path against an explicit route.")>]
+     85 +    static member AddSearchPathRouted
+     86 +        (
+     87 +            fsiService: FsiMcpService,
+     88 +            [<Description("Owning agent id.")>] agentId: string,
+     89 +            [<Description("Target host id.")>] hostId: string,
+     90 +            [<Description("Target session id.")>] sessionId: string,
+     91 +            [<Description("Directory path to add to the F# search path.")>] path: string,
+     92 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     93 +        ) : Task<string> =
+     94 +        task {
+     95 +            let route = McpExecutionTools.route agentId hostId sessionId
+     96 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+     97 +            let! record = fsiService.ExecuteOperation(AddSearchPath, path, timeout = timeout, requestedRoute = route)
+     98 +            return if record.Result.IsSuccess then $"Search path added successfully: {path}" else McpExecutionTools.formatResultError "Failed to add search path" rec
+         ord.Result
+     99 +        }
+    100 +
+    101 +    [<McpServerTool(Name = "reference_assembly_routed"); Description("Reference an assembly against an explicit route.")>]
+    102 +    static member ReferenceAssemblyRouted
+    103 +        (
+    104 +            fsiService: FsiMcpService,
+    105 +            [<Description("Owning agent id.")>] agentId: string,
+    106 +            [<Description("Target host id.")>] hostId: string,
+    107 +            [<Description("Target session id.")>] sessionId: string,
+    108 +            [<Description("Assembly path or assembly name.")>] assemblyPath: string,
+    109 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    110 +        ) : Task<string> =
+    111 +        task {
+    112 +            let route = McpExecutionTools.route agentId hostId sessionId
+    113 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+    114 +            let! record = fsiService.ExecuteOperation(ReferenceAssembly, assemblyPath, timeout = timeout, requestedRoute = route)
+    115 +            return if record.Result.IsSuccess then $"Assembly referenced successfully: {assemblyPath}" else McpExecutionTools.formatResultError "Failed to reference
+         assembly" record.Result
+    116 +        }
+    117 +
+    118 +    [<McpServerTool(Name = "reset_fsi_session_routed"); Description("Reset a specific session under an explicit route.")>]
+    119 +    static member ResetFsiSessionRouted
+    120 +        (
+    121 +            fsiService: FsiMcpService,
+    122 +            [<Description("Owning agent id.")>] agentId: string,
+    123 +            [<Description("Target host id.")>] hostId: string,
+    124 +            [<Description("Target session id.")>] sessionId: string,
+    125 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    126 +        ) : Task<string> =
+    127 +        task {
+    128 +            let route = McpExecutionTools.route agentId hostId sessionId
+    129 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+    130 +            let! record = fsiService.ExecuteOperation(ResetSession, "", timeout = timeout, requestedRoute = route)
+    131 +            return if record.Result.IsSuccess then "FSI session reset successfully" else McpExecutionTools.formatResultError "Failed to reset FSI session" record.Res
+         ult
+    132 +        }
+    133 +
+    134 +    [<McpServerTool(Name = "get_fsi_state_routed"); Description("Get FSI state for an explicit agentId/hostId/sessionId route.")>]
+    135 +    static member GetFsiStateRouted
+    136 +        (
+    137 +            fsiService: FsiMcpService,
+    138 +            [<Description("Owning agent id.")>] agentId: string,
+    139 +            [<Description("Target host id.")>] hostId: string,
+    140 +            [<Description("Target session id.")>] sessionId: string,
+    141 +            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    142 +        ) : Task<string> =
+    143 +        task {
+    144 +            let route = McpExecutionTools.route agentId hostId sessionId
+    145 +            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+    146 +            let! record = fsiService.ExecuteOperation(GetState, "", timeout = timeout, requestedRoute = route)
+    147 +            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatResultError "Failed to get FSI state" record.Result
+    148 +        }
+
+  └ src/FSharp.MCP.DevKit.Server/McpFsiTools.fs (+78 -0)
+     17  open FSharp.MCP.DevKit.Server.Integration
+     18 +open FSharp.MCP.DevKit.Server.ResultQuery
+     19  open FSharp.MCP.DevKit.Messages
+        ⋮
+    262          let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+    263 +        let resultQueryService = ResultQueryService()
+    264          let inProcBackend = InProcBackend() :> IFsiExecutionBackend
+        ⋮
+    421
+    422 +        member _.TryGetResultForAgent(agentId: string, resultId: string) =
+    423 +            resultRegistry.TryGet resultId
+    424 +            |> Option.filter (fun value -> value.AgentId = agentId)
+    425 +
+    426          member _.ListSessionResults(?requestedRoute: ExecutionRoute) =
+        ⋮
+    429
+    430 +        member _.ListHostSessionResults(hostId: string, sessionId: string) =
+    431 +            resultRegistry.ListBySession(
+    432 +                { AgentId =
+    433 +                    sessionRegistry.TryGet(hostId, sessionId)
+    434 +                    |> Option.map (fun value -> value.AgentId)
+    435 +                    |> Option.defaultWith (fun () -> invalidOp $"Session '{sessionId}' was not found under host '{hostId}'.")
+    436 +                  HostId = hostId
+    437 +                  SessionId = sessionId }
+    438 +            )
+    439 +
+    440 +        member _.ListAgentResults(agentId: string) = resultRegistry.ListByAgent agentId
+    441 +
+    442 +        member _.QueryResults(request: ResultQueryRequest) =
+    443 +            let loadOwnedRecords resultIds =
+    444 +                resultIds
+    445 +                |> List.distinct
+    446 +                |> List.map (fun resultId ->
+    447 +                    match resultRegistry.TryGet resultId with
+    448 +                    | Some record when record.AgentId = request.AgentId -> record
+    449 +                    | Some _ -> invalidOp $"Result '{resultId}' does not belong to agent '{request.AgentId}'."
+    450 +                    | None -> invalidOp $"Result '{resultId}' was not found.")
+    451 +
+    452 +            let materializeResponse (response: ResultQueryResponse) (records: FsiExecutionRecord list) =
+    453 +                if not response.IsSuccess || request.Materialization <> SyntheticResult then
+    454 +                    response
+    455 +                else
+    456 +                    let now = DateTime.UtcNow
+    457 +
+    458 +                    let basis = records |> List.tryHead
+    459 +
+    460 +                    let record =
+    461 +                        { ResultId = Guid.NewGuid().ToString("N")
+    462 +                          RequestId = request.QueryId
+    463 +                          AgentId = request.AgentId
+    464 +                          BackendKind = basis |> Option.map (fun value -> value.BackendKind) |> Option.defaultValue InProc
+    465 +                          HostId = basis |> Option.map (fun value -> value.HostId) |> Option.defaultValue "query-host"
+    466 +                          SessionId = basis |> Option.map (fun value -> value.SessionId) |> Option.defaultValue "query-session"
+    467 +                          OperationKind = ResultQuery
+    468 +                          SubmittedAt = now
+    469 +                          StartedAt = Some now
+    470 +                          CompletedAt = Some now
+    471 +                          RawErrorType = None
+    472 +                          Result =
+    473 +                            { Output = response.MaterializedJson |> Option.defaultValue response.Output
+    474 +                              Errors = ""
+    475 +                              IsSuccess = true
+    476 +                              ExecutionTime = None
+    477 +                              Diagnostics = [||]
+    478 +                              Value =
+    479 +                                if String.IsNullOrWhiteSpace response.Output then
+    480 +                                    None
+    481 +                                else
+    482 +                                    Some response.Output } }
+    483 +
+    484 +                    resultRegistry.Put record
+    485 +
+    486 +                    { response with
+    487 +                        ProducedResultIds = [ record.ResultId ] }
+    488 +
+    489 +            try
+    490 +                let primaryRecords = loadOwnedRecords request.PrimaryResultIds
+    491 +                let secondaryRecords = loadOwnedRecords request.SecondaryResultIds
+    492 +                let response = resultQueryService.Run(request, primaryRecords, secondaryRecords)
+    493 +                materializeResponse response (primaryRecords @ secondaryRecords)
+    494 +            with ex ->
+    495 +                { QueryId = request.QueryId
+    496 +                  IsSuccess = false
+    497 +                  Output = ""
+    498 +                  Errors = ex.Message
+    499 +                  ProducedResultIds = []
+    500 +                  MaterializedJson = None }
+    501 +
+    502          member _.RegisterAgent(agentId: string, ?displayName: string, ?metadata: IDictionary<string, string>) =
+
+  └ src/FSharp.MCP.DevKit.Server/McpResultTools.fs (+127 -0)
+      1 +namespace FSharp.MCP.DevKit.Server
+      2 +
+      3 +open System
+      4 +open System.ComponentModel
+      5 +open System.Text.Json
+      6 +open FSharp.MCP.DevKit.Core
+      7 +open FSharp.MCP.DevKit.Server.McpFsiTools
+      8 +open FSharp.MCP.DevKit.Server.ResultQuery
+      9 +open ModelContextProtocol.Server
+     10 +
+     11 +[<AutoOpen>]
+     12 +module private McpResultToolParsing =
+     13 +
+     14 +    let splitIds (value: string) =
+     15 +        if String.IsNullOrWhiteSpace value then
+     16 +            []
+     17 +        else
+     18 +            value.Split([| '\n'; '\r'; ','; ';' |], StringSplitOptions.RemoveEmptyEntries)
+     19 +            |> Array.map (fun item -> item.Trim())
+     20 +            |> Array.filter (fun item -> not (String.IsNullOrWhiteSpace item))
+     21 +            |> Array.toList
+     22 +
+     23 +    let parseLanguage (value: string option) =
+     24 +        match value |> Option.map (fun item -> item.Trim().ToLowerInvariant()) with
+     25 +        | Some "fsharp"
+     26 +        | Some "fsharpcode" -> FSharpCode
+     27 +        | _ -> BuiltIn
+     28 +
+     29 +    let parseKind (value: string) =
+     30 +        match value.Trim().ToLowerInvariant() with
+     31 +        | "filter" -> Filter
+     32 +        | "map" -> Map
+     33 +        | "exists" -> Exists
+     34 +        | "forall" -> ForAll
+     35 +        | "zip" -> Zip
+     36 +        | "diff"
+     37 +        | "compare" -> Diff
+     38 +        | "groupby" -> GroupBy
+     39 +        | other -> invalidOp $"Unsupported result query kind '{other}'."
+     40 +
+     41 +    let parseMaterialization (value: string option) =
+     42 +        match value |> Option.map (fun item -> item.Trim().ToLowerInvariant()) with
+     43 +        | Some "synthetic"
+     44 +        | Some "syntheticresult"
+     45 +        | Some "result" -> SyntheticResult
+     46 +        | _ -> NoMaterialization
+     47 +
+     48 +[<McpServerToolType>]
+     49 +type McpResultTools =
+     50 +
+     51 +    [<McpServerTool(Name = "get_fsi_result"); Description("Get a single execution result by resultId, scoped to an agent.")>]
+     52 +    static member GetFsiResult
+     53 +        (
+     54 +            fsiService: FsiMcpService,
+     55 +            [<Description("Owning agent id.")>] agentId: string,
+     56 +            [<Description("Target result id.")>] resultId: string
+     57 +        ) : string =
+     58 +        fsiService.TryGetResultForAgent(agentId, resultId)
+     59 +        |> JsonSerializer.Serialize
+     60 +
+     61 +    [<McpServerTool(Name = "list_fsi_results"); Description("List execution results for an agent, optionally narrowed to a specific host/session.")>]
+     62 +    static member ListFsiResults
+     63 +        (
+     64 +            fsiService: FsiMcpService,
+     65 +            [<Description("Owning agent id.")>] agentId: string,
+     66 +            [<Description("Optional host id filter. Requires sessionId when used.")>] ?hostId: string,
+     67 +            [<Description("Optional session id filter. Requires hostId when used.")>] ?sessionId: string
+     68 +        ) : string =
+     69 +        match hostId, sessionId with
+     70 +        | Some resolvedHostId, Some resolvedSessionId ->
+     71 +            let route =
+     72 +                { AgentId = agentId
+     73 +                  HostId = resolvedHostId
+     74 +                  SessionId = resolvedSessionId }
+     75 +
+     76 +            fsiService.ListSessionResults(route)
+     77 +            |> JsonSerializer.Serialize
+     78 +        | None, None ->
+     79 +            fsiService.ListAgentResults(agentId)
+     80 +            |> JsonSerializer.Serialize
+     81 +        | _ -> invalidOp "hostId and sessionId must be provided together."
+     82 +
+     83 +    [<McpServerTool(Name = "query_fsi_results"); Description("Run a built-in result query over one or two result id sets. Best flow for agents: 1. Collect result ids
+          from execution or list_fsi_results. 2. Call query_fsi_results. 3. If materialization is enabled, reuse the returned produced result id in later queries.")>]
+     84 +    static member QueryFsiResults
+     85 +        (
+     86 +            fsiService: FsiMcpService,
+     87 +            [<Description("Owning agent id.")>] agentId: string,
+     88 +            [<Description("Query kind: filter, map, exists, forall, zip, diff, groupBy.")>] kind: string,
+     89 +            [<Description("Primary result ids, separated by newlines, commas, or semicolons.")>] primaryResultIds: string,
+     90 +            [<Description("Optional secondary result ids, separated by newlines, commas, or semicolons.")>] ?secondaryResultIds: string,
+     91 +            [<Description("Optional query text. Examples: isSuccess, value, hostId, backendKind:Net10Remote, valueContains:foo.")>] ?queryText: string,
+     92 +            [<Description("Optional language. builtIn (default) or fsharpCode.")>] ?language: string,
+     93 +            [<Description("Optional materialization mode. none (default) or syntheticResult.")>] ?materialization: string
+     94 +        ) : string =
+     95 +        let request =
+     96 +            { QueryId = Guid.NewGuid().ToString("N")
+     97 +              AgentId = agentId
+     98 +              PrimaryResultIds = splitIds primaryResultIds
+     99 +              SecondaryResultIds = secondaryResultIds |> Option.map splitIds |> Option.defaultValue []
+    100 +              Language = parseLanguage language
+    101 +              Kind = parseKind kind
+    102 +              QueryText = defaultArg queryText ""
+    103 +              Materialization = parseMaterialization materialization }
+    104 +
+    105 +        fsiService.QueryResults(request) |> JsonSerializer.Serialize
+    106 +
+    107 +    [<McpServerTool(Name = "compare_fsi_results"); Description("Compare two ordered result id sets and return a diff-style response.")>]
+    108 +    static member CompareFsiResults
+    109 +        (
+    110 +            fsiService: FsiMcpService,
+    111 +            [<Description("Owning agent id.")>] agentId: string,
+    112 +            [<Description("Primary result ids, separated by newlines, commas, or semicolons.")>] primaryResultIds: string,
+    113 +            [<Description("Secondary result ids, separated by newlines, commas, or semicolons.")>] secondaryResultIds: string,
+    114 +            [<Description("Optional compare field. Defaults to value.")>] ?queryText: string,
+    115 +            [<Description("Optional materialization mode. none (default) or syntheticResult.")>] ?materialization: string
+    116 +        ) : string =
+    117 +        let request =
+    118 +            { QueryId = Guid.NewGuid().ToString("N")
+    119 +              AgentId = agentId
+    120 +              PrimaryResultIds = splitIds primaryResultIds
+    121 +              SecondaryResultIds = splitIds secondaryResultIds
+    122 +              Language = BuiltIn
+    123 +              Kind = Diff
+    124 +              QueryText = defaultArg queryText "value"
+    125 +              Materialization = parseMaterialization materialization }
+    126 +
+    127 +        fsiService.QueryResults(request) |> JsonSerializer.Serialize
+
+  └ src/FSharp.MCP.DevKit.Server/Program.fs (+1 -0)
+    119              .WithResources<ControlPlaneResources>()
+    120 +            .WithResources<ResultResources>()
+    121              .WithResources<FsiResources>()
+
+  └ src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryService.fs (+237 -0)
+      1 +namespace FSharp.MCP.DevKit.Server.ResultQuery
+      2 +
+      3 +open System
+      4 +open System.Text.Json
+      5 +open FSharp.MCP.DevKit.Core
+      6 +
+      7 +type private ResultSummary =
+      8 +    { ResultId: string
+      9 +      RequestId: string
+     10 +      AgentId: string
+     11 +      BackendKind: string
+     12 +      HostId: string
+     13 +      SessionId: string
+     14 +      OperationKind: string
+     15 +      IsSuccess: bool
+     16 +      Value: string option
+     17 +      Output: string
+     18 +      Errors: string
+     19 +      RawErrorType: string option }
+     20 +
+     21 +type private ResultZipRow =
+     22 +    { Index: int
+     23 +      LeftResultId: string option
+     24 +      RightResultId: string option
+     25 +      LeftValue: string option
+     26 +      RightValue: string option
+     27 +      LeftIsSuccess: bool option
+     28 +      RightIsSuccess: bool option
+     29 +      AreEqual: bool option }
+     30 +
+     31 +type private ResultGroupBucket =
+     32 +    { Key: string
+     33 +      ResultIds: string list }
+     34 +
+     35 +type ResultQueryService() =
+     36 +
+     37 +    let serialize value = JsonSerializer.Serialize(value)
+     38 +
+     39 +    let preferredValue (record: FsiExecutionRecord) =
+     40 +        record.Result.Value
+     41 +        |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
+     42 +        |> Option.defaultValue record.Result.Output
+     43 +
+     44 +    let toSummary (record: FsiExecutionRecord) =
+     45 +        { ResultId = record.ResultId
+     46 +          RequestId = record.RequestId
+     47 +          AgentId = record.AgentId
+     48 +          BackendKind = string record.BackendKind
+     49 +          HostId = record.HostId
+     50 +          SessionId = record.SessionId
+     51 +          OperationKind = string record.OperationKind
+     52 +          IsSuccess = record.Result.IsSuccess
+     53 +          Value = record.Result.Value
+     54 +          Output = record.Result.Output
+     55 +          Errors = record.Result.Errors
+     56 +          RawErrorType = record.RawErrorType }
+     57 +
+     58 +    let projectionValue (fieldName: string) (record: FsiExecutionRecord) =
+     59 +        match (fieldName |> string |> fun value -> value.Trim().ToLowerInvariant()) with
+     60 +        | ""
+     61 +        | "value" -> preferredValue record
+     62 +        | "resultid" -> record.ResultId
+     63 +        | "requestid" -> record.RequestId
+     64 +        | "agentid" -> record.AgentId
+     65 +        | "backendkind" -> string record.BackendKind
+     66 +        | "hostid" -> record.HostId
+     67 +        | "sessionid" -> record.SessionId
+     68 +        | "operationkind" -> string record.OperationKind
+     69 +        | "output" -> record.Result.Output
+     70 +        | "errors" -> record.Result.Errors
+     71 +        | "issuccess" -> string record.Result.IsSuccess
+     72 +        | "rawerrortype" -> record.RawErrorType |> Option.defaultValue ""
+     73 +        | "executiontimems" ->
+     74 +            record.Result.ExecutionTime
+     75 +            |> Option.map (fun value -> value.TotalMilliseconds.ToString("0.###"))
+     76 +            |> Option.defaultValue ""
+     77 +        | other -> invalidOp $"Unsupported result projection field '{other}'."
+     78 +
+     79 +    let matchPredicate (queryText: string) (record: FsiExecutionRecord) =
+     80 +        let normalized = queryText.Trim()
+     81 +
+     82 +        match normalized.ToLowerInvariant() with
+     83 +        | ""
+     84 +        | "issuccess" -> record.Result.IsSuccess
+     85 +        | "isfailure" -> not record.Result.IsSuccess
+     86 +        | "hasvalue" -> record.Result.Value |> Option.exists (fun value -> not (String.IsNullOrWhiteSpace value))
+     87 +        | "haserrors" -> not (String.IsNullOrWhiteSpace record.Result.Errors)
+     88 +        | value when value.StartsWith("backendkind:", StringComparison.Ordinal) ->
+     89 +            let expected = normalized.Substring("backendkind:".Length)
+     90 +            String.Equals(string record.BackendKind, expected, StringComparison.OrdinalIgnoreCase)
+     91 +        | value when value.StartsWith("hostid:", StringComparison.Ordinal) ->
+     92 +            let expected = normalized.Substring("hostid:".Length)
+     93 +            String.Equals(record.HostId, expected, StringComparison.OrdinalIgnoreCase)
+     94 +        | value when value.StartsWith("sessionid:", StringComparison.Ordinal) ->
+     95 +            let expected = normalized.Substring("sessionid:".Length)
+     96 +            String.Equals(record.SessionId, expected, StringComparison.OrdinalIgnoreCase)
+     97 +        | value when value.StartsWith("rawerrortype:", StringComparison.Ordinal) ->
+     98 +            let expected = normalized.Substring("rawerrortype:".Length)
+     99 +            record.RawErrorType
+    100 +            |> Option.exists (fun raw -> String.Equals(raw, expected, StringComparison.OrdinalIgnoreCase))
+    101 +        | value when value.StartsWith("valuecontains:", StringComparison.Ordinal) ->
+    102 +            let expected = normalized.Substring("valuecontains:".Length)
+    103 +            preferredValue record.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+    104 +        | value when value.StartsWith("outputcontains:", StringComparison.Ordinal) ->
+    105 +            let expected = normalized.Substring("outputcontains:".Length)
+    106 +            record.Result.Output.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+    107 +        | value when value.StartsWith("errorscontains:", StringComparison.Ordinal) ->
+    108 +            let expected = normalized.Substring("errorscontains:".Length)
+    109 +            record.Result.Errors.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+    110 +        | other -> invalidOp $"Unsupported result predicate '{other}'."
+    111 +
+    112 +    let successResponse queryId output materializedJson =
+    113 +        { QueryId = queryId
+    114 +          IsSuccess = true
+    115 +          Output = output
+    116 +          Errors = ""
+    117 +          ProducedResultIds = []
+    118 +          MaterializedJson = materializedJson }
+    119 +
+    120 +    let failureResponse queryId message =
+    121 +        { QueryId = queryId
+    122 +          IsSuccess = false
+    123 +          Output = ""
+    124 +          Errors = message
+    125 +          ProducedResultIds = []
+    126 +          MaterializedJson = None }
+    127 +
+    128 +    member _.Run(request: ResultQueryRequest, primaryRecords: FsiExecutionRecord list, secondaryRecords: FsiExecutionRecord list) =
+    129 +        try
+    130 +            match request.Language with
+    131 +            | FSharpCode ->
+    132 +                failureResponse request.QueryId "FSharpCode result queries are not implemented yet."
+    133 +            | BuiltIn ->
+    134 +                match request.Kind with
+    135 +                | Exists ->
+    136 +                    let value = primaryRecords |> List.exists (matchPredicate request.QueryText)
+    137 +                    let materializedJson = serialize value
+    138 +                    successResponse request.QueryId (string value) (Some materializedJson)
+    139 +                | ForAll ->
+    140 +                    let value = primaryRecords |> List.forall (matchPredicate request.QueryText)
+    141 +                    let materializedJson = serialize value
+    142 +                    successResponse request.QueryId (string value) (Some materializedJson)
+    143 +                | Map ->
+    144 +                    let values = primaryRecords |> List.map (projectionValue request.QueryText)
+    145 +                    let materializedJson = serialize values
+    146 +                    successResponse request.QueryId $"Mapped {values.Length} result(s)." (Some materializedJson)
+    147 +                | Filter ->
+    148 +                    let values =
+    149 +                        primaryRecords
+    150 +                        |> List.filter (matchPredicate request.QueryText)
+    151 +                        |> List.map toSummary
+    152 +
+    153 +                    let materializedJson = serialize values
+    154 +                    successResponse request.QueryId $"Filtered {values.Length} result(s)." (Some materializedJson)
+    155 +                | Zip ->
+    156 +                    let projectionField =
+    157 +                        if String.IsNullOrWhiteSpace request.QueryText then
+    158 +                            "value"
+    159 +                        else
+    160 +                            request.QueryText
+    161 +
+    162 +                    let length = max primaryRecords.Length secondaryRecords.Length
+    163 +
+    164 +                    let rows =
+    165 +                        [ for index in 0 .. length - 1 do
+    166 +                              let left = primaryRecords |> List.tryItem index
+    167 +                              let right = secondaryRecords |> List.tryItem index
+    168 +                              let leftValue = left |> Option.map (projectionValue projectionField)
+    169 +                              let rightValue = right |> Option.map (projectionValue projectionField)
+    170 +
+    171 +                              yield
+    172 +                                  { Index = index
+    173 +                                    LeftResultId = left |> Option.map (fun value -> value.ResultId)
+    174 +                                    RightResultId = right |> Option.map (fun value -> value.ResultId)
+    175 +                                    LeftValue = leftValue
+    176 +                                    RightValue = rightValue
+    177 +                                    LeftIsSuccess = left |> Option.map (fun value -> value.Result.IsSuccess)
+    178 +                                    RightIsSuccess = right |> Option.map (fun value -> value.Result.IsSuccess)
+    179 +                                    AreEqual =
+    180 +                                        match leftValue, rightValue with
+    181 +                                        | Some lhs, Some rhs -> Some(String.Equals(lhs, rhs, StringComparison.Ordinal))
+    182 +                                        | _ -> None } ]
+    183 +
+    184 +                    let materializedJson = serialize rows
+    185 +                    successResponse request.QueryId $"Zipped {rows.Length} row(s)." (Some materializedJson)
+    186 +                | Diff ->
+    187 +                    let projectionField =
+    188 +                        if String.IsNullOrWhiteSpace request.QueryText then
+    189 +                            "value"
+    190 +                        else
+    191 +                            request.QueryText
+    192 +
+    193 +                    let length = max primaryRecords.Length secondaryRecords.Length
+    194 +
+    195 +                    let rows =
+    196 +                        [ for index in 0 .. length - 1 do
+    197 +                              let left = primaryRecords |> List.tryItem index
+    198 +                              let right = secondaryRecords |> List.tryItem index
+    199 +                              let leftValue = left |> Option.map (projectionValue projectionField)
+    200 +                              let rightValue = right |> Option.map (projectionValue projectionField)
+    201 +                              let areEqual =
+    202 +                                  match leftValue, rightValue with
+    203 +                                  | Some lhs, Some rhs -> Some(String.Equals(lhs, rhs, StringComparison.Ordinal))
+    204 +                                  | None, None -> Some true
+    205 +                                  | _ -> Some false
+    206 +
+    207 +                              if areEqual <> Some true then
+    208 +                                  yield
+    209 +                                      { Index = index
+    210 +                                        LeftResultId = left |> Option.map (fun value -> value.ResultId)
+    211 +                                        RightResultId = right |> Option.map (fun value -> value.ResultId)
+    212 +                                        LeftValue = leftValue
+    213 +                                        RightValue = rightValue
+    214 +                                        LeftIsSuccess = left |> Option.map (fun value -> value.Result.IsSuccess)
+    215 +                                        RightIsSuccess = right |> Option.map (fun value -> value.Result.IsSuccess)
+    216 +                                        AreEqual = areEqual } ]
+    217 +
+    218 +                    let materializedJson = serialize rows
+    219 +                    successResponse request.QueryId $"Diff produced {rows.Length} row(s)." (Some materializedJson)
+    220 +                | GroupBy ->
+    221 +                    let projectionField =
+    222 +                        if String.IsNullOrWhiteSpace request.QueryText then
+    223 +                            "hostId"
+    224 +                        else
+    225 +                            request.QueryText
+    226 +
+    227 +                    let groups =
+    228 +                        primaryRecords
+    229 +                        |> List.groupBy (projectionValue projectionField)
+    230 +                        |> List.map (fun (key, records) ->
+    231 +                            { Key = key
+    232 +                              ResultIds = records |> List.map (fun value -> value.ResultId) })
+    233 +
+    234 +                    let materializedJson = serialize groups
+    235 +                    successResponse request.QueryId $"Grouped into {groups.Length} bucket(s)." (Some materializedJson)
+    236 +        with ex ->
+    237 +            failureResponse request.QueryId ex.Message
+
+  └ src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryTypes.fs (+36 -0)
+     1 +namespace FSharp.MCP.DevKit.Server.ResultQuery
+     2 +
+     3 +type ResultQueryLanguage =
+     4 +    | BuiltIn
+     5 +    | FSharpCode
+     6 +
+     7 +type ResultQueryKind =
+     8 +    | Filter
+     9 +    | Map
+    10 +    | Exists
+    11 +    | ForAll
+    12 +    | Zip
+    13 +    | Diff
+    14 +    | GroupBy
+    15 +
+    16 +type ResultMaterialization =
+    17 +    | NoMaterialization
+    18 +    | SyntheticResult
+    19 +
+    20 +type ResultQueryRequest =
+    21 +    { QueryId: string
+    22 +      AgentId: string
+    23 +      PrimaryResultIds: string list
+    24 +      SecondaryResultIds: string list
+    25 +      Language: ResultQueryLanguage
+    26 +      Kind: ResultQueryKind
+    27 +      QueryText: string
+    28 +      Materialization: ResultMaterialization }
+    29 +
+    30 +type ResultQueryResponse =
+    31 +    { QueryId: string
+    32 +      IsSuccess: bool
+    33 +      Output: string
+    34 +      Errors: string
+    35 +      ProducedResultIds: string list
+    36 +      MaterializedJson: string option }
+
+  └ src/FSharp.MCP.DevKit.Server/ResultResources.fs (+27 -0)
+     1 +namespace FSharp.MCP.DevKit.Server
+     2 +
+     3 +open System.ComponentModel
+     4 +open System.Text.Json
+     5 +open ModelContextProtocol.Server
+     6 +open FSharp.MCP.DevKit.Server.McpFsiTools
+     7 +
+     8 +[<McpServerResourceType>]
+     9 +type ResultResources(fsiService: FsiMcpService) =
+    10 +
+    11 +    [<McpServerResource(Name = "fsiResult", Title = "FSI Result", MimeType = "application/json", UriTemplate = "fsi/results/{resultId}")>]
+    12 +    [<Description("Read a single execution result by resultId.")>]
+    13 +    member _.Result(resultId: string) =
+    14 +        fsiService.TryGetResult(resultId)
+    15 +        |> JsonSerializer.Serialize
+    16 +
+    17 +    [<McpServerResource(Name = "fsiAgentResults", Title = "FSI Agent Results", MimeType = "application/json", UriTemplate = "fsi/agents/{agentId}/results")>]
+    18 +    [<Description("List execution results owned by an agent.")>]
+    19 +    member _.AgentResults(agentId: string) =
+    20 +        fsiService.ListAgentResults(agentId)
+    21 +        |> JsonSerializer.Serialize
+    22 +
+    23 +    [<McpServerResource(Name = "fsiSessionResults", Title = "FSI Session Results", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionI
+        d}/results")>]
+    24 +    [<Description("List execution results under a specific host/session route.")>]
+    25 +    member _.SessionResults(hostId: string, sessionId: string) =
+    26 +        fsiService.ListHostSessionResults(hostId, sessionId)
+    27 +        |> JsonSerializer.Serialize
+
+  └ tests/FSharp.MCP.DevKit.Tests.fsproj (+2 -0)
+    39      <Compile Include="McpControlPlaneToolsTests.fs" />
+    40 +    <Compile Include="McpExecutionToolsTests.fs" />
+    41 +    <Compile Include="McpResultToolsTests.fs" />
+    42      <Compile Include="McpSurfaceTests.fs" />
+
+  └ tests/McpExecutionToolsTests.fs (+113 -0)
+      1 +module McpExecutionToolsTests
+      2 +
+      3 +open System
+      4 +open System.Threading.Tasks
+      5 +open Microsoft.Extensions.Logging.Abstractions
+      6 +open Xunit
+      7 +open FSharp.MCP.DevKit.Server
+      8 +open FSharp.MCP.DevKit.Server.McpFsiTools
+      9 +
+     10 +let private waitForCompletion (service: FsiMcpService) asyncId =
+     11 +    task {
+     12 +        let mutable attempt = 0
+     13 +        let mutable status = service.GetAsyncExecutionStatus(asyncId)
+     14 +
+     15 +        while not status.IsCompleted && attempt < 50 do
+     16 +            do! Task.Delay(100)
+     17 +            attempt <- attempt + 1
+     18 +            status <- service.GetAsyncExecutionStatus(asyncId)
+     19 +
+     20 +        return status
+     21 +    }
+     22 +
+     23 +[<Fact>]
+     24 +let ``McpExecutionTools execute evaluate reset and async on explicit default route work`` () =
+     25 +    task {
+     26 +        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+     27 +        use _cleanup = service :> IDisposable
+     28 +
+     29 +        let! _ = service.ExecuteOperation(FSharp.MCP.DevKit.Core.ExecuteCode, "let routedBootstrap = 40", timeout = TimeSpan.FromSeconds 30.0)
+     30 +
+     31 +        let! execOutput =
+     32 +            McpExecutionTools.ExecuteFSharpCodeRouted(
+     33 +                service,
+     34 +                "default-agent",
+     35 +                "default-host",
+     36 +                "default-session",
+     37 +                "let routedExplicit = 77",
+     38 +                30
+     39 +            )
+     40 +
+     41 +        let! evalOutput =
+     42 +            McpExecutionTools.EvaluateFSharpExpressionRouted(
+     43 +                service,
+     44 +                "default-agent",
+     45 +                "default-host",
+     46 +                "default-session",
+     47 +                "routedExplicit",
+     48 +                30
+     49 +            )
+     50 +
+     51 +        let! addPathOutput =
+     52 +            McpExecutionTools.AddSearchPathRouted(
+     53 +                service,
+     54 +                "default-agent",
+     55 +                "default-host",
+     56 +                "default-session",
+     57 +                "/tmp/routed-explicit",
+     58 +                30
+     59 +            )
+     60 +
+     61 +        let! stateOutput =
+     62 +            McpExecutionTools.GetFsiStateRouted(
+     63 +                service,
+     64 +                "default-agent",
+     65 +                "default-host",
+     66 +                "default-session",
+     67 +                30
+     68 +            )
+     69 +
+     70 +        let! asyncId =
+     71 +            McpExecutionTools.ExecuteFSharpCodeAsyncRouted(
+     72 +                service,
+     73 +                "default-agent",
+     74 +                "default-host",
+     75 +                "default-session",
+     76 +                "let routedAsyncValue = 88",
+     77 +                30
+     78 +            )
+     79 +
+     80 +        let! asyncStatus = waitForCompletion service asyncId
+     81 +
+     82 +        let! resetOutput =
+     83 +            McpExecutionTools.ResetFsiSessionRouted(
+     84 +                service,
+     85 +                "default-agent",
+     86 +                "default-host",
+     87 +                "default-session",
+     88 +                30
+     89 +            )
+     90 +
+     91 +        let! postResetEval =
+     92 +            McpExecutionTools.EvaluateFSharpExpressionRouted(
+     93 +                service,
+     94 +                "default-agent",
+     95 +                "default-host",
+     96 +                "default-session",
+     97 +                "routedExplicit",
+     98 +                30
+     99 +            )
+    100 +
+    101 +        Assert.Contains("routedExplicit", execOutput)
+    102 +        Assert.Equal("77", evalOutput)
+    103 +        Assert.Equal("Search path added successfully: /tmp/routed-explicit", addPathOutput)
+    104 +        Assert.Contains("routedExplicit", stateOutput)
+    105 +        Assert.True(asyncStatus.Exists)
+    106 +        Assert.True(asyncStatus.IsCompleted)
+    107 +        Assert.Equal(Some "default-agent", asyncStatus.AgentId)
+    108 +        Assert.Equal(Some "default-host", asyncStatus.HostId)
+    109 +        Assert.Equal(Some "default-session", asyncStatus.SessionId)
+    110 +        Assert.Equal("FSI session reset successfully", resetOutput)
+    111 +        Assert.Contains("routedExplicit", postResetEval)
+    112 +        Assert.Contains("not defined", postResetEval, StringComparison.OrdinalIgnoreCase)
+    113 +    }
+
+  └ tests/McpResultToolsTests.fs (+82 -0)
+     1 +module McpResultToolsTests
+     2 +
+     3 +open System
+     4 +open System.Text.Json
+     5 +open Microsoft.Extensions.Logging.Abstractions
+     6 +open Xunit
+     7 +open FSharp.MCP.DevKit.Core
+     8 +open FSharp.MCP.DevKit.Server
+     9 +open FSharp.MCP.DevKit.Server.McpFsiTools
+    10 +open FSharp.MCP.DevKit.Server.ResultQuery
+    11 +
+    12 +[<Fact>]
+    13 +let ``McpResultTools get list query compare and resources work`` () =
+    14 +    task {
+    15 +        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    16 +        use _cleanup = service :> IDisposable
+    17 +
+    18 +        let! _ = service.ExecuteOperation(ExecuteCode, "let resultQueryValue = 10", timeout = TimeSpan.FromSeconds 30.0)
+    19 +        let! first = service.ExecuteOperation(EvaluateExpression, "resultQueryValue", timeout = TimeSpan.FromSeconds 30.0)
+    20 +        let! _ = service.ExecuteOperation(ExecuteCode, "let resultQueryValue = 11", timeout = TimeSpan.FromSeconds 30.0)
+    21 +        let! second = service.ExecuteOperation(EvaluateExpression, "resultQueryValue", timeout = TimeSpan.FromSeconds 30.0)
+    22 +
+    23 +        let singleJson = McpResultTools.GetFsiResult(service, "default-agent", first.ResultId)
+    24 +        let listJson = McpResultTools.ListFsiResults(service, "default-agent")
+    25 +
+    26 +        let mapJson =
+    27 +            McpResultTools.QueryFsiResults(
+    28 +                service,
+    29 +                "default-agent",
+    30 +                "map",
+    31 +                $"{first.ResultId}\n{second.ResultId}",
+    32 +                queryText = "value"
+    33 +            )
+    34 +
+    35 +        let compareJson =
+    36 +            McpResultTools.CompareFsiResults(
+    37 +                service,
+    38 +                "default-agent",
+    39 +                first.ResultId,
+    40 +                second.ResultId,
+    41 +                queryText = "value"
+    42 +            )
+    43 +
+    44 +        let filterMaterializedJson =
+    45 +            McpResultTools.QueryFsiResults(
+    46 +                service,
+    47 +                "default-agent",
+    48 +                "filter",
+    49 +                $"{first.ResultId}\n{second.ResultId}",
+    50 +                queryText = "isSuccess",
+    51 +                materialization = "syntheticResult"
+    52 +            )
+    53 +
+    54 +        let resultResource = ResultResources(service)
+    55 +        let resultResourceJson = resultResource.Result(first.ResultId)
+    56 +        let agentResultsJson = resultResource.AgentResults("default-agent")
+    57 +        let sessionResultsJson = resultResource.SessionResults("default-host", "default-session")
+    58 +
+    59 +        let single = JsonSerializer.Deserialize<FsiExecutionRecord option>(singleJson)
+    60 +        let listed = JsonSerializer.Deserialize<FsiExecutionRecord list>(listJson)
+    61 +        let mapResponse = JsonSerializer.Deserialize<ResultQueryResponse>(mapJson)
+    62 +        let compareResponse = JsonSerializer.Deserialize<ResultQueryResponse>(compareJson)
+    63 +        let materializedResponse = JsonSerializer.Deserialize<ResultQueryResponse>(filterMaterializedJson)
+    64 +        let synthetic = materializedResponse.ProducedResultIds |> List.head |> fun resultId -> service.TryGetResult(resultId)
+    65 +
+    66 +        Assert.True(single.IsSome)
+    67 +        Assert.Equal(first.ResultId, single.Value.ResultId)
+    68 +        Assert.True(listed |> List.exists (fun value -> value.ResultId = first.ResultId))
+    69 +        Assert.True(listed |> List.exists (fun value -> value.ResultId = second.ResultId))
+    70 +        Assert.True(mapResponse.IsSuccess)
+    71 +        Assert.Equal("[\"10\",\"11\"]", mapResponse.MaterializedJson.Value)
+    72 +        Assert.True(compareResponse.IsSuccess)
+    73 +        Assert.Contains(first.ResultId, compareResponse.MaterializedJson.Value)
+    74 +        Assert.Contains(second.ResultId, compareResponse.MaterializedJson.Value)
+    75 +        Assert.True(materializedResponse.IsSuccess)
+    76 +        Assert.Single(materializedResponse.ProducedResultIds)
+    77 +        Assert.True(synthetic.IsSome)
+    78 +        Assert.Equal(ResultQuery, synthetic.Value.OperationKind)
+    79 +        Assert.Contains(first.ResultId, resultResourceJson)
+    80 +        Assert.Contains(first.ResultId, agentResultsJson)
+    81 +        Assert.Contains(second.ResultId, sessionResultsJson)
+    82 +    }
+
+  └ tests/doc/WBS.md (+10 -0)
+    168  - 本 WBS 已擴充覆蓋到 `WP08` 第一階段的 control-plane MCP surface。
+    169 +
+    170 +## WP-T14 Routed Execution And Result Plane Tests
+    171 +
+    172 +驗證 `WP08` 第二階段與 `WP09` 第一階段的 routed execution / result plane。
+    173 +
+    174 +| ID | 工作項目 | 產出 | 驗收標準 | 進度 |
+    175 +| --- | --- | --- | --- | --- |
+    176 +| TT34 | 新增 `McpExecutionToolsTests.fs` | explicit route tool 測試 | routed execute/evaluate/reset/async 可回歸 | done |
+    177 +| TT35 | 新增 `McpResultToolsTests.fs` | result tool/resource 測試 | get/list/query/compare/materialization 可回歸 | done |
+    178 +| TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | todo |
+
+─ Worked for 3m 25s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 骨架都補進去了，現在先用 build/test 把型別與編譯順序問題收斂。這一輪最可能出錯的點是新 ResultQuery module 的序列化型別、以及 McpFsiTools 新方法的 F# option/overload 細節。
+
+• Waited for background terminal · dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+
+• Ran dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +129 lines
+
+    Time Elapsed 00:00:16.21
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    … +56 lines
+    spaces or tupled, and arguments involving function or method applications should be parenthesized [/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/
+    FSharp.MCP.DevKit.Server.fsproj]
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試先幫我抓到真正的語法錯了，不是架構問題。現在是在 ResultQueryService.fs 的一個 F# 呼叫括號細節，我先修這個，再重新跑 dotnet test。
+
+• Explored
+  └ Read ResultQueryService.fs
+
+• Edited src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryService.fs (+1 -1)
+    102              let expected = normalized.Substring("valuecontains:".Length)
+    103 -            preferredValue record.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+    103 +            (preferredValue record).IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+    104          | value when value.StartsWith("outputcontains:", StringComparison.Ordinal) ->
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    … +53 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+• Explored
+  └ Read McpResultToolsTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試主體已綠燈，現在只剩一個測試檔的小 warning 和一次 dotnet build 的 SDK crash。我要先把 warning 清掉，再用單執行緒重跑 solution build，確認是不是前一輪的暫時性 crash。
+
+• Edited tests/McpResultToolsTests.fs (+1 -1)
+    75          Assert.True(materializedResponse.IsSuccess)
+    76 -        Assert.Single(materializedResponse.ProducedResultIds)
+    76 +        Assert.Single(materializedResponse.ProducedResultIds) |> ignore
+    77          Assert.True(synthetic.IsSome)
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +53 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+• Ran dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +135 lines
+
+    Time Elapsed 00:00:09.99
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這段功能已經實際跑起來了：dotnet test -f net10.0 通過，dotnet build FSharp.MCP.DevKit.Async.sln -m:1 也通過。剩下是把 WBS/log 收尾、跑 check.fsx，然後我會再 commit + push。
+
+• Ran date -u +%Y%m%d%H%M%S
+  └ 20260322140703
+
+• Ran git status --short
+  └  M doc/WBS.md
+     M src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+    … +11 lines
+    ?? tests/McpExecutionToolsTests.fs
+    ?? tests/McpResultToolsTests.fs
+
+• Explored
+  └ Read 00015.txt
+
+• Edited 4 files (+32 -2)
+  └ doc/WBS.md (+1 -1)
+    202  | T36 | 新增 result tools | `get/list/query/compare` | 已新增 `get/list/query/compare` result tools，且支援 synthetic result materialization | done |
+    203 -| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`, `fsi/hosts/*`, `fsi/path-mappings` 已可讀 | done |
+    203 +| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`、`fsi/hosts/*`、`fsi/results/*`、`fsi/path-mappings` 已可讀 | done |
+    204  | T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | done |
+
+  └ log/20260322161230.WP08第二段與WP09第一段完成.00001.00001.log (+27 -0)
+     1 +背景：`WP08` 第一段已完成 control-plane MCP surface。這一輪要把 routed execution 與 result plane 真正做成 agent 可直接使用的 MCP interface。
+     2 +目標：完成 routed execution tools、built-in result query service、result tools/resources，並以測試與 build 驗證收尾。
+     3 +計畫步驟：
+     4 +1. 新增 `McpExecutionTools.fs`，提供 explicit route tools。
+     5 +2. 新增 `ResultQueryTypes.fs` / `ResultQueryService.fs`，先支援 built-in `exists/forall/map/filter/zip/diff/groupBy`。
+     6 +3. 更新 `FsiMcpService`，提供 agent-scoped result get/list/query 與 synthetic result materialization。
+     7 +4. 新增 `McpResultTools.fs` / `ResultResources.fs`。
+     8 +5. 補 `McpExecutionToolsTests.fs` / `McpResultToolsTests.fs`，執行 build/test。
+     9 +執行命令/參數：
+    10 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+    11 +- `dotnet build FSharp.MCP.DevKit.Async.sln -m:1`
+    12 +結果：
+    13 +- 已新增 `src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs`
+    14 +- 已新增 `src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryTypes.fs`
+    15 +- 已新增 `src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryService.fs`
+    16 +- 已新增 `src/FSharp.MCP.DevKit.Server/McpResultTools.fs`
+    17 +- 已新增 `src/FSharp.MCP.DevKit.Server/ResultResources.fs`
+    18 +- `FsiMcpService` 已補 `TryGetResultForAgent`、`ListAgentResults`、`ListHostSessionResults`、`QueryResults`
+    19 +- `Program.fs` 已註冊 `ResultResources`
+    20 +- 已新增 `tests/McpExecutionToolsTests.fs`
+    21 +- 已新增 `tests/McpResultToolsTests.fs`
+    22 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+    23 +- `dotnet build FSharp.MCP.DevKit.Async.sln -m:1` 通過
+    24 +根因判讀：control-plane 只做到 create/list 仍不夠，agent 還是缺兩個關鍵面向。第一是顯式 route 的 execution surface，否則 multi-agent/multi-host/multi-session 只是 reg
+        istry 能力；第二是 result plane，否則 `asyncId -> ResultId` 只能追蹤，不能進一步做比較、分組、篩選與 materialization。這一輪把兩者補上後，MCP server 才開始接近真正可
+        操作的 production control plane。
+    25 +下一步：進 `WP09` 第二段，評估是否要補 `FSharpCode` result query，否則先做 smoke/regression 與 closeout。
+    26 +關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs、src/FSharp.MCP.DevKit.Server/McpResultTools.fs、src/FSharp.MCP.DevK
+        it.Server/ResultResources.fs、src/FSharp.MCP.DevKit.Server/ResultQuery/*、tests/McpExecutionToolsTests.fs、tests/McpResultToolsTests.fs
+    27 +prompt/上下文摘要：在 `WP08` control-plane surface 已 commit/push/check 後，繼續補 routed execution 與 result plane。
+
+  └ log/20260322161230.WP08第二段與WP09第一段完成.op_log (+3 -0)
+    1 +[2026-03-22T16:12:30Z] Completed routed execution MCP tools and result-plane service/tools/resources.
+    2 +[2026-03-22T16:13:18Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 passed.
+    3 +[2026-03-22T16:14:02Z] dotnet build FSharp.MCP.DevKit.Async.sln -m:1 passed after rerunning serial build.
+
+  └ tests/doc/WBS.md (+1 -1)
+    177  | TT35 | 新增 `McpResultToolsTests.fs` | result tool/resource 測試 | get/list/query/compare/materialization 可回歸 | done |
+    178 -| TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | todo |
+    178 +| TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | done |
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這一段已經可提交了。我現在把 routed execution/result plane 連同 WBS、log、測試與新 note 一起 commit/push，然後再跑一次 check.fsx 把 SOP 收乾淨。
+
+• Ran git add -A && git commit -m "feat: add routed execution and result query surface" && git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       9227614..3b95c85  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Ran CODEX_THREAD_ID=20260322-wp08-wp09-check dotnet fsi --exec /workspace/home/mcp/FSharp.MCP.DevKit/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  │ --repo /workspace/home/mcp/FSharp.MCP.DevKit
+  └ SessionId   : 20260322-wp08-wp09-check
+    State file  : /workspace/home/codex/20260322-wp08-wp09-check.state.json
+    … +15 lines
+    [PASS] git_clean - repo 工作樹乾淨
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+• Updated Plan
+  └ WP08 second phase and core result plane were implemented, tested, committed, pushed, and checked clean.
+    ✔ Add routed execution MCP tools and wire them into server project
+    ✔ Add result query types/service/tools/resources and expose via FsiMcpService
+    ✔ Add tests, update WBS/logs, run build/test/check
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這一段已完成，而且已經 commit + push + check 收乾淨。
+
+  最新提交是 3b95c85，已推到 origin/20260322_001.multi-agent-fsi-platform。我補了 routed execution 與 result plane：新增 src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs、
+  src/FSharp.MCP.DevKit.Server/McpResultTools.fs、src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryTypes.fs、src/FSharp.MCP.DevKit.Server/ResultQuery/
+  ResultQueryService.fs、src/FSharp.MCP.DevKit.Server/ResultResources.fs，並把 src/FSharp.MCP.DevKit.Server/McpFsiTools.fs 補上 agent-scoped result get/list/query 與
+  synthetic result materialization，Program 也已註冊新 resource，在 src/FSharp.MCP.DevKit.Server/Program.fs。
+
+  測試也補齊了：tests/McpExecutionToolsTests.fs、tests/McpResultToolsTests.fs。驗證結果是：
+
+  - dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過
+  - dotnet build FSharp.MCP.DevKit.Async.sln -m:1 通過
+  - check.fsx 通過，PASS=15 WARN=0 FAIL=0
+
+  WBS 與 SOP 紀錄也已更新在 doc/WBS.md、tests/doc/WBS.md、log/20260322161230.WP08第二段與WP09第一段完成.00001.00001.log。目前 repo 是乾淨的。下一個合理目標是 T41 的
+  FSharpCode result query，或先做 WP10 smoke/regression。
+
+
+› 測試專案加個 README.md，用表格表列每個測試的:
+  1. 前準備
+  2. 測試目的
+  3. 測試方法
+  4. loop 內準備 (optional)
+  5. loop 內 post test op (optional)
+  6. post loop op (optional)
+  7. end test/clean
+
+  的虛擬碼或者概念描述
+
+
+• 我先盤點 tests/ 裡所有實際測試案例，然後補一份 tests/README.md，用你指定的欄位做表格化描述，不先動主線程式。
+
+• Ran rg -n "\[<Fact>\]|let ``" tests/*.fs
+  └ tests/ControlPlaneTests.fs:8:[<Fact>]
+    tests/ControlPlaneTests.fs:9:let ``DefaultRouting creates default agent host and session when route is omitted`` () =
+    … +281 lines
+    tests/SmartSymbolDetectionServiceTests.fs:5:[<Fact>]
+    tests/SmartSymbolDetectionServiceTests.fs:6:let ``Basic test placeholder`` () = Assert.True(true)
+
+• Explored
+  └ List tests
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我會把 README 寫成「每個實際 [<Fact>] 一列」，欄位就用你指定的 8 欄。async 類測試我會把 polling/wait loop 另外填進 loop 欄，其餘沒有 loop 的就明寫 無。
+
+• Added tests/README.md (+123 -0)
+      1 +# FSharp.MCP.DevKit.Tests
+      2 +
+      3 +本文件用表格描述 `tests/` 內每個測試案例的測試意圖與大致流程。
+      4 +
+      5 +說明：
+      6 +- `loop 內準備` 只在測試本身有 polling / repeated probe / batch iteration 時填寫。
+      7 +- `loop 內 post test op` 只在每次迴圈後有額外檢查或狀態更新時填寫。
+      8 +- 沒有對應內容時以 `無` 表示。
+      9 +
+     10 +## BackendSelectorTests.fs
+     11 +
+     12 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     13 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     14 +| `Resolve maps InProcHost to InProc backend` | 建立只註冊 `InProc` 的 fake backend selector | 驗證 `InProcHost -> InProc` mapping | 呼叫 `selector.Resolve(InProcHos
+         t)` 並比對 `BackendKind` | 無 | 無 | 斷言回傳 backend 為 `InProc` | 無 |
+     15 +| `Resolve maps NetFxHost to NetFxRemote backend` | 建立只註冊 `NetFxRemote` 的 fake backend selector | 驗證 `NetFxHost -> NetFxRemote` mapping | 呼叫 `selector.Reso
+         lve(NetFxHost)` | 無 | 無 | 斷言回傳 backend 為 `NetFxRemote` | 無 |
+     16 +| `Resolve maps Net10Host to Net10Remote backend` | 建立只註冊 `Net10Remote` 的 fake backend selector | 驗證 `Net10Host -> Net10Remote` mapping | 呼叫 `selector.Reso
+         lve(Net10Host)` | 無 | 無 | 斷言回傳 backend 為 `Net10Remote` | 無 |
+     17 +| `Resolve throws when no backend is registered for host kind` | 建立空的 selector | 驗證缺 backend 時會失敗而不是 silent fallback | 呼叫 `selector.Resolve(Net10Host
+         )` 並捕捉例外 | 無 | 無 | 斷言 `InvalidOperationException` | 無 |
+     18 +
+     19 +## BackendAdaptersTests.fs
+     20 +
+     21 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     22 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     23 +| `toFsiResult maps diagnostics and value from pipe response` | 組一個含 `diagnostics/value/executionTime` 的 `PipeResponse` | 驗證 pipe response 會被正確標準化成 `F
+         siResult` | 呼叫 `BackendAdapters.toFsiResult` | 無 | 無 | 斷言 diagnostics/value/executionTime 都被保留 | 無 |
+     24 +| `inferRawErrorType returns None for successful response` | 組 `IsSuccess=true` 的 response | 驗證成功回應不應被標成 raw error | 呼叫 `inferRawErrorType` | 無 | 無
+         | 斷言結果為 `None` | 無 |
+     25 +| `inferRawErrorType returns UnknownRemoteError for blank error text` | 組 `IsSuccess=false` 且 `Errors=""` 的 response | 驗證空錯誤訊息的 fallback 類型 | 呼叫 `infe
+         rRawErrorType` | 無 | 無 | 斷言結果為 `UnknownRemoteError` | 無 |
+     26 +| `inferRawErrorType returns RemoteExecutionError for explicit error text` | 組 `IsSuccess=false` 且有 `Errors` 的 response | 驗證顯式錯誤訊息的分類 | 呼叫 `inferRaw
+         ErrorType` | 無 | 無 | 斷言結果為 `RemoteExecutionError` | 無 |
+     27 +| `toExecutionRecord preserves routing and backend metadata` | 組 `ExecutionRequest`、`FsiResult` 與 metadata | 驗證 record 產生時不會遺失 route/backend/result metad
+         ata | 呼叫 `toExecutionRecord` | 無 | 無 | 斷言 `AgentId/HostId/SessionId/BackendKind/RawErrorType/ResultId` | 無 |
+     28 +
+     29 +## ControlPlaneTests.fs
+     30 +
+     31 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     32 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     33 +| `DefaultRouting creates default agent host and session when route is omitted` | 建立空的 `agent/host/session registry` | 驗證 implicit route 會自動補 default agent
+         /host/session | 呼叫 `DefaultRouting.resolve ... None` | 無 | 無 | 斷言 default route 與 default records 都被建立 | 無 |
+     34 +| `DefaultRouting returns explicit route when agent host and session are valid` | 預先註冊合法的 agent/host/session | 驗證顯式 route 不會被改寫 | 呼叫 `DefaultRoutin
+         g.resolve ... (Some route)` | 無 | 無 | 斷言回傳 route 與輸入相同 | 無 |
+     35 +| `DefaultRouting rejects route when host belongs to another agent` | 建立 agent 與跨 agent host/session 組合 | 驗證 ownership 檢查會擋錯誤 route | 呼叫 `DefaultRout
+         ing.resolve` 並捕捉例外 | 無 | 無 | 斷言拋出 `InvalidOperationException` | 無 |
+     36 +
+     37 +## ExecutionRouterTests.fs
+     38 +
+     39 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     40 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     41 +| `ExecutionRouter persists default-route results and updates session metadata` | 建立 registries、`InProcBackend`、`ExecutionRouter` | 驗證 default routed execution
+          會寫入 `ResultRegistry/SessionRegistry` | 執行 `AddSearchPath` request | 無 | 無 | 斷言 result 被存下且 session metadata 更新 | 無 |
+     42 +| `ExecutionRouter preserves explicit route and stores multiple execution records` | 建立 explicit agent/host/session 與 router | 驗證 explicit route 下多次 executio
+         n 都能被追蹤 | 先 `ExecuteCode` 再 `EvaluateExpression` | 無 | 無 | 斷言兩筆 result 均存在且 session `LastExecutionAt` 更新 | 無 |
+     43 +
+     44 +## FsiMcpServiceTests.fs
+     45 +
+     46 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     47 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     48 +| `FsiMcpService executes through default routed in-proc path and stores results` | 建立 `FsiMcpService(enableRemoteClient=false)` | 驗證 service 主路徑會透過 routed
+          in-proc backend 執行並存 result | 先 `ExecuteCode` 再 `EvaluateExpression` | 無 | 無 | 斷言 `ListSessionResults` 能看到 result | `Dispose service` |
+     49 +| `FsiMcpService async queue completes and exposes status` | 建立 service；enqueue async code | 驗證 async queue 能完成且狀態含 metadata/resultId | enqueue 後輪詢 `G
+         etAsyncExecutionStatus`，再同步 eval | 每輪讀一次 async status | 若未完成則 `Task.Delay(100)` 再重試 | 完成後斷言 `ResultId/AgentId/HostId/SessionId` | `Dispose serv
+         ice` |
+     50 +
+     51 +## InProcBackendTests.fs
+     52 +
+     53 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     54 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     55 +| `InProcBackend isolates state between sessions` | 建立單一 `InProcBackend` 與兩條不同 session route | 驗證 session state 隔離 | 在 session A 定義值，分別在 A/B eva
+         luate | 無 | 無 | 斷言 A 成功、B 失敗 | backend 由 GC 回收 |
+     56 +| `InProcBackend reset clears session state` | 建立 backend 與單一 session route | 驗證 reset 會清掉 session binding | 先 define，再 eval，reset 後再 eval | 無 | 無
+         | 斷言 reset 前成功、reset 後失敗 | backend 由 GC 回收 |
+     57 +| `InProcBackend returns execution metadata and session state` | 建立 backend 與單一 session route | 驗證 execution metadata 與 session snapshot | 執行 `AddSearchPat
+         h` 後讀 `GetSessionState` | 無 | 無 | 斷言 `BackendKind/ResultId/route/searchPaths/status` | backend 由 GC 回收 |
+     58 +
+     59 +## McpControlPlaneToolsTests.fs
+     60 +
+     61 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     62 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     63 +| `McpControlPlaneTools register host session and health flow works` | 建立 fake `ProcSupervisorClient`、fake `FsiSupervisorClient`、`FsiMcpService` | 驗證 MCP contr
+         ol-plane tool surface 可串起 agent/host/session/health | 依序呼叫 `register/create/list/health` tools 並反序列化輸出 | 無 | 無 | 斷言 agent/host/session/health paylo
+         ad 正確 | `Dispose service` |
+     64 +| `ControlPlaneResources expose registered host and session` | 建立同上 fake clients/service，先建立 agent/host/session | 驗證 control-plane resources 能正確讀到註冊
+         狀態 | 呼叫 `ControlPlaneResources` 各 resource method | 無 | 無 | 斷言 agent/host/session/path mappings JSON 內容 | `Dispose service` |
+     65 +
+     66 +## McpExecutionToolsTests.fs
+     67 +
+     68 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     69 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     70 +| `McpExecutionTools execute evaluate reset and async on explicit default route work` | 建立 `FsiMcpService(enableRemoteClient=false)`，先 bootstrap default route se
+         ssion | 驗證 explicit route MCP execution tools 可用，且 async/reset 行為一致 | 依序呼叫 routed execute/evaluate/add-path/get-state/async/reset/evaluate | 每輪讀 asy
+         nc status | 若未完成則 `Task.Delay(100)` 再輪詢 | 完成後斷言 async metadata 與 reset 後 state 變化 | `Dispose service` |
+     71 +
+     72 +## McpResultToolsTests.fs
+     73 +
+     74 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     75 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     76 +| `McpResultTools get list query compare and resources work` | 建立 `FsiMcpService(enableRemoteClient=false)`，產生兩筆可比較 result | 驗證 result get/list/query/com
+         pare/resource/materialization 一次到位 | 先產生 result，呼叫 `get/list/query/compare` tools，再呼叫 result resources | 無 | 無 | 斷言 map/diff/materialized synthetic
+          result 與 resources 內容 | `Dispose service` |
+     77 +
+     78 +## McpSurfaceTests.fs
+     79 +
+     80 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     81 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     82 +| `FSharpInteractiveTools execute evaluate add-path and state use routed service` | 建立 `FsiMcpService(enableRemoteClient=false)` | 驗證舊工具 surface 仍走新的 rout
+         ed service | 依序呼叫 `Execute/Evaluate/AddPath/GetState` | 無 | 無 | 斷言舊工具回傳值與 routed service 一致 | `Dispose service` |
+     83 +| `FSharpInteractiveTools detailed error includes routed execution metadata` | 建立 service，送入必定失敗的 code | 驗證 detailed error 會帶 execution metadata | 呼叫
+          `ExecuteFSharpCodeDetailed` | 無 | 無 | 斷言訊息含 `BackendKind/SessionId` 等欄位 | `Dispose service` |
+     84 +| `Fsi async status resource reflects async tool completion` | 建立 service，呼叫 async tool | 驗證 async MCP resource 會反映 async tool 完成狀態 | enqueue 後透過 `P
+         rogram.FsiResources.AsyncStatus` 取 status | 每輪讀一次 async status | 若未完成則 `Task.Delay(100)` 再重試 | 斷言 `Exists/IsCompleted/ResultId/route metadata` | `Dis
+         pose service` |
+     85 +
+     86 +## Net10HostBackendTests.fs
+     87 +
+     88 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     89 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     90 +| `Net10HostBackend maps nuget and path operations into supervisor execution requests` | 建立 fake host registry、fake `IFsiSupervisorClient`、fake `IProcSupervisorC
+         lient` | 驗證 `.NET 10` backend 會把高階 operation 轉成 supervisor exec request | 執行 `ReferenceNuget` 與 `AddSearchPath` | 無 | 無 | 斷言 request 內 `Code/Refs/Loa
+         ds/SessionId` 映射正確 | 無 |
+     91 +| `Net10HostBackend maps session snapshot into SessionRecord` | 建立 fake host 與 fake session snapshot client | 驗證 supervisor session snapshot 會被轉為 `SessionRe
+         cord` | 呼叫 `GetSessionState` | 無 | 無 | 斷言 `Status/Refs/Loads/SearchPaths/Variables` 正確 | 無 |
+     92 +| `Net10HostBackend health check and restart delegate to ProcSupervisor` | 建立 fake proc client 與 fake fsi client | 驗證 health/restart 由 `ProcSupervisor` 負責 |
+         呼叫 `HealthCheck` 與 `RestartHost` | 無 | 無 | 斷言 health snapshot 與 restart delegation 正確 | 無 |
+     93 +
+     94 +## NetFxHostBackendTests.fs
+     95 +
+     96 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+     97 +| --- | --- | --- | --- | --- | --- | --- | --- |
+     98 +| `NetFxHostBackend forwards execute requests with explicit route` | 建立 fake remote client 與 `NetFxHostBackend` | 驗證 netfx backend 會把 explicit route 送到 remo
+         te request | 執行一筆 `ExecuteCode` request | 無 | 無 | 斷言 remote command 的 `Route/CommandType/Payload` | 無 |
+     99 +| `NetFxHostBackend maps remote session snapshot into SessionRecord` | 建立 fake remote 回傳 session state | 驗證 remote session snapshot 會被轉成 `SessionRecord` |
+         呼叫 `GetSessionState` | 無 | 無 | 斷言 `Status/Refs/Loads/SearchPaths/Variables` | 無 |
+    100 +| `NetFxHostBackend maps result query and host commands to parent-level remote commands` | 建立 fake remote client | 驗證 `ResultQuery/RestartHost/HealthCheck` 走 pa
+         rent-level command | 依序送 `ResultQuery`、`RestartHost`、`HealthCheck` | 無 | 無 | 斷言 command type 對應 `RESULT_OP/RESTART/PING` | 無 |
+    101 +| `NetFxHostBackend reset session uses RESET command with target route` | 建立 fake remote client | 驗證 `ResetSession` 不會丟 route | 呼叫 `ResetSession` | 無 | 無
+         | 斷言送出的 command type 為 `RESET` 且 route 正確 | 無 |
+    102 +
+    103 +## ProvisioningServicesTests.fs
+    104 +
+    105 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+    106 +| --- | --- | --- | --- | --- | --- | --- | --- |
+    107 +| `HostProvisioningService rejects explicit inproc host creation` | 建立 registries 與 fake proc client | 驗證 explicit provisioning 不允許 `InProcHost` | 呼叫 `Crea
+         teHost(... InProcHost ...)` 並捕捉例外 | 無 | 無 | 斷言拋出 `InvalidOperationException` | 無 |
+    108 +| `HostProvisioningService starts proc and stores ready net10 host` | 建立 fake proc client 會回 ready snapshot | 驗證 `CreateHost` 會啟動 proc 並更新 registry | 呼
+         叫 `CreateHost(... Net10Host ...)` | 無 | 無 | 斷言 host registry 存到 ready host 與 proc metadata | 無 |
+    109 +| `SessionProvisioningService bootstraps missing session through backend execute` | 建立 fake backend，第一次查 session 回 `Missing`，之後回 `Ready` | 驗證缺 session
+          時會先 bootstrap 再 hydration | 呼叫 `CreateSession` | 無 | 無 | 斷言 backend execute 被呼叫、session registry 被更新 | 無 |
+    110 +
+    111 +## RemoteMessageContractTests.fs
+    112 +
+    113 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+    114 +| --- | --- | --- | --- | --- | --- | --- | --- |
+    115 +| `FsiRemoteCommandRequest carries route and timeout` | 建立完整 `FsiRemoteCommandRequest` | 驗證 remote request DTO 欄位完整 | 直接檢查 DTO 屬性值 | 無 | 無 | 斷言
+         `Route/TimeoutMs/UsePackageTargets` | 無 |
+    116 +| `FsiRemoteResult carries value and raw error type` | 建立完整 `FsiRemoteResult` | 驗證 remote result DTO 能承載 value/raw error type | 直接檢查 DTO 屬性值 | 無 |
+         無 | 斷言 `Value/RawErrorType/ExecutionTimeMs` | 無 |
+    117 +| `FsiRemoteCommandResponse carries host and session ids` | 建立完整 `FsiRemoteCommandResponse` | 驗證 remote response DTO 有 host/session metadata | 直接檢查 DTO 屬
+         性值 | 無 | 無 | 斷言 `HostId/SessionId/SessionState` | 無 |
+    118 +
+    119 +## SmartSymbolDetectionServiceTests.fs
+    120 +
+    121 +| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+    122 +| --- | --- | --- | --- | --- | --- | --- | --- |
+    123 +| `Basic test placeholder` | 無 | 保留最小 smoke placeholder，確認測試專案基本可執行 | 直接 `Assert.True(true)` | 無 | 無 | 無 | 無 |
+
+─ Worked for 1m 24s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已新增 tests/README.md。
+
+  內容是按「每個 [<Fact>] 測試案例一列」整理，欄位包含：
+
+  - 前準備
+  - 測試目的
+  - 測試方法
+  - loop 內準備
+  - loop 內 post test op
+  - post loop op
+  - end test/clean
+
+  我也把 async/polling 類測試的 loop 流程另外標出來，沒有 loop 的案例就明寫 無。這次只補文件，沒有改測試程式，也沒有重跑 dotnet test。
