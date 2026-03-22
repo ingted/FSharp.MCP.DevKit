@@ -1,0 +1,4 @@
+[2026-03-22T14:01:55Z] Started WP08 control-plane MCP surface implementation.
+[2026-03-22T14:03:22Z] Added McpControlPlaneTools and ControlPlaneResources.
+[2026-03-22T14:05:10Z] Wired ControlPlaneResources into Program.fs MCP registration.
+[2026-03-22T14:06:41Z] Added McpControlPlaneToolsTests and reran dotnet test net10.0 successfully.

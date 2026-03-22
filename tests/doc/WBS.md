@@ -138,6 +138,18 @@
 | TT29 | 擴充 `McpSurfaceTests.fs` | resource metadata assert | resource 讀取可看到 `ResultId/route` | done |
 | TT30 | 重新執行 `dotnet test -f net10.0` | 測試結果 | async metadata 補齊後仍全數通過 | done |
 
+## WP-T13 Control-Plane MCP Surface Tests
+
+目標：
+
+驗證 `WP08` 第一階段的 control-plane tools 與 resources。
+
+| ID | 工作 | 產出 | 驗收 | 進度 |
+|---|---|---|---|---|
+| TT31 | 新增 `McpControlPlaneToolsTests.fs` | register/create/list/health 測試 | control-plane tool surface 可回歸 | done |
+| TT32 | 補 control-plane resources 測試 | agent/host/session/path-mappings resource 測試 | resource surface 可回歸 | done |
+| TT33 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08` 第一階段後仍全數通過 | done |
+
 ## 執行順序
 
 1. WP-T01
@@ -153,4 +165,4 @@
 
 ## 備註
 
-- 本 WBS 已擴充覆蓋到 `WP07` 的 async metadata/result linkage 可觀測性。
+- 本 WBS 已擴充覆蓋到 `WP08` 第一階段的 control-plane MCP surface。

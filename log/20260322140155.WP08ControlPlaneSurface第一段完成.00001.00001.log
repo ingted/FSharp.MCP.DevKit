@@ -1,0 +1,20 @@
+背景：`WP06/WP07` 已完成 backend/provisioning 與 async metadata，接下來要把既有 control-plane 能力正式暴露成 MCP tools/resources，讓 agent 不必再靠隱式 route 或直接碰 service internals。
+目標：完成 `McpControlPlaneTools`、`ControlPlaneResources` 與 `Program.fs` 的 wiring，並補對應測試。
+計畫步驟：
+1. 在 `Server` 新增 `McpControlPlaneTools.fs`，提供 `register_fsi_agent`、`create_fsi_host`、`list_fsi_hosts`、`create_fsi_session`、`list_fsi_sessions`、`get_fsi_host_health`、`get_fsi_path_mappings`。
+2. 在 `Server` 新增 `ControlPlaneResources.fs`，提供 `fsi/agents/{agentId}`、`fsi/hosts/{hostId}`、`fsi/hosts/{hostId}/sessions`、`fsi/hosts/{hostId}/sessions/{sessionId}`、`fsi/path-mappings`。
+3. 更新 `Program.fs` 註冊 resource。
+4. 新增 `McpControlPlaneToolsTests.fs`，執行 `dotnet test -f net10.0`。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+結果：
+- 已新增 `src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs`
+- `FsiMcpService` 已暴露 `RegisterAgent`、`TryGetAgent`、`ListAgents`、`TryGetHost`、`TryGetSession`、`ListPathMappings`、`GetHostHealth`
+- `Program.fs` 已註冊 `ControlPlaneResources`
+- 已新增 `tests/McpControlPlaneToolsTests.fs`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+根因判讀：現有 control-plane 能力若只留在 service 層，實際上 agent 仍然無法正式使用 multi-agent/multi-host/multi-session 模型。先把 control-plane tools/resources拉出來，可以讓後續 routed execution 與 result-plane 在一致的 surface 上擴張，而不是再回到 ad-hoc 方法。
+下一步：進 `WP08` 第二段，補 `execute_f_sharp_code_routed` / async routed tool，然後開始 `WP09` 的 result-plane surface。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs、src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs、src/FSharp.MCP.DevKit.Server/Program.fs、tests/McpControlPlaneToolsTests.fs
+prompt/上下文摘要：在 `check.fsx` 通過後，繼續主線開發 `WP08` control-plane MCP surface。

@@ -6,6 +6,7 @@ open System.Threading
 open System.ComponentModel
 open System.Threading.Tasks
 open System.Threading.Channels
+open System.Collections.Generic
 open Microsoft.Extensions.Logging
 open Akka.Actor
 open Akka.Configuration
@@ -257,7 +258,7 @@ module McpFsiTools =
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
-        let _pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+        let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend
 
         let enableRemoteClient = defaultArg enableRemoteClient true
@@ -420,17 +421,70 @@ module McpFsiTools =
             let route = resolveRoute requestedRoute
             resultRegistry.ListBySession route
 
+        member _.RegisterAgent(agentId: string, ?displayName: string, ?metadata: IDictionary<string, string>) =
+            let now = DateTime.UtcNow
+
+            let mergedMetadata =
+                metadata
+                |> Option.map (fun values -> values |> Seq.map (fun pair -> pair.Key, pair.Value) |> Map.ofSeq)
+                |> Option.defaultValue Map.empty
+
+            let record =
+                match agentRegistry.TryGet agentId with
+                | Some existing ->
+                    { existing with
+                        DisplayName = displayName |> Option.orElse existing.DisplayName
+                        LastSeenAt = now
+                        Metadata =
+                            if Map.isEmpty mergedMetadata then
+                                existing.Metadata
+                            else
+                                existing.Metadata |> Map.fold (fun state key value -> state.Add(key, value)) mergedMetadata }
+                | None ->
+                    { AgentId = agentId
+                      DisplayName = displayName
+                      CreatedAt = now
+                      LastSeenAt = now
+                      DefaultHostId = None
+                      Metadata = mergedMetadata }
+
+            agentRegistry.Register(record)
+
+        member _.TryGetAgent(agentId: string) = agentRegistry.TryGet agentId
+
+        member _.ListAgents() = agentRegistry.List()
+
         member _.CreateHost(agentId: string, hostKind: HostKind, spec: ProcHostSpec, ?requestedHostId: string) =
             match hostProvisioningService with
             | Some provisioning -> provisioning.CreateHost(agentId, hostKind, spec, ?requestedHostId = requestedHostId)
             | None -> invalidOp "ProcSupervisor client is not configured for this FsiMcpService instance."
+
+        member _.TryGetHost(hostId: string) = hostRegistry.TryGet hostId
 
         member _.CreateSession(agentId: string, hostId: string, ?sessionId: string, ?sessionName: string) =
             sessionProvisioningService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
 
         member _.ListHosts(agentId: string) = hostRegistry.ListByAgent(agentId)
 
+        member _.TryGetSession(hostId: string, sessionId: string) = sessionRegistry.TryGet(hostId, sessionId)
+
         member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+
+        member _.ListPathMappings(?agentId: string, ?hostId: string) =
+            match agentId, hostId with
+            | Some value, _ -> pathMappingRegistry.ListByAgent(value)
+            | None, Some value -> pathMappingRegistry.ListByHost(value)
+            | None, None -> pathMappingRegistry.List()
+
+        member _.GetHostHealth(hostId: string) =
+            task {
+                let host =
+                    hostRegistry.TryGet hostId
+                    |> Option.defaultWith (fun () -> invalidOp $"Host '{hostId}' was not found.")
+
+                let backend = backendSelector.Resolve(host.HostKind)
+                return! backend.HealthCheck(host)
+            }
 
         member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute) =
             this.EnsureAsyncProcessorStarted()

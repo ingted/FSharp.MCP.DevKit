@@ -116,6 +116,7 @@ let main argv =
             .WithHttpTransport()
             .WithToolsFromAssembly()
             .WithResources<TimeResources>()
+            .WithResources<ControlPlaneResources>()
             .WithResources<FsiResources>()
 
     if enableStdio then

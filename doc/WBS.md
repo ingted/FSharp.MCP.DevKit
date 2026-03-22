@@ -196,12 +196,12 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | `McpFsiTools.fs` 不再是 god object | todo |
-| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | todo |
+| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | control-plane tools 已搬到獨立檔案，`McpFsiTools` 不再承載 host/session 管理入口 | done |
+| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | done |
 | T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` | todo |
 | T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 | todo |
-| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | resource 可讀 | todo |
-| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | todo |
+| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`, `fsi/hosts/*`, `fsi/path-mappings` 已可讀 | done |
+| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | done |
 
 依賴：
 

@@ -50,6 +50,8 @@
     <Compile Include="ControlPlane\ProvisioningServices.fs" />
     <Compile Include="Backends\Net10HostBackend.fs" />
     <Compile Include="McpFsiTools.fs" />
+    <Compile Include="McpControlPlaneTools.fs" />
+    <Compile Include="ControlPlaneResources.fs" />
     <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="McpDocumentationTools.fs" />
     <Compile Include="Program.fs" />

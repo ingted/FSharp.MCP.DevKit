@@ -36,6 +36,7 @@
     <Compile Include="ExecutionRouterTests.fs" />
     <Compile Include="FsiMcpServiceTests.fs" />
     <Compile Include="InProcBackendTests.fs" />
+    <Compile Include="McpControlPlaneToolsTests.fs" />
     <Compile Include="McpSurfaceTests.fs" />
     <Compile Include="NetFxHostBackendTests.fs" />
     <Compile Include="Net10HostBackendTests.fs" />
