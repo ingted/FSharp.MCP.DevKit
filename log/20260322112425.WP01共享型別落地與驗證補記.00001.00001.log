@@ -1,0 +1,22 @@
+背景：依 WBS 的 WP01/T01-T03，先把 shared execution/result types 從 FSIService 抽出，作為後續 backend abstraction 與 registry 的共用契約。
+目標：新增 Core/ExecutionTypes.fs、Core/ResultTypes.fs，對齊現有 FSIService 的 FsiResult 使用方式，並在不破壞既有 pipe/remote 行為的前提下完成整體編譯。
+計畫步驟：
+1. 盤點 Core 現有編譯檔與 FsiResult 的使用點。
+2. 新增 shared type 檔案並調整 fsproj compile order。
+3. 調整 FSIService、NamedPipeIPC、FsiActor、McpFsiTools 的 mapping。
+4. 以 solution build 驗證，再更新 WBS 進度。
+執行命令/參數：
+- sed -n 讀取 Core fsproj、FSIService.fs、McpFsiTools.fs、NamedPipeIPC.fs、FsiActor.fs
+- dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+- dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+結果：
+- 已新增 ResultTypes.fs 與 ExecutionTypes.fs，並納入 Core fsproj。
+- FsiResult 已改為 shared contract：Output/Errors/IsSuccess/ExecutionTime/Diagnostics/Value(string option)。
+- FSIService 會把 FSharpDiagnostic 映成 FsiDiagnostic，EvaluateExpression 的值會序列化成 string。
+- NamedPipeIPC、FsiActor、McpFsiTools 已對齊新型別。
+- dotnet build FSharp.MCP.DevKit.Async.sln 成功。
+- WBS 的 T01/T02/T03 已標記 done。
+根因判讀：原本 FsiResult 只存在於 FSIService.fs，且直接綁定 FSharpDiagnostic 與 obj option，導致 result contract 無法安全跨 backend/transport 共用；先抽成 shared types 可降低後續重構的耦合面。
+下一步：進入 WP01/T04，擴充 Messages/McpActorMessages.fs 與 route-aware DTO，讓 remote host 路徑也能承載 agent/host/session 資訊。
+關聯文件/工單/PR：doc/SD.md、doc/WBS.md、doc/Requirement.md
+prompt/上下文摘要：使用者要求先 commit/push 後開工；本輪先落地 shared domain types，再逐步往 multi-agent / multi-host / multi-session control plane 推進。

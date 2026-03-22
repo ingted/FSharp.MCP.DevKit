@@ -1,0 +1,19 @@
+背景：WP05 已完成 netfx multi-session host 與 NetFxHostBackend 的實作，主線工具也已切到 routed execution，但目前仍缺 host-level command mapping 與 MCP/tool surface 的直接測試。
+目標：補齊目前已完成功能該有的測試，覆蓋 NetFxHostBackend host command mapping、result-op mapping，以及主要 FSI MCP tools / async status resource 的 routed 行為。
+計畫步驟：
+1. 擴充 `NetFxHostBackendTests.fs`，補 `ResetSession`、`RestartHost`、`HealthCheck`、`ResultQuery` mapping。
+2. 新增 `McpSurfaceTests.fs`，直接測 `ExecuteFSharpCode`、`EvaluateFSharpExpression`、`AddSearchPath`、`GetFSIState`、`ExecuteFSharpCodeAsync`。
+3. 若可直接存取 resource type，補 `fsi/async/{asyncId}` 對應 resource method 測試。
+4. 執行 `dotnet test -f net10.0`，確認所有已完成功能的可測部分都在綠燈。
+執行命令/參數：
+- sed -n tests/NetFxHostBackendTests.fs
+- sed -n src/FSharp.MCP.DevKit.Server/Program.fs
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+結果：
+- 已新增 `McpSurfaceTests.fs`，覆蓋 `ExecuteFSharpCode`、`EvaluateFSharpExpression`、`AddSearchPath`、`GetFSIState` 與 async status resource。
+- 已擴充 `NetFxHostBackendTests.fs`，覆蓋 `ResetSession`、`RestartHost`、`HealthCheck`、`ResultQuery` 的 host-level command mapping。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過，結果為 `Passed: 30, Failed: 0, Skipped: 0`。
+根因判讀：如果只測 backend contract 而不測 tool/resource surface，實際 user-facing regressions 很容易漏掉；反過來若不補 host-level mapping，也無法宣稱 WP05 已完成的能力被充分驗證。
+下一步：重跑 `check.fsx`，確認補測收尾後的 SOP 狀態，然後回到 WP06 主線開發。
+關聯文件/工單/PR：tests/NetFxHostBackendTests.fs、tests/FsiMcpServiceTests.fs、src/FSharp.MCP.DevKit.Server/Program.fs、tests/doc/WBS.md
+prompt/上下文摘要：使用者要求先把目前已完成功能該測的都測了，再繼續主進度開發。

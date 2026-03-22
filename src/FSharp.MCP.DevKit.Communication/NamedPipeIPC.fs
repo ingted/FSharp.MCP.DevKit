@@ -47,7 +47,7 @@ type PipeResponse =
       Errors: string // This is for backward compatibility, new diagnostics are in Diagnostics field
       [<JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)>]
       Diagnostics: PipeDiagnostic[] option
-      Value: obj option
+      Value: string option
       ExecutionTime: TimeSpan option
       Timestamp: DateTime }
 
@@ -182,7 +182,7 @@ type PipeServer(config: PipeConfig, fsiService: FsiService) =
                           EndLine = d.EndLine
                           StartColumn = d.StartColumn
                           EndColumn = d.EndColumn
-                          Severity = d.Severity.ToString()
+                          Severity = d.Severity
                           Message = d.Message })
                     |> Some
 

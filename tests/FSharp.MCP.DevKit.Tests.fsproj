@@ -1,9 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <Version>0.1.0</Version>
   </PropertyGroup>
 
@@ -23,9 +25,22 @@
     <ProjectReference Include="..\src\FSharp.MCP.DevKit.Analysis\FSharp.MCP.DevKit.Analysis.fsproj" />
     <ProjectReference Include="..\src\FSharp.MCP.DevKit.Communication\FSharp.MCP.DevKit.Communication.fsproj" />
     <ProjectReference Include="..\src\FSharp.MCP.DevKit.CodeEditing\FSharp.MCP.DevKit.CodeEditing.fsproj" />
+    <ProjectReference Include="..\src\FSharp.MCP.DevKit.Messages\FSharp.MCP.DevKit.Messages.fsproj" />
+    <ProjectReference Include="..\src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="BackendSelectorTests.fs" />
+    <Compile Include="BackendAdaptersTests.fs" />
+    <Compile Include="ControlPlaneTests.fs" />
+    <Compile Include="ExecutionRouterTests.fs" />
+    <Compile Include="FsiMcpServiceTests.fs" />
+    <Compile Include="InProcBackendTests.fs" />
+    <Compile Include="McpSurfaceTests.fs" />
+    <Compile Include="NetFxHostBackendTests.fs" />
+    <Compile Include="Net10HostBackendTests.fs" />
+    <Compile Include="ProvisioningServicesTests.fs" />
+    <Compile Include="RemoteMessageContractTests.fs" />
     <Compile Include="SmartSymbolDetectionServiceTests.fs" />
   </ItemGroup>
 

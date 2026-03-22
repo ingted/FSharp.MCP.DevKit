@@ -1,0 +1,96 @@
+• WP05 已完成，而且測試有跟上。
+
+  這一輪落地的內容：
+
+  - src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs
+      - 新增 FsiRemoteSessionState
+      - FsiRemoteCommandResponse 現在可攜帶 SessionState
+  - src/FSharp.MCP.DevKit.FsiHost/FsiActor.fs
+      - 改成 shared actor helpers
+  - src/FSharp.MCP.DevKit.FsiHost/SessionActor.fs
+      - 每個 session 各持一個 FsiService
+  - src/FSharp.MCP.DevKit.FsiHost/HostSupervisorActor.fs
+      - parent 層負責 route、PING、RESTART_HOST、LIST_SESSIONS、RESULT_OP
+  - src/FSharp.MCP.DevKit.FsiHost/Program.fs
+      - netfx host 現在由 supervisor 啟動，仍保留 fsiActor actor name
+  - src/FSharp.MCP.DevKit.Server/Backends/IRemoteFsiClient.fs
+  - src/FSharp.MCP.DevKit.Server/Backends/NetFxHostBackend.fs
+      - server 端已有 NetFxRemote backend adapter
+  - src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+      - RemoteFsiClient 已支援 routed remote command
+      - 啟用 remote client 時會一併註冊 NetFxRemote backend
+
+  測試新增與更新：
+
+  - tests/NetFxHostBackendTests.fs
+  - tests/RemoteMessageContractTests.fs
+  - tests/doc/WBS.md
+
+  驗證結果：
+
+  - dotnet build FSharp.MCP.DevKit.Async.sln 通過
+  - dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過
+  - 25 passed, 0 failed
+  - check.fsx 通過：PASS=15 WARN=2 FAIL=0
+
+  WBS 狀態：
+
+  - 主線 doc/WBS.md：T19-T23 = done
+  - 測試 tests/doc/WBS.md：TT18-TT20 = done
+
+  下一步我會進 WP06，先做 .NET 10 host / ProcSupervisor 這邊的 adapter 與 provisioning contract。
+
+
+› 你側了哪些東西?概念是?
+
+
+• 這一輪我測了兩類：契約 和 主線行為。
+
+  契約層：
+
+  - tests/RemoteMessageContractTests.fs
+      - 驗證 remote DTO 現在除了 Route 之外，也能帶 SessionState
+  - tests/NetFxHostBackendTests.fs
+      - 驗證 NetFxHostBackend 會把 ExecutionRoute 正確轉成 remote request
+      - 驗證 remote 回來的 SessionState 會正確 mapping 成 SessionRecord
+
+  主線行為層：
+
+  - tests/ExecutionRouterTests.fs
+      - 驗證 default route / explicit route 真的會寫進 ResultRegistry 和 SessionRegistry
+  - tests/FsiMcpServiceTests.fs
+      - 驗證 FsiMcpService 走新的 routed execution path
+      - 驗證 async queue 完成後 asyncId 狀態會變 completed，且 session state 真的被更新
+  - 之前已經有：
+      - tests/ControlPlaneTests.fs
+      - tests/InProcBackendTests.fs
+      - tests/BackendSelectorTests.fs
+      - tests/BackendAdaptersTests.fs
+
+  概念上我在固定的是這條鏈：
+
+  tool/service -> ExecutionRouter -> backend -> result/session registry
+
+  也就是說，先不把重點放在 Akka transport 本身，而是先保證：
+
+  - route 會正確傳遞
+  - backend 回傳會被正確標準化
+  - session 狀態會回寫
+  - result 會被保存
+  - async queue 不是只回 id，而是真的接到同一條 execution pipeline
+
+  這樣之後不管 backend 是：
+
+  - InProc
+  - NetFxRemote
+  - 未來的 .NET 10 remote
+
+  都共用同一個 control plane。
+
+  這輪還沒測的是：
+
+  - 真正跨 process 的 Akka end-to-end
+  - ProcSupervisor 啟 host
+  - .NET 10 host 的實際 provisioning
+
+  所以目前測的是「架構主幹與契約正不正」，不是整套 deployment/e2e。

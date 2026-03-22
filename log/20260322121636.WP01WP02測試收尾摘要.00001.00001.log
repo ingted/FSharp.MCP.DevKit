@@ -1,0 +1,20 @@
+背景：前一筆測試執行 log 已完成結果記錄，但後續為修正 op_log 時序誤觸 append-only 規範，因此需要新開一組收尾摘要 log，避免再修改既有 log/op_log。
+目標：以新的 log/op_log 固化本輪測試實作與執行結果，作為是否回主線開發的依據。
+計畫步驟：
+1. 彙整 tests 專案本輪實際變更。
+2. 記錄 net10.0 與 net9.0 測試結果。
+3. 將測試專案 WBS 狀態更新結果納入摘要。
+4. 重新跑 check.fsx 確認 SOP 合規。
+執行命令/參數：
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net9.0
+結果：
+- tests 專案已調整為 net9.0;net10.0，並加入 Server / Messages project references。
+- 已新增 BackendSelectorTests.fs、BackendAdaptersTests.fs、RemoteMessageContractTests.fs。
+- tests/doc/WBS.md 已更新 TT01-TT11 為 done，TT12 為 blocked。
+- net10.0 測試通過：13 passed, 0 failed。
+- net9.0 測試編譯通過，但執行階段因缺少 Microsoft.NETCore.App 9.0.0 runtime 而中止，屬環境缺件。
+根因判讀：程式與測試邏輯本身在 net10.0 可正常通過；net9.0 的唯一阻塞點是本機缺少對應 runtime，而非測試失敗或程式錯誤。
+下一步：若接受以 net10.0 測試綠燈作為本輪回歸基準，則可繼續主線 WP03；若要求 net9.0 也要 execute，需先補裝 .NET 9 runtime。
+關聯文件/工單/PR：tests/doc/SA.md、tests/doc/SD.md、tests/doc/WBS.md、tests/BackendSelectorTests.fs、tests/BackendAdaptersTests.fs、tests/RemoteMessageContractTests.fs
+prompt/上下文摘要：使用者要求先補測試並執行，沒問題再繼續主線；目前 net10.0 已綠，net9.0 因環境缺 runtime 被阻塞。

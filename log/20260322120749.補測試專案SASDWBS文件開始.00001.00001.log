@@ -1,0 +1,23 @@
+背景：使用者要求在補測試與執行前，先針對 tests/FSharp.MCP.DevKit.Tests.fsproj 建立獨立的 SA/SD/WBS 文件，放在 tests/doc 下供審閱。
+目標：為測試專案定義測試範圍、模組切分、案例設計與工作分解，覆蓋本輪 WP01/WP02 新增的 shared types、remote DTO、backend abstraction。
+計畫步驟：
+1. 盤點現有 tests 專案結構與既有測試。
+2. 撰寫 tests/doc/SA.md，定義測試目標、風險與驗證範圍。
+3. 撰寫 tests/doc/SD.md，定義測試模組、test double、案例類型與執行方式。
+4. 撰寫 tests/doc/WBS.md，列出實作與執行步驟，待使用者確認後再開始實作測試。
+執行命令/參數：
+- ls -la tests
+- sed -n tests/SmartSymbolDetectionServiceTests.fs
+- mkdir -p tests/doc
+結果：進行中
+根因判讀：tests 專案目前只有 placeholder 測試，若直接加案例而沒有先定義測試結構，之後會很快變成碎片化測試集。
+下一步：建立 tests/doc/SA.md、SD.md、WBS.md
+關聯文件/工單/PR：doc/SA.md、doc/SD.md、doc/WBS.md
+prompt/上下文摘要：使用者要求先補測試專案 SA/SD/WBS，文件審閱後才開始寫測試並執行。
+結果：
+- 已新增 tests/doc/SA.md。
+- 已新增 tests/doc/SD.md。
+- 已新增 tests/doc/WBS.md。
+- 文件內容已定義本輪測試範圍、測試模組、案例類型、fsproj 需調整項與執行順序。
+根因判讀：tests 專案目前只有 placeholder 測試，因此先補測試專案自己的設計文件，可避免直接加案例後結構失控。
+下一步：等待使用者審閱 tests/doc/SA.md、SD.md、WBS.md；確認後再開始補測試與執行。

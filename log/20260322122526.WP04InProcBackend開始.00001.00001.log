@@ -1,0 +1,22 @@
+背景：WP04 需要把現有 FsiService 掛進新 backend abstraction，作為 backward-compatible in-proc execution path。
+目標：新增 InProcBackend.fs，提供 per-session in-proc handle dictionary、execute/get state/reset/restart/health，並產出標準 FsiExecutionRecord。
+計畫步驟：
+1. 設計 in-proc session handle 與 session dictionary。
+2. 實作 InProcBackend，將 OperationKind 映射到 FsiService。
+3. 更新 Server fsproj compile order。
+4. build 驗證，再決定 WBS 狀態。
+執行命令/參數：
+- sed -n 讀取 WBS、SD、FSIService.fs
+結果：進行中
+根因判讀：目前 control-plane 已有 router/registry，但尚無可直接掛上的 backend implementation；先補 InProcBackend 才能讓 legacy 路徑進入新抽象。
+下一步：新增 Backends/InProcBackend.fs 並接入 fsproj
+關聯文件/工單/PR：doc/SD.md、doc/WBS.md、src/FSharp.MCP.DevKit.Core/FSIService.fs
+prompt/上下文摘要：使用者要求繼續主線；本輪先做 WP04 InProcBackend，不先全面改 tool routing。
+結果：
+- 已新增 Backends/InProcBackend.fs。
+- InProcBackend 具備 per-session in-proc handle dictionary，每個 session 各持一個 FsiService 與 SemaphoreSlim gate。
+- 已支援 ExecuteCode/EvaluateExpression/LoadScript/ReferenceAssembly/ReferenceNuget/AddSearchPath/GetState/ResetSession/RestartHost 的映射。
+- 已可產出標準 FsiExecutionRecord，並包含 ResultId、BackendKind、AgentId/HostId/SessionId metadata。
+- WBS 已更新：T16/T17 done，T18 doing。
+根因判讀：要把 legacy in-proc 路徑納入新架構，核心不是單純包一層 interface，而是要先把 session 隔離與序列化執行做對；否則之後接 router 只會把舊的單 session 隱性共享問題延續下去。
+下一步：將 InProcBackend 與 ExecutionRouter/registries 接起來，讓 legacy execution 真正開始寫入 ResultRegistry。

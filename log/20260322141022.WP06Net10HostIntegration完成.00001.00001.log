@@ -1,0 +1,24 @@
+背景：WP05 已完成 netfx multi-session host，接下來要把 `.NET 10` host 與 `ProcSupervisor` 納入正式 backend，同時補齊 host/session provisioning flow，且維持現有 client 相容。
+目標：完成 `ProcSupervisorClient`、`FsiSupervisorClient`、`Net10HostBackend`、`HostProvisioningService`、`SessionProvisioningService`，並以測試驗證 `.NET 10` backend/provisioning 契約。
+計畫步驟：
+1. 在 `Server/Integration` 新增 `ProcSupervisorClient.fs` 與 `FsiSupervisorClient.fs`，把 `FAkka.*` 契約包成 server 內部可控的 DTO 與 interface。
+2. 在 `Backends` 新增 `Net10HostBackend.fs`，讓 `Net10Remote` 可走正式 backend abstraction。
+3. 在 `ControlPlane` 新增 `ProvisioningServices.fs`，把 `createHost` / `createSession` 變成可測的 service。
+4. 調整 `FsiMcpService` 與 tests 專案，執行 `dotnet test -f net10.0` 與 solution build。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+- `dotnet build FSharp.MCP.DevKit.Async.sln`
+結果：
+- 已新增 `src/FSharp.MCP.DevKit.Server/Integration/ProcSupervisorClient.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/Integration/FsiSupervisorClient.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs`
+- `FsiMcpService` 已可注入 `IProcSupervisorClient` / `IFsiSupervisorClient`，並暴露 `CreateHost` / `CreateSession`。
+- `FSharp.MCP.DevKit.Server.fsproj` 已收斂成 `net10.0`，並加入 `FAkka.FSI.Supervisor 1.562.100.201-dgx.1` / `FAkka.Proc.Supervisor 1.562.100.201-dgx.2`。
+- 已新增 `Net10HostBackendTests.fs` 與 `ProvisioningServicesTests.fs`。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過，結果為 `Passed: 37, Failed: 0, Skipped: 0`。
+- `dotnet build FSharp.MCP.DevKit.Async.sln` 通過。
+根因判讀：`WP06` 真正需要的不是直接把 `.NET 10` host 硬接進工具層，而是先把 proc lifecycle、FSI supervisor transport、backend abstraction、provisioning flow 分層，不然會再把 `McpFsiTools.fs` 膨脹成總控類。另因 `FAkka.*` 只支援 `net10.0`，`Server` 收斂到 `net10.0` 是必要調整，不是 incidental change。
+下一步：檢查 `WP07` 現有 async 狀態是否已包含 `ResultId` 與 route metadata，若不足則補齊 `async status -> result linkage`。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/Integration/ProcSupervisorClient.fs、src/FSharp.MCP.DevKit.Server/Integration/FsiSupervisorClient.fs、src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs、src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs、tests/Net10HostBackendTests.fs、tests/ProvisioningServicesTests.fs
+prompt/上下文摘要：使用者要求先把已完成功能該測的都測了，再繼續主進度開發；本步延續主線完成 `WP06`。

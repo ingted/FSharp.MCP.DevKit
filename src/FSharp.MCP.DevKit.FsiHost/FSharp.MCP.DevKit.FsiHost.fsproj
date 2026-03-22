@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="FsiActor.fs" />
+    <Compile Include="SessionActor.fs" />
+    <Compile Include="HostSupervisorActor.fs" />
     <Compile Include="Program.fs" />
     <None Include="akka.conf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

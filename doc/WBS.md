@@ -50,10 +50,10 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T01 | 新增 `Core/ExecutionTypes.fs` | `AgentRecord`, `HostRecord`, `SessionRecord`, `ExecutionRoute`, `AsyncFsiJob` | 可編譯 | todo |
-| T02 | 新增 `Core/ResultTypes.fs` | `FsiResult`, `FsiExecutionRecord` | 可編譯 | todo |
-| T03 | 對齊現有 `FSIService.fs` 所用 `FsiResult` 映射 | adapter helpers | 現有結果可映到新契約 | todo |
-| T04 | 擴充 `Messages/McpActorMessages.fs` | route-aware DTO | host/server 可共用 | todo |
+| T01 | 新增 `Core/ExecutionTypes.fs` | `AgentRecord`, `HostRecord`, `SessionRecord`, `ExecutionRoute`, `AsyncFsiJob` | 可編譯 | done |
+| T02 | 新增 `Core/ResultTypes.fs` | `FsiResult`, `FsiExecutionRecord` | 可編譯 | done |
+| T03 | 對齊現有 `FSIService.fs` 所用 `FsiResult` 映射 | adapter helpers | 現有結果可映到新契約 | done |
+| T04 | 擴充 `Messages/McpActorMessages.fs` | route-aware DTO | host/server 可共用 | done |
 
 依賴：
 
@@ -69,9 +69,9 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T05 | 新增 `Backends/IBackend.fs` | `ExecutionRequest`, `BackendHealth`, `IFsiExecutionBackend` | 可編譯 | todo |
-| T06 | 新增 backend selector | `BackendSelector` | 可依 `HostKind` resolve | todo |
-| T07 | 補 shared adapter helpers | result mapping / error mapping | `RawErrorType` 可填 | todo |
+| T05 | 新增 `Backends/IBackend.fs` | `ExecutionRequest`, `BackendHealth`, `IFsiExecutionBackend` | 可編譯 | done |
+| T06 | 新增 backend selector | `BackendSelector` | 可依 `HostKind` resolve | done |
+| T07 | 補 shared adapter helpers | result mapping / error mapping | `RawErrorType` 可填 | done |
 
 依賴：
 
@@ -87,14 +87,14 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T08 | 新增 `AgentRegistry.fs` | in-memory agent registry | 可 register/list/get | todo |
-| T09 | 新增 `HostRegistry.fs` | host registry | 可 create/update/list | todo |
-| T10 | 新增 `SessionRegistry.fs` | session registry | 可 create/update/list | todo |
-| T11 | 新增 `AsyncJobRegistry.fs` | async job registry | 可 create/running/complete/fail | todo |
-| T12 | 新增 `ResultRegistry.fs` | result registry | 可 put/get/list | todo |
-| T13 | 新增 `PathMappingRegistry.fs` | path mapping registry | 可 list mappings | todo |
-| T14 | 新增 `DefaultRouting.fs` | implicit default route resolver | 舊工具 route 可自動補齊 | todo |
-| T15 | 新增 `ExecutionRouter.fs` | 統一 route + execute orchestration | 所有 execution 經同一路徑 | todo |
+| T08 | 新增 `AgentRegistry.fs` | in-memory agent registry | 可 register/list/get | done |
+| T09 | 新增 `HostRegistry.fs` | host registry | 可 create/update/list | done |
+| T10 | 新增 `SessionRegistry.fs` | session registry | 可 create/update/list | done |
+| T11 | 新增 `AsyncJobRegistry.fs` | async job registry | 可 create/running/complete/fail | done |
+| T12 | 新增 `ResultRegistry.fs` | result registry | 可 put/get/list | done |
+| T13 | 新增 `PathMappingRegistry.fs` | path mapping registry | 可 list mappings | done |
+| T14 | 新增 `DefaultRouting.fs` | implicit default route resolver | 舊工具 route 可自動補齊 | done |
+| T15 | 新增 `ExecutionRouter.fs` | 統一 route + execute orchestration | 所有核心 execution 已經由 router + backend path 統一處理 | done |
 
 依賴：
 
@@ -111,9 +111,9 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T16 | 實作 `InProcBackend.fs` | in-proc backend | 可 execute/get state/reset | todo |
-| T17 | 加上 session dictionary | per-session in-proc handles | 不同 session state 可隔離 | todo |
-| T18 | 對齊 result record | `ResultId` 與 metadata 正常寫入 | result registry 有資料 | todo |
+| T16 | 實作 `InProcBackend.fs` | in-proc backend | 可 execute/get state/reset | done |
+| T17 | 加上 session dictionary | per-session in-proc handles | 不同 session state 可隔離 | done |
+| T18 | 對齊 result record | `ResultId` 與 metadata 正常寫入 | result registry 與 session registry 已由 routed execution 寫入 | done |
 
 依賴：
 
@@ -130,12 +130,12 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T19 | 新增 `HostSupervisorActor.fs` | host-level router actor | 可接 route-aware request，並協調 result operations | todo |
-| T20 | 新增 `SessionActor.fs` | per-session actor | 每個 session 各持一個 `FsiService` | todo |
-| T21 | 修改 `Program.fs` | host 啟動 supervisor actor | 不再只固定 `fsiActor` 單 session | todo |
-| T22 | 修改 remote DTO handling | `AgentId/HostId/SessionId` 路由 | 指定 session 可執行 | todo |
-| T22a | 將 `result_op` 留在 parent 層 | parent -> `ResultQueryService` | result operation 不阻塞 session actor | todo |
-| T23 | 實作 `NetFxHostBackend.fs` | server-side adapter | 可透過新抽象呼叫 netfx host | todo |
+| T19 | 新增 `HostSupervisorActor.fs` | host-level router actor | 可接 route-aware request，並在 parent 層處理 host-level command | done |
+| T20 | 新增 `SessionActor.fs` | per-session actor | 每個 session 各持一個 `FsiService` | done |
+| T21 | 修改 `Program.fs` | host 啟動 supervisor actor | 不再只固定單 session 執行體 | done |
+| T22 | 修改 remote DTO handling | `AgentId/HostId/SessionId` 路由 | 指定 session 可執行，且可回傳 `SessionState` | done |
+| T22a | 將 `result_op` 留在 parent 層 | parent -> `ResultQueryService` | parent 已明確攔截 `RESULT_OP`，不進 session actor | done |
+| T23 | 實作 `NetFxHostBackend.fs` | server-side adapter | 可透過新抽象呼叫 netfx host | done |
 
 依賴：
 
@@ -153,12 +153,12 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T24 | 新增 `ProcSupervisorClient.fs` | proc lifecycle adapter | 可 start/stop/query snapshot，且為唯一 out-of-proc provisioning 入口 | todo |
-| T25 | 新增 `FsiSupervisorClient.fs` | net10 host execution adapter | 可 execute/list sessions/get session | todo |
-| T26 | 實作 `Net10HostBackend.fs` | backend adapter | 可 execute/get state/health | todo |
-| T27 | 建立 host provisioning flow | `createHost(net10)` | 一律透過 `ProcSupervisor` 啟動 proc 並註冊 host | todo |
-| T28 | 建立 session provisioning flow | `createSession(net10)` | 可在同 host 建多 session | todo |
-| T28a | 禁止顯式建立 `inproc` host | control-plane validation | `create_fsi_host(inproc)` 會明確失敗 | todo |
+| T24 | 新增 `ProcSupervisorClient.fs` | proc lifecycle adapter | 可 start/stop/query snapshot，且為唯一 out-of-proc provisioning 入口 | done |
+| T25 | 新增 `FsiSupervisorClient.fs` | net10 host execution adapter | 可 execute/list sessions/get session | done |
+| T26 | 實作 `Net10HostBackend.fs` | backend adapter | 可 execute/get state/health | done |
+| T27 | 建立 host provisioning flow | `createHost(net10)` | 一律透過 `ProcSupervisor` 啟動 proc 並註冊 host | done |
+| T28 | 建立 session provisioning flow | `createSession(net10)` | 可在同 host 建多 session | done |
+| T28a | 禁止顯式建立 `inproc` host | control-plane validation | `create_fsi_host(inproc)` 會明確失敗 | done |
 
 依賴：
 
@@ -176,10 +176,10 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T29 | 重定義 async job type | `AsyncFsiJob` | job 含 route metadata | todo |
-| T30 | 重寫 queue worker | route-aware execution loop | FIFO 仍成立 | todo |
-| T31 | 完成 result linkage | async 完成可產出 `ResultId` | `fsi/async/{asyncId}` 可看到 `ResultId` | todo |
-| T32 | 保留舊 async tool 相容 | `execute_f_sharp_code_async` | 舊 client 可不改使用 | todo |
+| T29 | 重定義 async job type | `AsyncFsiJob` | job 含 route metadata | done |
+| T30 | 重寫 queue worker | route-aware execution loop | FIFO 仍成立 | done |
+| T31 | 完成 result linkage | async 完成可產出 `ResultId` | `fsi/async/{asyncId}` 可看到 `ResultId` | done |
+| T32 | 保留舊 async tool 相容 | `execute_f_sharp_code_async` | 舊 client 可不改使用 | done |
 
 依賴：
 

@@ -5,7 +5,7 @@ open System.Threading
 open Akka.Actor
 open Akka.Configuration
 open FSharp.MCP.DevKit.Core
-open FSharp.MCP.DevKit.FsiHost.Actors
+open FSharp.MCP.DevKit.FsiHost.HostSupervisorActor
 
 type FsiHostRuntime =
     { ActorSystem: ActorSystem
@@ -104,7 +104,7 @@ let createRuntime () =
     let system = ActorSystem.Create("FsiExecutionSystem", config)
     let fsiConfig = buildFsiConfig ()
     let actorName = "fsiActor"
-    system.ActorOf(FsiActor.Props(fsiConfig), actorName) |> ignore
+    system.ActorOf(HostSupervisorActor.Props(fsiConfig), actorName) |> ignore
 
     printfn "FSI Execution Host started on port 8081..."
 

@@ -1,0 +1,22 @@
+背景：WP03 需要建立 control plane 的 in-memory registries、default routing 與 execution router，讓後續 inproc/netfx/net10 backend 都能掛到統一 route 與 registry 模型上。
+目標：新增 registry contracts 與 in-memory implementations，補齊 PathMappingRegistry、DefaultRouting、ExecutionRouter，並保持 solution 可編譯。
+計畫步驟：
+1. 根據 SD/WBS 落地 RegistryContracts 與各 registry 檔案。
+2. 補 DefaultRouting 與 ExecutionRouter。
+3. 更新 Server fsproj compile order。
+4. 以 solution build 驗證，再回寫 WBS 狀態。
+執行命令/參數：
+- sed -n 讀取 WBS、SD、Server fsproj
+- dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+結果：
+- 已新增 ControlPlane/RegistryContracts.fs，定義 IAgentRegistry、IHostRegistry、ISessionRegistry、IAsyncJobRegistry、IResultRegistry、IPathMappingRegistry。
+- 已新增 AgentRegistry.fs、HostRegistry.fs、SessionRegistry.fs、AsyncJobRegistry.fs、ResultRegistry.fs、PathMappingRegistry.fs 的 in-memory implementation。
+- 已新增 DefaultRouting.fs，支援 explicit route 驗證與 default-agent/default-host/default-session 自動補齊。
+- 已新增 ExecutionRouter.fs，支援 host -> backend resolve、resultRegistry.Put、session last-execution update、agent touch。
+- 已更新 Server fsproj compile order。
+- dotnet build FSharp.MCP.DevKit.Async.sln 成功。
+- WBS 已更新：T08-T14 done，T15 doing。
+根因判讀：目前 server 雖已有 result/backend 型別，但沒有 tenant-aware control plane；先把 registry/default-routing/router 骨架落地，可在不立即重寫所有 tool 的前提下建立後續整合基底。
+下一步：進入 WP04，實作 InProcBackend 與 per-session in-proc session dictionary，並開始把 execution 逐步導向 ExecutionRouter。
+關聯文件/工單/PR：doc/SD.md、doc/WBS.md、src/FSharp.MCP.DevKit.Server/ControlPlane/*
+prompt/上下文摘要：使用者要求繼續主線開發；本輪完成 WP03 control-plane 骨架，暫未把所有 execution 全面接入 router。

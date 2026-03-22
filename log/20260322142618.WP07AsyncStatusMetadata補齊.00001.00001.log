@@ -1,0 +1,18 @@
+背景：`AsyncFsiJob` 與 queue 其實早已保存 `Route` 與 `ResultId`，但對 agent 暴露的 `GetAsyncExecutionStatus` / `fsi/async/{asyncId}` 還只有 bare completion/result，無法直接拿到 `ResultId` 與 route metadata。
+目標：補齊 async status DTO，使 agent 在輪詢 `asyncId` 時可直接取得 `RequestId`、`AgentId`、`HostId`、`SessionId`、`OperationKind`、`Status`、`ResultId` 與時間戳。
+計畫步驟：
+1. 擴充 `AsyncFsiStatusDto`。
+2. 讓 status 來源改為 `AsyncJobRegistry`，而不是只看 `<asyncId, FsiResult option>` cache。
+3. 更新 `FsiMcpServiceTests.fs` 與 `McpSurfaceTests.fs` 驗證 `ResultId` 與 route metadata。
+4. 執行 `dotnet test -f net10.0`。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+結果：
+- `src/FSharp.MCP.DevKit.Core/FSIService.fs` 的 `AsyncFsiStatusDto` 已加入 `RequestId`、`AgentId`、`HostId`、`SessionId`、`OperationKind`、`SubmittedAt`、`StartedAt`、`CompletedAt`、`Status`、`ResultId`。
+- `FsiMcpService.GetAsyncExecutionStatus` 已改為從 `AsyncJobRegistry` 建 DTO，未知 id 仍保留 `Exists=false` 的行為。
+- `tests/FsiMcpServiceTests.fs` 與 `tests/McpSurfaceTests.fs` 已補 assert，驗證 async status / resource 皆可看到 `ResultId` 與 default route metadata。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過。
+根因判讀：先前 async queue 的資訊其實沒有遺失，只是 status 對外投影過薄，導致 agent 需要額外查 session results 才能把 `asyncId` 接回 `ResultId`。直接把 metadata 暴露到 status DTO，可以降低輪詢與追蹤成本，也更符合 production-ready 的 control-plane 觀測需求。
+下一步：回到 `WP08`，開始把目前已存在的 host/session/result/provisioning 能力切成正式 MCP control-plane tools/resources。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Core/FSIService.fs、src/FSharp.MCP.DevKit.Server/McpFsiTools.fs、tests/FsiMcpServiceTests.fs、tests/McpSurfaceTests.fs
+prompt/上下文摘要：在完成 `WP06` 後，繼續主進度，把 async status 的 metadata/result linkage 補齊。

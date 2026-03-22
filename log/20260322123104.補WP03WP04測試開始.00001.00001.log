@@ -1,0 +1,22 @@
+背景：WP03 control-plane 與 WP04 InProcBackend 已落地並通過 build，但目前 tests 專案尚未覆蓋 registry/default-routing/in-proc session isolation。
+目標：新增 ControlPlaneTests 與 InProcBackendTests，驗證 default route 建立、explicit route 驗證、session isolation、reset 行為與 execution metadata。
+計畫步驟：
+1. 擴充 tests fsproj compile includes。
+2. 新增 ControlPlaneTests.fs。
+3. 新增 InProcBackendTests.fs。
+4. 執行 dotnet test -f net10.0，並回寫 tests/doc/WBS 狀態。
+執行命令/參數：
+- sed -n tests/doc/WBS.md
+結果：進行中
+根因判讀：目前 WP03/WP04 只有 build 驗證，若不補控制平面與 in-proc backend 測試，之後接 router/tool 時很容易把 default routing 或 session 隔離做壞。
+下一步：更新 tests fsproj 與新增兩個測試檔
+關聯文件/工單/PR：tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/ControlPlane/*、src/FSharp.MCP.DevKit.Server/Backends/InProcBackend.fs
+prompt/上下文摘要：使用者提醒測試要跟上，因此本輪先補 WP03/WP04 對應測試再繼續主線。
+結果：
+- 已新增 ControlPlaneTests.fs，覆蓋 default route 建立、explicit route 驗證、host/agent mismatch 驗證。
+- 已新增 InProcBackendTests.fs，覆蓋 session isolation、reset 清空狀態、execution metadata 與 session state。
+- 已擴充 tests fsproj compile includes。
+- tests/doc/WBS.md 已更新 TT12-TT14 為 done。
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過，19/19 passed。
+根因判讀：WP03/WP04 涉及 default routing 與 session state，若只靠 build 不足以防止之後整合時把 tenant/session 邊界做壞；這兩組測試能把最容易回歸的行為先固定住。
+下一步：回到主線，繼續把 InProcBackend 接入 ExecutionRouter / legacy execution path。

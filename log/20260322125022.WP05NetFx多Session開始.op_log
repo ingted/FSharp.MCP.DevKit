@@ -1,0 +1,5 @@
+[2026-03-22T12:50:22Z] Started WP05 netfx multi-session implementation.
+[2026-03-22T13:00:03Z] Added FsiRemoteSessionState DTO and upgraded netfx host to HostSupervisorActor + SessionActor.
+[2026-03-22T13:00:03Z] Added IRemoteFsiClient and NetFxHostBackend; RemoteFsiClient now supports routed remote commands.
+[2026-03-22T13:00:03Z] dotnet build FSharp.MCP.DevKit.Async.sln passed.
+[2026-03-22T13:00:03Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 passed (25/25).

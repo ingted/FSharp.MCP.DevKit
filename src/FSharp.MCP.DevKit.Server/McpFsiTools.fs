@@ -11,6 +11,9 @@ open Akka.Actor
 open Akka.Configuration
 open FSharp.MCP.DevKit.Communication.IPC
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Server.Backends
+open FSharp.MCP.DevKit.Server.ControlPlane
+open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Analysis
 open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
@@ -33,17 +36,8 @@ module McpFsiTools =
 
     type AsyncFsiExecutionRequest =
         { AsyncId: string
-          Code: string
-          Timeout: TimeSpan
+          Request: ExecutionRequest
           EnqueuedAt: DateTime }
-
-    let private createFailedFsiResult (error: string) (executionTime: TimeSpan option) =
-        { Output = ""
-          Errors = error
-          IsSuccess = false
-          Value = None
-          ExecutionTime = executionTime
-          Diagnostics = [||] }
 
     /// Helper function to format diagnostic information into readable error messages
     let private formatErrorWithDiagnostics (baseError: string) (response: PipeResponse) =
@@ -56,6 +50,22 @@ module McpFsiTools =
 
             $"{baseError}\n\nDiagnostics:\n{diagnosticMessages}"
         | _ -> baseError
+
+    let private formatErrorWithResult (baseError: string) (result: FsiResult) =
+        match result.Diagnostics with
+        | diagnostics when diagnostics.Length > 0 ->
+            let diagnosticMessages =
+                diagnostics
+                |> Array.map (fun d -> $"{d.Severity} at line {d.StartLine}: {d.Message}")
+                |> String.concat "\n"
+
+            $"{baseError}\n\nDiagnostics:\n{diagnosticMessages}"
+        | _ -> baseError
+
+    let private preferValueOrOutput (result: FsiResult) =
+        result.Value
+        |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace(value)))
+        |> Option.defaultValue result.Output
 
     /// Validates that a file has a supported F# file extension
     let private validateFSharpFileType (filePath: string) =
@@ -127,81 +137,101 @@ module McpFsiTools =
           Output = result.Output
           Errors = result.Errors
           Diagnostics = diagnostics
-          Value = None
+          Value = result.Value
           ExecutionTime = result.ExecutionTimeMs |> Option.map TimeSpan.FromMilliseconds
           Timestamp = DateTime.UtcNow }
 
-    let toCachedFsiResult (response: PipeResponse) : FsiResult =
-        { Output = response.Output
-          Errors = response.Errors
-          IsSuccess = response.IsSuccess
-          Value = None
-          ExecutionTime = response.ExecutionTime
-          Diagnostics = [||] }
+    let toCachedFsiResult = BackendAdapters.toFsiResult
+
+    let private toRemoteRouteDto (route: ExecutionRoute option) =
+        route
+        |> Option.map (fun value ->
+            { AgentId = Some value.AgentId
+              HostId = Some value.HostId
+              SessionId = Some value.SessionId })
 
     type RemoteFsiClient(remoteActor: ActorSelection, logger: ILogger) =
-        member this.SendCommand(commandType: string, payload: string, ?usePackageTargets: bool, ?timeout: TimeSpan) : Task<PipeResponse> =
-            let effectiveTimeout = defaultArg timeout (TimeSpan.FromSeconds(30.0))
+        member _.SendCommand(command: RemoteFsiCommand) : Task<FsiRemoteCommandResponse> =
+            let effectiveTimeout = defaultArg command.Timeout (TimeSpan.FromSeconds(30.0))
             let requestId = Guid.NewGuid().ToString("N")
 
             task {
                 try
                     let request =
                         { RequestId = requestId
-                          CommandType = commandType
-                          Payload = payload
-                          UsePackageTargets = usePackageTargets }
+                          CommandType = command.CommandType
+                          Payload = command.Payload
+                          Route = toRemoteRouteDto command.Route
+                          UsePackageTargets = command.UsePackageTargets
+                          TimeoutMs = Some(int effectiveTimeout.TotalMilliseconds) }
 
-                    let! response = remoteActor.Ask<FsiRemoteCommandResponse>(request, effectiveTimeout)
-                    return toPipeResponse response.RequestId response.Result
+                    return! remoteActor.Ask<FsiRemoteCommandResponse>(request, effectiveTimeout)
                 with ex ->
-                    logger.LogError(ex, "Failed to execute remote FSI command {CommandType}", commandType)
+                    logger.LogError(ex, "Failed to execute remote FSI command {CommandType}", command.CommandType)
 
                     return
                         { RequestId = requestId
-                          IsSuccess = false
-                          Output = ""
-                          Errors = ex.Message
-                          Diagnostics = None
-                          Value = None
-                          ExecutionTime = None
-                          Timestamp = DateTime.UtcNow }
+                          HostId = command.Route |> Option.map (fun route -> route.HostId)
+                          SessionId = command.Route |> Option.map (fun route -> route.SessionId)
+                          Result =
+                            { Output = ""
+                              Errors = ex.Message
+                              IsSuccess = false
+                              ExecutionTimeMs = None
+                              Diagnostics = [||]
+                              Value = None
+                              RawErrorType = Some(ex.GetType().FullName) }
+                          SessionState = None }
+            }
+
+        member this.SendPipeCommand(commandType: string, payload: string, ?route: ExecutionRoute, ?usePackageTargets: bool, ?timeout: TimeSpan) : Task<PipeResponse> =
+            task {
+                let! response =
+                    this.SendCommand(
+                        { CommandType = commandType
+                          Payload = payload
+                          Route = route
+                          UsePackageTargets = usePackageTargets
+                          Timeout = timeout }
+                    )
+
+                return toPipeResponse response.RequestId response.Result
             }
 
         member this.ExecuteCode(code: string, ?timeout: TimeSpan) =
-            this.SendCommand("EXEC", code, ?timeout = timeout)
+            this.SendPipeCommand("EXEC", code, ?timeout = timeout)
 
         member this.EvaluateExpression(expression: string, ?timeout: TimeSpan) =
-            this.SendCommand("EVAL", expression, ?timeout = timeout)
+            this.SendPipeCommand("EVAL", expression, ?timeout = timeout)
 
         member this.LoadScript(scriptPath: string, ?timeout: TimeSpan) =
-            this.SendCommand("LOAD", scriptPath, ?timeout = timeout)
+            this.SendPipeCommand("LOAD", scriptPath, ?timeout = timeout)
 
         member this.ParseAndCheck(code: string, ?timeout: TimeSpan) =
-            this.SendCommand("PARSE", code, ?timeout = timeout)
+            this.SendPipeCommand("PARSE", code, ?timeout = timeout)
 
         member this.ReferenceNugetPackage(packageName: string, ?timeout: TimeSpan) =
-            this.SendCommand("REFERENCE_NUGET", packageName, ?timeout = timeout)
+            this.SendPipeCommand("REFERENCE_NUGET", packageName, ?timeout = timeout)
 
         member this.ReferenceAssembly(assemblyPath: string, ?timeout: TimeSpan) =
-            this.SendCommand("REFERENCE_ASSEMBLY", assemblyPath, ?timeout = timeout)
+            this.SendPipeCommand("REFERENCE_ASSEMBLY", assemblyPath, ?timeout = timeout)
 
         member this.AddSearchPath(path: string, ?timeout: TimeSpan) =
-            this.SendCommand("ADD_PATH", path, ?timeout = timeout)
+            this.SendPipeCommand("ADD_PATH", path, ?timeout = timeout)
 
         member this.Reset(?timeout: TimeSpan) =
-            this.SendCommand("RESET", "", ?timeout = timeout)
+            this.SendPipeCommand("RESET", "", ?timeout = timeout)
 
         member this.Restart(?timeout: TimeSpan) =
-            this.SendCommand("RESTART", "", ?timeout = timeout)
+            this.SendPipeCommand("RESTART", "", ?timeout = timeout)
 
         member this.GetState(?timeout: TimeSpan) =
-            this.SendCommand("STATE", "", ?timeout = timeout)
+            this.SendPipeCommand("STATE", "", ?timeout = timeout)
 
         member this.IsServerAvailable() =
             try
                 let response =
-                    this.SendCommand("PING", "", timeout = TimeSpan.FromSeconds(1.0))
+                    this.SendPipeCommand("PING", "", timeout = TimeSpan.FromSeconds(1.0))
                         .GetAwaiter()
                         .GetResult()
 
@@ -209,15 +239,60 @@ module McpFsiTools =
             with _ ->
                 false
 
-    /// Service that manages remote FSI access and async queue
-    type FsiMcpService(logger: ILogger<FsiMcpService>) =
-        let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
-        let configContent = File.ReadAllText(configPath)
-        let akkaConfig = ConfigurationFactory.ParseString(configContent)
-        let system = ActorSystem.Create("McpClientSystem", akkaConfig)
-        let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor"
-        let remoteActor = system.ActorSelection(remoteActorPath)
-        let remoteClient = new RemoteFsiClient(remoteActor, logger)
+        interface IRemoteFsiClient with
+            member this.SendCommand(command: RemoteFsiCommand) = this.SendCommand(command)
+
+            member this.IsServerAvailable() = this.IsServerAvailable()
+
+    /// Service that manages routed FSI execution, registries, and async queue
+    type FsiMcpService
+        (
+            logger: ILogger<FsiMcpService>,
+            ?enableRemoteClient: bool,
+            ?procSupervisorClient: IProcSupervisorClient,
+            ?fsiSupervisorClient: IFsiSupervisorClient
+        ) =
+        let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
+        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+        let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
+        let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
+        let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
+        let _pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+        let inProcBackend = InProcBackend() :> IFsiExecutionBackend
+
+        let enableRemoteClient = defaultArg enableRemoteClient true
+        let procSupervisorClientOpt = procSupervisorClient
+        let fsiSupervisorClientOpt = fsiSupervisorClient
+
+        let system, remoteClient =
+            if enableRemoteClient then
+                let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+                let configContent = File.ReadAllText(configPath)
+                let akkaConfig = ConfigurationFactory.ParseString(configContent)
+                let actorSystem = ActorSystem.Create("McpClientSystem", akkaConfig)
+                let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor"
+                let remoteActor = actorSystem.ActorSelection(remoteActorPath)
+                Some actorSystem, Some(RemoteFsiClient(remoteActor, logger))
+            else
+                None, None
+
+        let registeredBackends =
+            [ yield inProcBackend
+              match remoteClient with
+              | Some client -> yield NetFxHostBackend(client :> IRemoteFsiClient) :> IFsiExecutionBackend
+              | None -> () ]
+            @
+            [ match procSupervisorClientOpt, fsiSupervisorClientOpt with
+              | Some procClient, Some supervisorClient ->
+                  yield Net10HostBackend(hostRegistry, supervisorClient, procClient) :> IFsiExecutionBackend
+              | _ -> () ]
+
+        let backendSelector = BackendSelector(registeredBackends)
+        let executionRouter =
+            ExecutionRouter(agentRegistry, hostRegistry, sessionRegistry, resultRegistry, backendSelector)
+        let hostProvisioningService = procSupervisorClientOpt |> Option.map (fun client -> HostProvisioningService(agentRegistry, hostRegistry, client))
+        let sessionProvisioningService = SessionProvisioningService(hostRegistry, sessionRegistry, backendSelector)
+
         let asyncResultCache = AsyncFsiResultCache()
         let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
         let asyncProcessorGate = obj()
@@ -225,23 +300,69 @@ module McpFsiTools =
         let mutable asyncProcessor: Task option = None
         let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
 
+        let resolveRoute (requestedRoute: ExecutionRoute option) = executionRouter.ResolveRoute requestedRoute
+
+        let resolveHost (route: ExecutionRoute) =
+            hostRegistry.TryGet route.HostId
+            |> Option.defaultWith (fun () -> invalidOp $"Host '{route.HostId}' was not found.")
+
+        let resolveBackend (route: ExecutionRoute) =
+            let host = resolveHost route
+            host, backendSelector.Resolve(host.HostKind)
+
+        let updateSessionRecord (record: SessionRecord) =
+            match sessionRegistry.TryGet(record.HostId, record.SessionId) with
+            | Some _ -> sessionRegistry.Update record
+            | None -> sessionRegistry.Create record |> ignore
+
+        let createRequest
+            (requestedRoute: ExecutionRoute option)
+            (operationKind: OperationKind)
+            (payload: string)
+            (timeout: TimeSpan option)
+            (usePackageTargets: bool option)
+            =
+            let route = resolveRoute requestedRoute
+
+            { RequestId = Guid.NewGuid().ToString("N")
+              Route = route
+              OperationKind = operationKind
+              Payload = payload
+              Timeout = timeout
+              UsePackageTargets = usePackageTargets }
+
         member this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
             task {
-                let! response = remoteClient.ExecuteCode(request.Code, request.Timeout)
-                let result = toCachedFsiResult response
-                asyncResultCache.[request.AsyncId] <- Some result
+                asyncJobRegistry.MarkRunning(request.AsyncId, DateTime.UtcNow)
 
-                if response.IsSuccess then
-                    logger.LogInformation(
-                        "Async FSI request completed. AsyncId={AsyncId} EnqueuedAt={EnqueuedAt}",
+                let! record = executionRouter.RouteAndExecute(request.Request)
+                asyncResultCache.[request.AsyncId] <- Some record.Result
+
+                if record.Result.IsSuccess then
+                    asyncJobRegistry.Complete(
                         request.AsyncId,
-                        request.EnqueuedAt
+                        record.ResultId,
+                        record.Result,
+                        (record.CompletedAt |> Option.defaultValue DateTime.UtcNow)
+                    )
+
+                    logger.LogInformation(
+                        "Async FSI request completed. AsyncId={AsyncId} RequestId={RequestId} ResultId={ResultId}",
+                        request.AsyncId,
+                        request.Request.RequestId,
+                        record.ResultId
                     )
                 else
+                    asyncJobRegistry.Fail(
+                        request.AsyncId,
+                        record.Result,
+                        (record.CompletedAt |> Option.defaultValue DateTime.UtcNow)
+                    )
+
                     logger.LogWarning(
                         "Async FSI request failed. AsyncId={AsyncId} Error={Error}",
                         request.AsyncId,
-                        response.Errors
+                        record.Result.Errors
                     )
             }
 
@@ -271,16 +392,72 @@ module McpFsiTools =
         /// Get the current default timeout
         member this.DefaultTimeout = defaultTimeout
 
-        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan) =
+        member _.ResolveRoute(?requestedRoute: ExecutionRoute) = resolveRoute requestedRoute
+
+        member _.ExecuteOperation
+            (
+                operationKind: OperationKind,
+                payload: string,
+                ?timeout: TimeSpan,
+                ?usePackageTargets: bool,
+                ?requestedRoute: ExecutionRoute
+            ) : Task<FsiExecutionRecord> =
+            executionRouter.RouteAndExecute(createRequest requestedRoute operationKind payload timeout usePackageTargets)
+
+        member _.GetSessionState(?requestedRoute: ExecutionRoute) : Task<SessionRecord> =
+            task {
+                let route = resolveRoute requestedRoute
+                let _, backend = resolveBackend route
+                let! state = backend.GetSessionState(route)
+                updateSessionRecord state
+                agentRegistry.Touch route.AgentId
+                return state
+            }
+
+        member _.TryGetResult(resultId: string) = resultRegistry.TryGet resultId
+
+        member _.ListSessionResults(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            resultRegistry.ListBySession route
+
+        member _.CreateHost(agentId: string, hostKind: HostKind, spec: ProcHostSpec, ?requestedHostId: string) =
+            match hostProvisioningService with
+            | Some provisioning -> provisioning.CreateHost(agentId, hostKind, spec, ?requestedHostId = requestedHostId)
+            | None -> invalidOp "ProcSupervisor client is not configured for this FsiMcpService instance."
+
+        member _.CreateSession(agentId: string, hostId: string, ?sessionId: string, ?sessionName: string) =
+            sessionProvisioningService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
+
+        member _.ListHosts(agentId: string) = hostRegistry.ListByAgent(agentId)
+
+        member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+
+        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute) =
             this.EnsureAsyncProcessorStarted()
 
             let asyncId = Guid.NewGuid().ToString("N")
+            let executionRequest = createRequest requestedRoute ExecuteCode code (Some timeout) None
+            let enqueuedAt = DateTime.UtcNow
 
             let request =
                 { AsyncId = asyncId
-                  Code = code
-                  Timeout = timeout
-                  EnqueuedAt = DateTime.UtcNow }
+                  Request = executionRequest
+                  EnqueuedAt = enqueuedAt }
+
+            asyncJobRegistry.Create(
+                { AsyncId = asyncId
+                  RequestId = executionRequest.RequestId
+                  Route = executionRequest.Route
+                  OperationKind = executionRequest.OperationKind
+                  Payload = executionRequest.Payload
+                  SubmittedAt = enqueuedAt
+                  StartedAt = None
+                  CompletedAt = None
+                  Status = Queued
+                  ResultId = None
+                  Result = None }
+            )
+            |> ignore
 
             asyncResultCache.[asyncId] <- None
 
@@ -288,6 +465,11 @@ module McpFsiTools =
                 logger.LogInformation("Async FSI request enqueued. AsyncId={AsyncId}", asyncId)
                 asyncId
             else
+                asyncJobRegistry.Fail(
+                    asyncId,
+                    (BackendAdapters.createFailedResult "Failed to enqueue async FSI request" None (Some "QueueWriteFailure")),
+                    DateTime.UtcNow
+                )
                 asyncResultCache.TryRemove(asyncId) |> ignore
                 failwith "Failed to enqueue async FSI request"
 
@@ -297,17 +479,31 @@ module McpFsiTools =
             | false, _ -> None
 
         member this.GetAsyncExecutionStatus(asyncId: string) =
-            this.TryGetAsyncExecution(asyncId) |> AsyncFsiStatus.fromCacheEntry asyncId
+            match asyncJobRegistry.TryGet(asyncId) |> AsyncFsiStatus.fromJob with
+            | status when not status.Exists -> { status with AsyncId = asyncId }
+            | status -> status
 
-        member this.GetClient() = remoteClient
+        member _.GetClient() =
+            remoteClient
+            |> Option.defaultWith (fun () ->
+                invalidOp "Remote FSI client is disabled for this FsiMcpService instance.")
 
-        member this.IsRunning = remoteClient.IsServerAvailable()
+        member _.IsRunning =
+            try
+                let route = resolveRoute None
+                let host, backend = resolveBackend route
+                backend.HealthCheck(host).GetAwaiter().GetResult().IsAvailable
+            with ex ->
+                logger.LogWarning(ex, "Failed to resolve default execution route for health check")
+                false
 
         interface IDisposable with
             member _.Dispose() =
                 asyncProcessorCts.Cancel()
                 asyncProcessorCts.Dispose()
-                system.Dispose()
+                match system with
+                | Some actorSystem -> actorSystem.Dispose()
+                | None -> ()
 
     /// MCP FSI Tools that provide F# Interactive functionality through named pipes
     [<McpServerToolType>]
@@ -321,33 +517,32 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.ExecuteCode(code, timeout)
+                let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     let output =
-                        if String.IsNullOrEmpty(response.Output) then
+                        if String.IsNullOrEmpty(result.Output) then
                             "Code executed successfully"
                         else
-                            response.Output
+                            result.Output
 
                     Console.WriteLine($"FSI Execute: {code}")
                     Console.WriteLine($"FSI Output: {output}")
                     return output
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             "Execution failed"
                         else
-                            response.Errors
+                            result.Errors
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     Console.WriteLine($"FSI Execute: {code}")
                     Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
@@ -378,21 +573,20 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.ExecuteCode(code, timeout)
+                let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     let output =
-                        if String.IsNullOrEmpty(response.Output) then
+                        if String.IsNullOrEmpty(result.Output) then
                             "Code executed successfully"
                         else
-                            response.Output
+                            result.Output
 
                     Console.WriteLine($"FSI Execute: {code}")
                     Console.WriteLine($"FSI Output: {output}")
@@ -402,21 +596,27 @@ module McpFsiTools =
                     let errorDetails =
                         [ yield $"=== EXECUTION FAILED ==="
                           yield $"Code: {code}"
-                          yield $"IsSuccess: {response.IsSuccess}"
-                          yield $"Output: '{response.Output}'"
-                          yield $"Errors: '{response.Errors}'"
-                          yield $"RequestId: {response.RequestId}"
-                          yield $"Timestamp: {response.Timestamp}"
-                          match response.ExecutionTime with
+                          yield $"IsSuccess: {result.IsSuccess}"
+                          yield $"Output: '{result.Output}'"
+                          yield $"Errors: '{result.Errors}'"
+                          yield $"RequestId: {record.RequestId}"
+                          yield $"ResultId: {record.ResultId}"
+                          yield $"BackendKind: {record.BackendKind}"
+                          yield $"HostId: {record.HostId}"
+                          yield $"SessionId: {record.SessionId}"
+                          match record.RawErrorType with
+                          | Some rawErrorType -> yield $"RawErrorType: {rawErrorType}"
+                          | None -> ()
+                          match result.ExecutionTime with
                           | Some time -> yield $"ExecutionTime: {time.TotalMilliseconds}ms"
                           | None -> yield "ExecutionTime: Not available"
-                          match response.Diagnostics with
-                          | Some diags ->
+                          match result.Diagnostics with
+                          | diags when diags.Length > 0 ->
                               yield $"Diagnostics: {diags.Length} items"
 
                               for diag in diags do
                                   yield $"  - {diag.Severity}: {diag.Message} at line {diag.StartLine}"
-                          | None -> yield "Diagnostics: None"
+                          | _ -> yield "Diagnostics: None"
                           yield $"=========================" ]
                         |> String.concat "\n"
 
@@ -433,27 +633,27 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.EvaluateExpression(expression, timeout)
+                let! record = fsiService.ExecuteOperation(EvaluateExpression, expression, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
+                    let valueOrOutput = preferValueOrOutput result
                     Console.WriteLine($"FSI Evaluate: {expression}")
-                    Console.WriteLine($"FSI Result: {response.Output}")
-                    return response.Output
+                    Console.WriteLine($"FSI Result: {valueOrOutput}")
+                    return valueOrOutput
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             "Expression evaluation failed"
                         else
-                            response.Errors
+                            result.Errors
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     Console.WriteLine($"FSI Evaluate: {expression}")
                     Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
@@ -467,28 +667,27 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.LoadScript(scriptPath, timeout)
+                let! record = fsiService.ExecuteOperation(LoadScript, scriptPath, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
-                    let result = $"Script loaded successfully: {scriptPath}"
+                if result.IsSuccess then
+                    let successMessage = $"Script loaded successfully: {scriptPath}"
                     Console.WriteLine($"FSI Load Script: {scriptPath}")
-                    Console.WriteLine($"FSI Result: {result}")
-                    return result
+                    Console.WriteLine($"FSI Result: {successMessage}")
+                    return successMessage
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             $"Failed to load script: {scriptPath}"
                         else
-                            $"Error loading script: {response.Errors}"
+                            $"Error loading script: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     Console.WriteLine($"FSI Load Script: {scriptPath}")
                     Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
@@ -502,25 +701,24 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.ReferenceAssembly(assemblyPath, timeout)
+                let! record = fsiService.ExecuteOperation(ReferenceAssembly, assemblyPath, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     return $"Assembly referenced successfully: {assemblyPath}"
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             $"Failed to reference assembly: {assemblyPath}"
                         else
-                            $"Error referencing assembly: {response.Errors}"
+                            $"Error referencing assembly: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 
@@ -533,25 +731,24 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.ReferenceNugetPackage(packageName, timeout)
+                let! record = fsiService.ExecuteOperation(ReferenceNuget, packageName, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     return $"NuGet package referenced successfully: {packageName}"
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             $"Failed to reference NuGet package: {packageName}"
                         else
-                            $"Error referencing NuGet package: {response.Errors}"
+                            $"Error referencing NuGet package: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 
@@ -563,25 +760,24 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.AddSearchPath(path, timeout)
+                let! record = fsiService.ExecuteOperation(AddSearchPath, path, timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     return $"Search path added successfully: {path}"
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             $"Failed to add search path: {path}"
                         else
-                            $"Error adding search path: {response.Errors}"
+                            $"Error adding search path: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 
@@ -630,25 +826,24 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.Reset(timeout)
+                let! record = fsiService.ExecuteOperation(ResetSession, "", timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     return "FSI session reset successfully"
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             "Failed to reset FSI session"
                         else
-                            $"Error resetting FSI session: {response.Errors}"
+                            $"Error resetting FSI session: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 
@@ -659,35 +854,32 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.GetState(timeout)
+                let! record = fsiService.ExecuteOperation(GetState, "", timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
-                    return response.Output
+                if result.IsSuccess then
+                    return result.Output
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             "Failed to get FSI state"
                         else
-                            $"Error getting FSI state: {response.Errors}"
+                            $"Error getting FSI state: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 
         [<McpServerTool; Description("Check if the F# Interactive server is running and accessible")>]
         static member CheckFSIServerStatus(fsiService: FsiMcpService) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 return
-                    if client.IsServerAvailable() then
+                    if fsiService.IsRunning then
                         "FSI server is running and accessible"
                     else
                         "FSI server is not accessible"
@@ -1640,25 +1832,24 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.Restart(timeout)
+                let! record = fsiService.ExecuteOperation(RestartHost, "", timeout = timeout)
+                let result = record.Result
 
-                if response.IsSuccess then
+                if result.IsSuccess then
                     return "FSI session restarted successfully"
                 else
                     let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
+                        if String.IsNullOrEmpty(result.Errors) then
                             "Failed to restart FSI session"
                         else
-                            $"Error restarting FSI session: {response.Errors}"
+                            $"Error restarting FSI session: {result.Errors}"
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
+                    let errorMessage = formatErrorWithResult baseError result
                     return errorMessage
             }
 

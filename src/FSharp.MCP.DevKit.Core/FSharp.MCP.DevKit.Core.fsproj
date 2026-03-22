@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <Compile Include="FileUtils.fs" />
+    <Compile Include="ResultTypes.fs" />
+    <Compile Include="ExecutionTypes.fs" />
     <Compile Include="FSIService.fs" />
   </ItemGroup>
 

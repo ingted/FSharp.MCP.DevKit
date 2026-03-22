@@ -1,0 +1,29 @@
+背景：WP03 已有 registries/router 骨架，WP04 已有 InProcBackend 與對應測試，但目前 server 仍主要透過舊的 remoteClient 直接執行，尚未把核心 execution path 接到 ExecutionRouter。
+目標：完成 T15/T18 的主線整合，讓 default legacy execution、result registry、session registry 與 async queue 都能經過 routed execution path，並補對應整合測試。
+計畫步驟：
+1. 調整 ExecutionRouter，讓執行後同步 session state 與 result registry。
+2. 擴充 FsiMcpService，建立 registries、backend selector、ExecutionRouter 與 in-proc default route execution helper。
+3. 將核心 FSI tools 改為走 FsiMcpService 的 routed execution API，保留非 execution 類工具暫時使用既有 remoteClient。
+4. 新增 routed integration tests，驗證 default route、result persistence、async status。
+5. 執行 build/test，回寫 WBS 與收尾 log/op_log，再跑 check.fsx。
+執行命令/參數：
+- sed -n src/FSharp.MCP.DevKit.Server/ControlPlane/ExecutionRouter.fs
+- sed -n src/FSharp.MCP.DevKit.Server/Backends/InProcBackend.fs
+- sed -n src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+- sed -n tests/ControlPlaneTests.fs
+結果：進行中
+根因判讀：如果只停在骨架層，之後所有 routing、async、result plane 的風險會集中到最後一段一次爆出；先把 legacy/default execution 切到新 control plane，才能把後面工作變成漸進擴充，而不是大爆改。
+下一步：先實作 router 與 service 整合，再補 execution router / service integration tests。
+關聯文件/工單/PR：doc/WBS.md、src/FSharp.MCP.DevKit.Server/ControlPlane/*、src/FSharp.MCP.DevKit.Server/Backends/InProcBackend.fs、src/FSharp.MCP.DevKit.Server/McpFsiTools.fs、tests/*
+prompt/上下文摘要：使用者提醒「測試記得」，因此本輪主線整合會同步補 routed execution 測試，不只做功能接線。
+結果：
+- `ExecutionRouter` 已在執行後同步 `ResultRegistry` 與 `SessionRegistry`，session metadata 會以 backend 回報狀態回寫。
+- `FsiMcpService` 已建立 in-memory registries、`BackendSelector`、`ExecutionRouter` 與 `InProcBackend`，核心 legacy/default execution 走 routed path。
+- `execute_f_sharp_code`、`execute_f_sharp_code_detailed`、`evaluate_f_sharp_expression`、`load_f_sharp_script`、`reference_assembly`、`reference_nu_get_package`、`add_search_path`、`reset_fsi_session`、`restart_fsi_session`、`get_fsi_state` 已改走 routed execution。
+- async queue 已不再直接呼叫 remote client，而是 enqueue `ExecutionRequest` 後交由 routed execution 處理，並同步更新 async job/result cache。
+- 新增 `ExecutionRouterTests.fs` 與 `FsiMcpServiceTests.fs`，測試總數提升到 23。
+- `dotnet build FSharp.MCP.DevKit.Async.sln` 通過。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過，`23 passed, 0 failed`。
+- `doc/WBS.md` 已更新 `T15/T18 = done`，`tests/doc/WBS.md` 已更新 `TT15-TT17 = done`。
+根因判讀：把 legacy execution 先切到 `router + inproc backend` 後，result/session 的一致性與 async queue 的可測性才真正建立；這讓後面 netfx/net10 host backend 只需接上同一個 control plane，而不是再重寫 tool façade。
+下一步：繼續 WP05/WP06，開始把 netfx host 與 net10 host backend 以同一組 route-aware contract 接上，並補對應的 host/session 管理測試。

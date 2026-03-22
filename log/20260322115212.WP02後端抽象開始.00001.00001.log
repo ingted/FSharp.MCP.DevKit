@@ -1,0 +1,22 @@
+背景：WP02 需要把 execution backend 抽象從現有 FsiMcpService 中拆出最小共用契約，為後續 inproc/remote 雙 backend 收斂做準備。
+目標：新增 ExecutionRequest、BackendHealth、IFsiExecutionBackend、BackendSelector 與 shared adapter helpers，並保持整體可編譯。
+計畫步驟：
+1. 盤點 Server fsproj 與 FsiMcpService 現有結構。
+2. 新增 Backends/IBackend.fs 與 Backends/BackendSelector.fs。
+3. 新增 result/error adapter helpers，先不大規模改工具層，只做可重用基礎設施。
+4. build 驗證並更新 WBS。
+執行命令/參數：
+- sed -n 讀取 Server fsproj 與 McpFsiTools.fs
+結果：進行中
+根因判讀：待補
+下一步：新增 backend 抽象檔案並接入 fsproj
+關聯文件/工單/PR：doc/SD.md、doc/WBS.md
+prompt/上下文摘要：使用者要求持續推進，本步為 WP02 backend abstraction。
+結果：
+- 已新增 Backends/IBackend.fs，包含 ExecutionRequest、BackendHealth、IFsiExecutionBackend。
+- 已新增 Backends/BackendSelector.fs，可依 BackendKind 與 HostKind resolve backend。
+- 已新增 Backends/BackendAdapters.fs，包含 PipeResponse -> FsiResult、RawErrorType 推斷、FsiExecutionRecord 建構 helper。
+- McpFsiTools 已改用 BackendAdapters.toFsiResult。
+- dotnet build FSharp.MCP.DevKit.Async.sln 成功。
+根因判讀：原本 execution 路徑全部黏在 McpFsiTools/FsiMcpService，導致後續 inproc/remote 並存時沒有清楚邊界；先抽出 backend contract 與共用 adapter，可在不重寫工具層的前提下建立穩定分界。
+下一步：進入 WP03，建立 agent/host/session/async/result registries 與 default routing。

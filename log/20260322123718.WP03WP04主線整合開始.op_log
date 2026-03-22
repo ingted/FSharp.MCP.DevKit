@@ -1,0 +1,5 @@
+[2026-03-22T12:37:18Z] Started WP03/WP04 mainline integration.
+[2026-03-22T12:46:56Z] Integrated ExecutionRouter session/result synchronization and routed FsiMcpService default execution path.
+[2026-03-22T12:46:56Z] Added ExecutionRouterTests.fs and FsiMcpServiceTests.fs; updated tests/doc/WBS.md and doc/WBS.md.
+[2026-03-22T12:46:56Z] dotnet build FSharp.MCP.DevKit.Async.sln passed.
+[2026-03-22T12:46:56Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 passed (23/23).

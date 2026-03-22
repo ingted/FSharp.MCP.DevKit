@@ -1,0 +1,5 @@
+[2026-03-22T11:20:41Z] Start WP01 shared domain types implementation on branch 20260322_001.multi-agent-fsi-platform.
+[2026-03-22T11:20:41Z] Goal: add ExecutionTypes.fs and ResultTypes.fs, wire compile order, and adapt FSIService to the shared FsiResult contract.
+[2026-03-22T11:21:00Z] Added Core/ResultTypes.fs and Core/ExecutionTypes.fs.
+[2026-03-22T11:21:00Z] Updated Core fsproj compile order and adapted FSIService, NamedPipeIPC, FsiActor, and McpFsiTools to the shared FsiResult contract.
+[2026-03-22T11:21:00Z] dotnet build FSharp.MCP.DevKit.Async.sln succeeded.

@@ -10,15 +10,18 @@ open System.Reflection
 open FSharp.Compiler.Interactive.Shell
 open FSharp.Compiler.Diagnostics
 
+module private FsiResultAdapter =
+    let serializeValue (value: obj) =
+        if isNull value then
+            "null"
+        else
+            try
+                string value
+            with _ ->
+                sprintf "%A" value
 
-/// Represents the result of an FSI evaluation
-type FsiResult =
-    { Output: string
-      Errors: string
-      IsSuccess: bool
-      Value: obj option
-      ExecutionTime: TimeSpan option
-      Diagnostics: FSharpDiagnostic[] }
+    let ofCompilerDiagnostics (diagnostics: FSharpDiagnostic array) =
+        diagnostics |> Array.map FsiDiagnostic.ofCompilerDiagnostic
 
 type AsyncFsiResultCache = ConcurrentDictionary<string, FsiResult option>
 
@@ -30,6 +33,16 @@ type AsyncFsiResultDto =
 
 type AsyncFsiStatusDto =
     { AsyncId: string
+      RequestId: string option
+      AgentId: string option
+      HostId: string option
+      SessionId: string option
+      OperationKind: string option
+      SubmittedAt: DateTime option
+      StartedAt: DateTime option
+      CompletedAt: DateTime option
+      Status: string option
+      ResultId: string option
       Exists: bool
       IsCompleted: bool
       Result: AsyncFsiResultDto option }
@@ -41,23 +54,38 @@ module AsyncFsiStatus =
           IsSuccess = result.IsSuccess
           ExecutionTimeMs = result.ExecutionTime |> Option.map (fun value -> value.TotalMilliseconds) }
 
-    let fromCacheEntry (asyncId: string) (entry: FsiResult option option) =
-        match entry with
+    let fromJob (job: AsyncFsiJob option) =
+        match job with
         | None ->
-            { AsyncId = asyncId
+            { AsyncId = ""
+              RequestId = None
+              AgentId = None
+              HostId = None
+              SessionId = None
+              OperationKind = None
+              SubmittedAt = None
+              StartedAt = None
+              CompletedAt = None
+              Status = None
+              ResultId = None
               Exists = false
               IsCompleted = false
               Result = None }
-        | Some None ->
-            { AsyncId = asyncId
+        | Some value ->
+            { AsyncId = value.AsyncId
+              RequestId = Some value.RequestId
+              AgentId = Some value.Route.AgentId
+              HostId = Some value.Route.HostId
+              SessionId = Some value.Route.SessionId
+              OperationKind = Some(string value.OperationKind)
+              SubmittedAt = Some value.SubmittedAt
+              StartedAt = value.StartedAt
+              CompletedAt = value.CompletedAt
+              Status = Some(string value.Status)
+              ResultId = value.ResultId
               Exists = true
-              IsCompleted = false
-              Result = None }
-        | Some(Some result) ->
-            { AsyncId = asyncId
-              Exists = true
-              IsCompleted = true
-              Result = Some(toDto result) }
+              IsCompleted = value.Status = Completed || value.Status = Failed
+              Result = value.Result |> Option.map toDto }
 
 /// Configuration for the FSI session
 type FsiConfig =
@@ -232,7 +260,7 @@ type FsiService(config: FsiConfig) =
                             Some(DateTime.Now - startTime)
                         else
                             None
-                      Diagnostics = diagnostics }
+                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                 else
                     session.EvalInteraction(code)
                     let (output, errors) = this.GetAndClearOutput()
@@ -247,7 +275,7 @@ type FsiService(config: FsiConfig) =
                             Some(DateTime.Now - startTime)
                         else
                             None
-                      Diagnostics = diagnostics }
+                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
             with ex ->
                 let (output, errors) = this.GetAndClearOutput()
 
@@ -292,11 +320,13 @@ type FsiService(config: FsiConfig) =
                             Some(DateTime.Now - startTime)
                         else
                             None
-                      Diagnostics = diagnostics }
+                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                 else
                     let result = session.EvalExpression(expression)
                     let (output, errors) = this.GetAndClearOutput()
-                    let value = result |> Option.map (fun v -> v.ReflectionValue)
+                    let value =
+                        result
+                        |> Option.map (fun v -> v.ReflectionValue |> FsiResultAdapter.serializeValue)
                     let success = String.IsNullOrEmpty(errors) && not hasErrors
 
                     { Output = output
@@ -308,7 +338,7 @@ type FsiService(config: FsiConfig) =
                             Some(DateTime.Now - startTime)
                         else
                             None
-                      Diagnostics = diagnostics }
+                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
             with ex ->
                 let (output, errors) = this.GetAndClearOutput()
 
@@ -377,7 +407,7 @@ type FsiService(config: FsiConfig) =
                                   IsSuccess = not hasErrors
                                   Value = None
                                   ExecutionTime = executionTime
-                                  Diagnostics = diagnostics }
+                                  Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                         | Choice2Of2 ex ->
                             return
                                 { Output = output
@@ -385,7 +415,7 @@ type FsiService(config: FsiConfig) =
                                   IsSuccess = false
                                   Value = None
                                   ExecutionTime = executionTime
-                                  Diagnostics = diagnostics }
+                                  Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                     with
                     | :? OperationCanceledException as ex ->
                         stopwatch.Stop()
@@ -575,7 +605,7 @@ type FsiService(config: FsiConfig) =
                       IsSuccess = not hasErrors
                       Value = None // Don't serialize complex compiler objects
                       ExecutionTime = None
-                      Diagnostics = diagnostics }
+                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                 else
                     cts.Cancel()
 
@@ -681,7 +711,7 @@ type FsiService(config: FsiConfig) =
                                     Some stopwatch.Elapsed
                                 else
                                     None
-                              Diagnostics = initialDiagnostics }
+                              Diagnostics = initialDiagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
                     else
                         let! (choice, executionDiagnostics) =
                             Task.Run((fun () -> session.EvalInteractionNonThrowing(code)), cancellationToken)
@@ -694,6 +724,7 @@ type FsiService(config: FsiConfig) =
 
                         let allDiagnostics =
                             Array.concat [ initialDiagnostics; executionDiagnostics; postDiagnostics ]
+                            |> FsiResultAdapter.ofCompilerDiagnostics
 
                         match choice with
                         | Choice1Of2 _ ->
@@ -768,7 +799,7 @@ type FsiService(config: FsiConfig) =
                     let diagKey = $"diagnostic_{i}"
 
                     let diagInfo =
-                        (diagnostic.Severity.ToString(),
+                        (diagnostic.Severity,
                          diagnostic.Message,
                          diagnostic.StartLine,
                          diagnostic.StartColumn)
@@ -784,7 +815,7 @@ type FsiService(config: FsiConfig) =
 
         let withValue =
             match result.Value with
-            | Some value -> withExecutionTime.Add("result_value", value)
+            | Some value -> withExecutionTime.Add("result_value", box value)
             | None -> withExecutionTime
 
         // Add final metadata

@@ -1,0 +1,4 @@
+[2026-03-22T14:26:18Z] Started WP07 async status metadata and result linkage exposure.
+[2026-03-22T14:27:02Z] Expanded AsyncFsiStatusDto and switched GetAsyncExecutionStatus to AsyncJobRegistry-backed projection.
+[2026-03-22T14:27:48Z] Updated FsiMcpServiceTests and McpSurfaceTests for ResultId and route metadata assertions.
+[2026-03-22T14:28:20Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 => Passed.

@@ -1,0 +1,23 @@
+背景：使用者已確認 tests/doc 下的 SA/SD/WBS，要求開始補測試、執行，通過後再回主線開發。
+目標：為 WP01/WP02 補最小但有效的單元/契約測試，涵蓋 BackendSelector、BackendAdapters、RemoteMessageContract，並先執行 net10.0，再視結果補 net9.0。
+計畫步驟：
+1. 調整 tests fsproj 以支援引用 Server 與 Messages 專案。
+2. 新增三個測試檔並補 compile includes。
+3. 執行 dotnet test -f net10.0。
+4. 若 net10.0 通過，再執行 dotnet test -f net9.0；若都通過，再回主線開發。
+執行命令/參數：
+- sed -n tests fsproj、BackendSelector.fs、BackendAdapters.fs
+結果：進行中
+根因判讀：tests 專案原本只有 placeholder，且保留 net8.0 會阻擋對 Server 專案的直接引用，因此需先整理測試專案目標框架與相依。
+下一步：更新 tests fsproj 並新增測試檔
+關聯文件/工單/PR：tests/doc/SA.md、tests/doc/SD.md、tests/doc/WBS.md
+prompt/上下文摘要：使用者要求文件確認後開始補測試、執行，沒問題再繼續主線。
+結果：
+- 已將 tests 專案 target frameworks 調整為 net9.0;net10.0，以支援直接引用 Server 專案。
+- 已新增 BackendSelectorTests.fs、BackendAdaptersTests.fs、RemoteMessageContractTests.fs。
+- 已加入對 Server 與 Messages 專案的 project references。
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過，13/13 passed。
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net9.0 已完成編譯，但 testhost 無法啟動，原因是環境缺少 Microsoft.NETCore.App 9.0.0 runtime，不是測試失敗。
+根因判讀：測試程式本身可編譯到 net9.0，但目前執行環境僅有 .NET 8 與 .NET 10 runtime，缺少 .NET 9 testhost 所需 runtime，因此 net9.0 只能完成 build 無法完成 execute。
+下一步：若接受以 net10.0 測試通過作為本輪回歸依據，可回主線繼續 WP03；若要補 net9.0 execute，需先安裝 .NET 9 runtime。
+關聯文件/工單/PR：tests/doc/WBS.md、tests/BackendSelectorTests.fs、tests/BackendAdaptersTests.fs、tests/RemoteMessageContractTests.fs

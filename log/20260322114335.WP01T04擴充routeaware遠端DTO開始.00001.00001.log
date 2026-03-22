@@ -1,0 +1,22 @@
+背景：WP01/T04 需要把 remote host 的 message contract 擴充成可攜帶 route 與 backend metadata，為後續 multi-agent / multi-host / multi-session control plane 鋪路。
+目標：在保持現有 remote command flow 可編譯的前提下，將 FsiRemoteCommandRequest/FsiRemoteResult/FsiRemoteCommandResponse 擴充為 route-aware DTO。
+計畫步驟：
+1. 盤點 Messages、McpFsiTools、FsiActor 三個使用點。
+2. 在 McpActorMessages.fs 增加 route/result metadata DTO。
+3. 調整 server 與 host 端 mapping 與 fallback 行為。
+4. build 驗證並回寫 WBS 進度。
+執行命令/參數：
+- sed -n / rg -n 盤點 message type 使用點
+結果：進行中
+根因判讀：待補
+下一步：修改 McpActorMessages.fs 與對應使用點
+關聯文件/工單/PR：doc/SD.md、doc/WBS.md
+prompt/上下文摘要：使用者要求繼續推進，當前步驟為 WP01/T04，目標是 route-aware remote DTO。
+結果：
+- 已在 McpActorMessages.fs 新增 FsiRemoteRouteDto。
+- FsiRemoteCommandRequest 現在可攜帶 Route、TimeoutMs。
+- FsiRemoteResult 現在可攜帶 Value、RawErrorType。
+- FsiRemoteCommandResponse 現在可攜帶 HostId、SessionId。
+- Server 與 FsiHost 已完成對應 mapping，舊 remote flow 仍可編譯。
+根因判讀：現有 remote message contract 只夠單一 host/single-session 模型，缺 route/result metadata；先在 transport 層補欄位，後續 backend router 與 host registry 才有可接的契約。
+下一步：進入 WP02，開始引入 backend abstraction 與 execution request/record routing。

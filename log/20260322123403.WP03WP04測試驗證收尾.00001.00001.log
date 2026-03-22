@@ -1,0 +1,18 @@
+背景：已補上 WP03 control-plane 與 WP04 InProcBackend 的測試專案 SA/SD/WBS 與對應測試案例，並完成 net10.0 測試執行。
+目標：用一組新的 summary log/op_log 收尾上一輪測試，讓 SOP 檢查基於最新紀錄通過，之後再繼續主線開發。
+計畫步驟：
+1. 確認 tests/doc/WBS.md 的 TT12-TT14 狀態已回寫為 done。
+2. 以最新測試結果建立 summary log/op_log。
+3. 重新執行 check.fsx，確認 log/op_log 次序與 repo 狀態檢查通過。
+執行命令/參數：
+- rg -n "TT12|TT13|TT14" tests/doc/WBS.md
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+- dotnet fsi /workspace/home/codex/check.fsx --repo /workspace/home/mcp/FSharp.MCP.DevKit --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+結果：
+- tests/doc/WBS.md 的 TT12、TT13、TT14 已為 done。
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過，19 passed、0 failed。
+- 上一輪 check 失敗點僅為 op_log 收尾時間早於最新 log，非程式或測試失敗。
+根因判讀：上一組測試紀錄先寫入 op_log 再補寫 log summary，導致最新檔案的修改時間順序不符合 check.fsx 規則；需以新的 summary 紀錄收尾。
+下一步：重新執行 check.fsx，確認 SOP 乾淨後繼續將 InProcBackend 接入 ExecutionRouter 與 legacy execution path。
+關聯文件/工單/PR：tests/doc/WBS.md、tests/ControlPlaneTests.fs、tests/InProcBackendTests.fs、src/FSharp.MCP.DevKit.Server/ControlPlane/*、src/FSharp.MCP.DevKit.Server/Backends/InProcBackend.fs
+prompt/上下文摘要：使用者提醒「測試記得」，因此先完成 WP03/WP04 的測試收尾與 SOP 檢查，再繼續主線整合。

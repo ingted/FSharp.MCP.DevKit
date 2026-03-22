@@ -11,19 +11,43 @@ type FsiRemoteDiagnostic =
       Severity: string
       Message: string }
 
+type FsiRemoteRouteDto =
+    { AgentId: string option
+      HostId: string option
+      SessionId: string option }
+
 type FsiRemoteCommandRequest =
     { RequestId: string
       CommandType: string
       Payload: string
-      UsePackageTargets: bool option }
+      Route: FsiRemoteRouteDto option
+      UsePackageTargets: bool option
+      TimeoutMs: int option }
 
 type FsiRemoteResult =
     { Output: string
       Errors: string
       IsSuccess: bool
       ExecutionTimeMs: float option
-      Diagnostics: FsiRemoteDiagnostic array }
+      Diagnostics: FsiRemoteDiagnostic array
+      Value: string option
+      RawErrorType: string option }
+
+type FsiRemoteSessionState =
+    { SessionId: string
+      SessionName: string
+      Status: string
+      Refs: string list
+      Loads: string list
+      SearchPaths: string list
+      Variables: (string * string) list
+      LastCheckpointId: string option
+      RunningSinceUtc: DateTime option
+      LastExecutionAt: DateTime option }
 
 type FsiRemoteCommandResponse =
     { RequestId: string
-      Result: FsiRemoteResult }
+      HostId: string option
+      SessionId: string option
+      Result: FsiRemoteResult
+      SessionState: FsiRemoteSessionState option }

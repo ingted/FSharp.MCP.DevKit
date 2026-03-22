@@ -1,0 +1,5 @@
+[2026-03-22T14:10:22Z] Started WP06 net10 host integration and provisioning implementation.
+[2026-03-22T14:11:40Z] Added ProcSupervisorClient, FsiSupervisorClient, Net10HostBackend, and ProvisioningServices.
+[2026-03-22T14:15:35Z] Updated FsiMcpService to register Net10 backend and expose CreateHost/CreateSession.
+[2026-03-22T14:18:54Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 => Passed 37, Failed 0, Skipped 0.
+[2026-03-22T14:19:12Z] dotnet build FSharp.MCP.DevKit.Async.sln => Build succeeded.

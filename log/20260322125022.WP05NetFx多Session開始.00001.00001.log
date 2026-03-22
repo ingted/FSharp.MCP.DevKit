@@ -1,0 +1,31 @@
+背景：WP03/WP04 已完成 routed in-proc 主線整合與測試，接下來要把 netfx host 從單 actor/單 session 改成 host supervisor + actor-per-session。
+目標：完成 WP05 的第一段落地，包括 netfx host 多 session actor 結構、route-aware remote client/backend，並補 fake-remote 單元測試。
+計畫步驟：
+1. 擴充 messages 契約，加入 remote session state DTO。
+2. 將 `FSharp.MCP.DevKit.FsiHost` 重切為 `HostSupervisorActor + SessionActor`。
+3. 新增 `IRemoteFsiClient` 與 `NetFxHostBackend`。
+4. 讓 server 具備註冊 `NetFxRemote` backend 的能力，但先不做 host provisioning。
+5. 補 `NetFxHostBackendTests` 與 remote DTO contract 測試。
+6. 執行 build/test，依結果回寫 WBS 與 log/op_log。
+執行命令/參數：
+- sed -n src/FSharp.MCP.DevKit.FsiHost/*
+- sed -n src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs
+- rg -n "sessionActors|Supervisor|FsiActor|RemoteFsiClient"
+結果：進行中
+根因判讀：若不先把 netfx host 切成 actor-per-session，後續不論是多 agent、多 host 還是 result_op parent orchestration，都會被單一 `fsiActor` 結構綁死。
+下一步：先改 message 契約與 host actor 結構，再補 backend adapter。
+關聯文件/工單/PR：doc/WBS.md、src/FSharp.MCP.DevKit.FsiHost/*、src/FSharp.MCP.DevKit.Messages/McpActorMessages.fs、src/FSharp.MCP.DevKit.Server/Backends/*
+prompt/上下文摘要：使用者要求繼續推進，且測試要跟上，因此本輪會先做可單元測的 netfx backend 與 actor 結構。
+結果：
+- `McpActorMessages.fs` 已新增 `FsiRemoteSessionState`，`FsiRemoteCommandResponse` 現在可攜帶 `SessionState`。
+- `FSharp.MCP.DevKit.FsiHost` 已改成 `HostSupervisorActor + SessionActor` 結構，`Program.fs` 也改由 supervisor 啟動，仍保留既有 `fsiActor` actor name。
+- netfx host 現在是 actor-per-session；未指定 session 時會落到 `default-session`。
+- host parent 已攔截 `PING`、`RESTART_HOST`、`LIST_SESSIONS`、`RESULT_OP`，其中 `RESULT_OP` 目前明確回 unsupported，不會進 session actor。
+- server 端已新增 `IRemoteFsiClient` 與 `NetFxHostBackend`，`RemoteFsiClient` 也已升級成可帶 route 的 remote command client。
+- `FsiMcpService` 在啟用 remote client 時會一併註冊 `NetFxRemote` backend。
+- 新增 `NetFxHostBackendTests.fs`，並更新 `RemoteMessageContractTests.fs`。
+- `dotnet build FSharp.MCP.DevKit.Async.sln` 通過。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過，`25 passed, 0 failed`。
+- `doc/WBS.md` 已更新 `T19-T23 = done`，`tests/doc/WBS.md` 已更新 `TT18-TT20 = done`。
+根因判讀：把 netfx host 先切成 parent/session actor 結構後，server 端才能用 `ExecutionRoute` 安全地把 request 落到指定 session；先以 fake-remote backend 測通 route 與 snapshot 契約，也能避免把實際 Akka transport 問題和 domain 契約問題混在一起。
+下一步：進入 WP06，先補 `.NET 10` host/proc supervisor 的 adapter 層與 provisioning 契約，再決定是否在本 repo 直接接 `FAkka.FSI.Supervisor` 還是先做 client façade。

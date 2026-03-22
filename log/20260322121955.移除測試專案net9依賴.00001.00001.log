@@ -1,0 +1,21 @@
+背景：使用者明確表示 net9 可以不用，因此 tests 專案不需要再保留 net9 執行目標，也不需要把 net9 測試執行視為驗收項。
+目標：將 tests 專案收斂到 net10.0，並同步更新 tests/doc 下的 SA/SD/WBS 描述，避免後續再被 net9 runtime 缺件卡住。
+計畫步驟：
+1. 將 tests fsproj 的 target framework 收斂為 net10.0。
+2. 更新 tests/doc/SD.md 與 tests/doc/WBS.md 的執行與驗收描述。
+3. 執行 net10.0 測試確認仍通過。
+4. 重跑 check.fsx 確認 SOP 合規。
+執行命令/參數：
+- rg -n 搜尋 tests 與 tests/doc 內的 net9/net8 相關描述
+結果：進行中
+根因判讀：先前保留 net9 只是為了擴充驗證，但既然使用者已確認 net9 不需要，繼續保留只會製造不必要的 runtime 依賴。
+下一步：更新 tests fsproj 與文件，再跑 net10.0 測試
+關聯文件/工單/PR：tests/FSharp.MCP.DevKit.Tests.fsproj、tests/doc/SD.md、tests/doc/WBS.md
+prompt/上下文摘要：使用者表示 net9 其實都可以不用，因此本步將測試專案正式收斂到 net10.0。
+結果：
+- tests/FSharp.MCP.DevKit.Tests.fsproj 已從 net9.0;net10.0 收斂為 net10.0。
+- tests/doc/SD.md 已移除 net9/net8 擴充執行描述。
+- tests/doc/WBS.md 已移除 TT12，測試驗收只保留 net10.0。
+- dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過，13/13 passed。
+根因判讀：既然 net9 已不是目標平台，保留它只會把環境缺件誤包裝成測試阻塞；測試專案收斂到 net10 可讓驗收標準與實際支援平台一致。
+下一步：回主線繼續 WP03。
