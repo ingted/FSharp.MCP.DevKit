@@ -1,0 +1,23 @@
+背景：`T41` 與主專案內建 MCP client / availability / smoke / E2E 已完成，但使用者要求進一步補齊 `notes` commit、`DEMO.md`、`DevLog`、WBS 優化排程，以及 agent 自行試用後的收尾證據。
+目標：完成 `T48` 文件與驗證收尾，補 `DEMO.md`、append `DevLog`、將 self-use 發現的優化點落入 `WBS`，並把 `notes/00017.txt` 一併納入版控。
+計畫步驟：
+1. 盤點尚未完成項目與隱藏 stub，確認主 WBS 只剩 closeout 與後續優化 backlog。
+2. 補 `DEMO.md`，以 agent prompt / tool flow / result aggregation 為主線示範主要功能。
+3. append `doc/DevLog.md`，記錄 multi-agent 平台設計、MCP client 導入、`T41`、self-use 困境與判讀。
+4. 更新 `doc/WBS.md`，將 `T48/M6/P9` 收尾，並新增優化排程 `O1-O5`。
+5. 執行 `dotnet test` 與 `check.fsx`，若 `check.fsx` 因 log 未前進而失敗，補新 `log/op_log` 後再驗證。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+- 額外 self-use：嘗試以 repo 外 `.fsx` 與臨時 console app 重用 `McpClientHarness`
+結果：
+- 已新增 `DEMO.md`
+- 已 append `doc/DevLog.md`
+- 已更新 `doc/WBS.md`，`T48` 收尾並新增 `O1-O5` 優化 backlog
+- 已確認 `notes/00017.txt` 將一併納入 commit
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore` 通過
+- self-use 結果：repo 內 client/E2E 路徑正常，repo 外直接腳本化重用 `McpClientHarness` 仍有 bootstrap friction
+根因判讀：目前真正未收斂的是「生產化優化項」，不是主 WBS 的功能缺件。最重要的後續優化是 `.NET 10` host 的正式 session reset，它需要上游 `FAkka.Fsi.Contracts / FAkka.FSI.Supervisor` 新 contract，不能只在 server 端做假實作。
+下一步：commit/push 這輪 closeout 文件與 note，並以 `O1-O5` 作為下輪優化順序。
+關聯文件/工單/PR：DEMO.md、doc/DevLog.md、doc/WBS.md、notes/00017.txt
+prompt/上下文摘要：notes 全部需要 commit push；盤點剩餘未完成項並繼續；agent 自行試用後優化 WBS；補 DEMO 與 DevLog。

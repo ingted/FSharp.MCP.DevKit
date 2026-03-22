@@ -1,0 +1,5 @@
+[2026-03-22T16:02:34Z] Added DEMO.md covering legacy flow, routed flow, async polling, result aggregation, resources, and documentation tools.
+[2026-03-22T16:03:08Z] Appended DevLog with architecture decisions, MCP client adoption, T41 implementation, and self-use findings.
+[2026-03-22T16:03:42Z] Updated WBS to close T48/M6/P9 and added optimization backlog O1-O5.
+[2026-03-22T16:04:15Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore passed.
+[2026-03-22T16:04:52Z] check.fsx required a new closeout log/op_log before final clean pass.

@@ -1,0 +1,719 @@
+› 1. 請先回答為什麼 /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md 里程碑裡面都還是 todo?
+  2. 完成後請繼續主線開發
+
+
+• 我先看 doc/WBS.md 的 milestone/phase 表，確認哪些欄位沒同步，再回覆原因；之後我會直接往下一個主線缺口推進，不停在文件說明。
+
+• Explored
+  └ Read WBS.md
+
+• Ran git status --short
+  └ ?? notes/00016.txt
+    ?? tests/README.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 里程碑/phase 目前還是 todo 的原因很單純：我之前只同步了 task-level Txx 進度，沒有把上層彙總表一起回寫，所以 aggregate status 落後於實際完成度。這不是功能沒做，而是文件同步
+  漏了一層；我會先把 doc/WBS.md 的 milestone/phase 進度補正，然後直接往下一段主線做 smoke/regression。
+
+• Explored
+  └ Read WBS.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把 doc/WBS.md 的 milestone/phase 狀態補成實際值，然後直接補 WP10 smoke/regression 測試。這一輪主線我不碰新 backend feature，而是把目前已落地的能力做更高階的回歸驗證。
+
+• Edited doc/WBS.md (+15 -15)
+    19  |---|---|---|---|---|
+    20 -| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 | todo |
+    21 -| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | todo |
+    22 -| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | todo |
+    23 -| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | todo |
+    24 -| M5 | 完成 result plane | result registry, query service | 可依 `ResultId` 查詢與集合運算 | todo |
+    25 -| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | todo |
+    20 +| M1 | 建立 shared domain / contracts | `Core`, `Messages`, backend interfaces | 編譯通過，無行為變更 | done |
+    21 +| M2 | 建立 control plane | registries, router, default routing | 可註冊 agent/host/session | done |
+    22 +| M3 | 完成 dual-backend 接線 | inproc, netfx, net10 backends | 可依 host kind 路由執行，且 out-of-proc 一律經 ProcSupervisor | done |
+    23 +| M4 | 完成 MCP surface | tools/resources/http | 舊工具相容，新工具可顯式 routing | done |
+    24 +| M5 | 完成 result plane | result registry, query service | built-in result plane 已可依 `ResultId` 查詢與集合運算，`FSharpCode` query 仍待補 | doing |
+    25 +| M6 | 完成驗證與文件收尾 | logs, check, DevLog, QA evidence | `check.fsx` 無 FAIL | doing |
+    26
+       ⋮
+    30  |---|---|---|---|---|
+    31 -| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 | todo |
+    32 -| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 | todo |
+    33 -| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 | todo |
+    34 -| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 | todo |
+    35 -| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | todo |
+    36 -| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | todo |
+    37 -| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | todo |
+    38 -| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | todo |
+    39 -| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | todo |
+    31 +| P1 | shared type / module skeleton | `Core/*`, `Messages/*`, `Backends/IBackend.fs` | 無 | done |
+    32 +| P2 | control plane registries + router | `Server/ControlPlane/*`, `Server/Routing/*` | P1 | done |
+    33 +| P3 | inproc backend 遷移 | `Backends/InProcBackend.fs` | P1-P2 | done |
+    34 +| P4 | netfx host multi-session | `FsiHost/*`, `Backends/NetFxHostBackend.fs` | P1-P2 | done |
+    35 +| P5 | net10 host integration | `Integration/*`, `Backends/Net10HostBackend.fs` | P1-P2 | done |
+    36 +| P6 | async queue 重切 | `AsyncJobRegistry`, tool facade | P2-P5 | done |
+    37 +| P7 | MCP tools/resources | `Tools/*`, `Resources/*`, `Program.fs` | P2-P6 | done |
+    38 +| P8 | result plane | `ResultRegistry`, `ResultQueryService`, result tools/resources | P1-P7 | doing |
+    39 +| P9 | tests / QA / doc closeout | `tests/*`, `doc/*`, logs | P1-P8 | doing |
+    40
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要補一個高階 smoke/regression 測試檔，覆蓋 T43-T47：舊工具、multi-host、multi-session、async FIFO、result query。為了讓 multi-host/session 真的有意義，我會在測試內做一個
+  stateful fake .NET 10 supervisor，而不是只做靜態 stub。
+
+• Explored
+  └ Read 00016.txt, FsiSupervisorClient.fs, ProcSupervisorClient.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在補 smoke/regression 測試本體，這一輪會連同你剛要的 tests/README.md 一起納入，避免文件和測試分離。
+
+• Edited 4 files (+396 -5)
+  └ doc/WBS.md (+5 -5)
+    242  |---|---|---|---|---|
+    243 -| T43 | 舊工具 smoke | default route regression tests | 舊 client 不壞 | todo |
+    244 -| T44 | multi-host smoke | 兩個 host 並行 | state 不互相污染 | todo |
+    245 -| T45 | multi-session smoke | 同 host 兩個 session | state 隔離 | todo |
+    246 -| T46 | async job smoke | queue FIFO + result linkage | `asyncId -> ResultId` | todo |
+    247 -| T47 | result query smoke | compare / forall / exists | result plane 可用 | todo |
+    243 +| T43 | 舊工具 smoke | default route regression tests | smoke 測試已覆蓋舊工具 execute/eval/restart/async 相容性 | done |
+    244 +| T44 | multi-host smoke | 兩個 host 並行 | smoke 測試已驗證兩個 host 狀態不互相污染 | done |
+    245 +| T45 | multi-session smoke | 同 host 兩個 session | smoke 測試已驗證同 host 不同 session state 隔離 | done |
+    246 +| T46 | async job smoke | queue FIFO + result linkage | smoke 測試已驗證 FIFO 與 `asyncId -> ResultId` linkage | done |
+    247 +| T47 | result query smoke | compare / forall / exists | smoke 測試已驗證 built-in result plane | done |
+    248  | T48 | `check.fsx` / DevLog / docs closeout | SOP evidence | 無 FAIL | todo |
+
+  └ tests/FSharp.MCP.DevKit.Tests.fsproj (+1 -0)
+    46      <Compile Include="RemoteMessageContractTests.fs" />
+    47 +    <Compile Include="SmokeRegressionTests.fs" />
+    48      <Compile Include="SmartSymbolDetectionServiceTests.fs" />
+
+  └ tests/SmokeRegressionTests.fs (+379 -0)
+      1 +module SmokeRegressionTests
+      2 +
+      3 +open System
+      4 +open System.Collections.Concurrent
+      5 +open System.Text.Json
+      6 +open System.Threading.Tasks
+      7 +open Microsoft.Extensions.Logging.Abstractions
+      8 +open Xunit
+      9 +open FSharp.MCP.DevKit.Core
+     10 +open FSharp.MCP.DevKit.Server
+     11 +open FSharp.MCP.DevKit.Server.Integration
+     12 +open FSharp.MCP.DevKit.Server.McpFsiTools
+     13 +open FSharp.MCP.DevKit.Server.ResultQuery
+     14 +
+     15 +type private SessionState =
+     16 +    { Variables: ConcurrentDictionary<string, string>
+     17 +      Refs: ResizeArray<string>
+     18 +      Loads: ResizeArray<string>
+     19 +      SearchPaths: ResizeArray<string>
+     20 +      RunningSinceUtc: DateTime }
+     21 +
+     22 +type private StatefulFakeProcSupervisorClient() =
+     23 +    let snapshots = ConcurrentDictionary<string, ProcHostSnapshot>()
+     24 +
+     25 +    interface IProcSupervisorClient with
+     26 +        member _.StartProc(procId: string, spec: ProcHostSpec) =
+     27 +            let snapshot =
+     28 +                { ProcId = procId
+     29 +                  Status = "running"
+     30 +                  ProcessId = Some(8000 + snapshots.Count)
+     31 +                  FsiSupervisorPath = Some $"akka.tcp://FsiExecutionSystem@localhost:{9000 + snapshots.Count}/user/fsi/supervisor"
+     32 +                  NodeAddress = Some $"akka.tcp://FsiExecutionSystem@localhost:{9000 + snapshots.Count}"
+     33 +                  LastProbeUtc = Some DateTime.UtcNow
+     34 +                  LastProbeOk = Some true
+     35 +                  ProbeFailures = 0
+     36 +                  Spec = Some spec
+     37 +                  LastError = None }
+     38 +
+     39 +            snapshots.[procId] <- snapshot
+     40 +            Task.FromResult snapshot
+     41 +
+     42 +        member _.StopProc(procId: string, _) =
+     43 +            let snapshot =
+     44 +                snapshots.[procId]
+     45 +
+     46 +            let stopped =
+     47 +                { snapshot with
+     48 +                    Status = "stopped"
+     49 +                    LastProbeUtc = Some DateTime.UtcNow }
+     50 +
+     51 +            snapshots.[procId] <- stopped
+     52 +            Task.FromResult stopped
+     53 +
+     54 +        member _.GetProcInfo(procId: string) =
+     55 +            Task.FromResult(
+     56 +                match snapshots.TryGetValue procId with
+     57 +                | true, snapshot -> Some snapshot
+     58 +                | false, _ -> None
+     59 +            )
+     60 +
+     61 +        member _.ListProcInfo() = Task.FromResult(snapshots.Values |> Seq.toList)
+     62 +
+     63 +        member _.RestartProc(procId: string) =
+     64 +            let snapshot = snapshots.[procId]
+     65 +
+     66 +            let restarted =
+     67 +                { snapshot with
+     68 +                    Status = "running"
+     69 +                    LastProbeUtc = Some DateTime.UtcNow
+     70 +                    LastProbeOk = Some true
+     71 +                    ProbeFailures = 0 }
+     72 +
+     73 +            snapshots.[procId] <- restarted
+     74 +            Task.FromResult restarted
+     75 +
+     76 +type private StatefulFakeFsiSupervisorClient() =
+     77 +    let sessions = ConcurrentDictionary<string * string, SessionState>()
+     78 +
+     79 +    let getOrCreateSession hostId sessionId =
+     80 +        sessions.GetOrAdd(
+     81 +            (hostId, sessionId),
+     82 +            fun _ ->
+     83 +                { Variables = ConcurrentDictionary()
+     84 +                  Refs = ResizeArray()
+     85 +                  Loads = ResizeArray()
+     86 +                  SearchPaths = ResizeArray()
+     87 +                  RunningSinceUtc = DateTime.UtcNow }
+     88 +        )
+     89 +
+     90 +    let tryGetSession hostId sessionId =
+     91 +        match sessions.TryGetValue((hostId, sessionId)) with
+     92 +        | true, state -> Some state
+     93 +        | false, _ -> None
+     94 +
+     95 +    let trimQuotes (value: string) =
+     96 +        let trimmed = value.Trim()
+     97 +
+     98 +        if trimmed.Length >= 2 && trimmed.StartsWith("\"") && trimmed.EndsWith("\"") then
+     99 +            trimmed.Substring(1, trimmed.Length - 2)
+    100 +        else
+    101 +            trimmed
+    102 +
+    103 +    let executeCode (hostId: string) (request: FsiSupervisorExecRequest) =
+    104 +        let state = getOrCreateSession hostId request.SessionId
+    105 +
+    106 +        request.Refs |> List.iter state.Refs.Add
+    107 +        request.Loads |> List.iter state.Loads.Add
+    108 +
+    109 +        let code = request.Code.Trim()
+    110 +
+    111 +        if String.IsNullOrWhiteSpace code || code = "()" then
+    112 +            { SessionId = request.SessionId
+    113 +              RawErrorType = None
+    114 +              Result = { FsiResult.empty with Output = "ok"; Value = Some "ok" } }
+    115 +        elif code.StartsWith("#I ", StringComparison.Ordinal) then
+    116 +            let path = code.Substring(3) |> trimQuotes
+    117 +            state.SearchPaths.Add path
+    118 +
+    119 +            { SessionId = request.SessionId
+    120 +              RawErrorType = None
+    121 +              Result = { FsiResult.empty with Output = path; Value = Some path } }
+    122 +        elif code.StartsWith("#r ", StringComparison.Ordinal) then
+    123 +            let reference = code.Substring(3) |> trimQuotes
+    124 +            state.Refs.Add reference
+    125 +
+    126 +            { SessionId = request.SessionId
+    127 +              RawErrorType = None
+    128 +              Result = { FsiResult.empty with Output = reference; Value = Some reference } }
+    129 +        elif code.StartsWith("let ", StringComparison.Ordinal) then
+    130 +            let body = code.Substring(4)
+    131 +            let parts = body.Split([| '=' |], 2)
+    132 +
+    133 +            if parts.Length = 2 then
+    134 +                let name = parts.[0].Trim().Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries) |> Array.last
+    135 +                let value = parts.[1].Trim() |> trimQuotes
+    136 +                state.Variables.[name] <- value
+    137 +
+    138 +                { SessionId = request.SessionId
+    139 +                  RawErrorType = None
+    140 +                  Result = { FsiResult.empty with Output = code; Value = Some value } }
+    141 +            else
+    142 +                { SessionId = request.SessionId
+    143 +                  RawErrorType = Some "ParseError"
+    144 +                  Result =
+    145 +                    { Output = ""
+    146 +                      Errors = "Unsupported let binding format."
+    147 +                      IsSuccess = false
+    148 +                      ExecutionTime = None
+    149 +                      Diagnostics = [||]
+    150 +                      Value = None } }
+    151 +        else
+    152 +            match state.Variables.TryGetValue code with
+    153 +            | true, value ->
+    154 +                { SessionId = request.SessionId
+    155 +                  RawErrorType = None
+    156 +                  Result = { FsiResult.empty with Output = value; Value = Some value } }
+    157 +            | false, _ ->
+    158 +                { SessionId = request.SessionId
+    159 +                  RawErrorType = Some "MissingValue"
+    160 +                  Result =
+    161 +                    { Output = ""
+    162 +                      Errors = $"Value '{code}' is not defined."
+    163 +                      IsSuccess = false
+    164 +                      ExecutionTime = None
+    165 +                      Diagnostics = [||]
+    166 +                      Value = None } }
+    167 +
+    168 +    interface IFsiSupervisorClient with
+    169 +        member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+    170 +            Task.FromResult(executeCode host.HostId request)
+    171 +
+    172 +        member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+    173 +            Task.FromResult(
+    174 +                match tryGetSession host.HostId sessionId with
+    175 +                | Some state ->
+    176 +                    { SessionId = sessionId
+    177 +                      Status = "ready"
+    178 +                      Refs = List.ofSeq state.Refs
+    179 +                      Loads = List.ofSeq state.Loads
+    180 +                      SearchPaths = List.ofSeq state.SearchPaths
+    181 +                      Variables = state.Variables |> Seq.map (fun pair -> pair.Key, pair.Value) |> Seq.toList
+    182 +                      LastCheckpointId = None
+    183 +                      RunningSinceUtc = Some state.RunningSinceUtc }
+    184 +                | None ->
+    185 +                    { SessionId = sessionId
+    186 +                      Status = "missing"
+    187 +                      Refs = []
+    188 +                      Loads = []
+    189 +                      SearchPaths = []
+    190 +                      Variables = []
+    191 +                      LastCheckpointId = None
+    192 +                      RunningSinceUtc = None }
+    193 +            )
+    194 +
+    195 +        member _.ListSessions(host: HostRecord) =
+    196 +            Task.FromResult(
+    197 +                sessions
+    198 +                |> Seq.choose (fun pair ->
+    199 +                    let (currentHostId, sessionId) = pair.Key
+    200 +
+    201 +                    if currentHostId = host.HostId then
+    202 +                        let state = pair.Value
+    203 +
+    204 +                        Some
+    205 +                            { SessionId = sessionId
+    206 +                              Status = "ready"
+    207 +                              Refs = List.ofSeq state.Refs
+    208 +                              Loads = List.ofSeq state.Loads
+    209 +                              SearchPaths = List.ofSeq state.SearchPaths
+    210 +                              Variables = state.Variables |> Seq.map (fun item -> item.Key, item.Value) |> Seq.toList
+    211 +                              LastCheckpointId = None
+    212 +                              RunningSinceUtc = Some state.RunningSinceUtc }
+    213 +                    else
+    214 +                        None)
+    215 +                |> Seq.toList
+    216 +            )
+    217 +
+    218 +let private waitForCompletion (service: FsiMcpService) asyncId =
+    219 +    task {
+    220 +        let mutable attempt = 0
+    221 +        let mutable status = service.GetAsyncExecutionStatus(asyncId)
+    222 +
+    223 +        while not status.IsCompleted && attempt < 50 do
+    224 +            do! Task.Delay(100)
+    225 +            attempt <- attempt + 1
+    226 +            status <- service.GetAsyncExecutionStatus(asyncId)
+    227 +
+    228 +        return status
+    229 +    }
+    230 +
+    231 +let private createNet10SmokeService () =
+    232 +    let procClient = StatefulFakeProcSupervisorClient() :> IProcSupervisorClient
+    233 +    let fsiClient = StatefulFakeFsiSupervisorClient() :> IFsiSupervisorClient
+    234 +
+    235 +    new FsiMcpService(
+    236 +        NullLogger<FsiMcpService>.Instance,
+    237 +        enableRemoteClient = false,
+    238 +        procSupervisorClient = procClient,
+    239 +        fsiSupervisorClient = fsiClient
+    240 +    )
+    241 +
+    242 +[<Fact>]
+    243 +let ``Smoke old tools remain compatible on default route`` () =
+    244 +    task {
+    245 +        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    246 +        use _cleanup = service :> IDisposable
+    247 +
+    248 +        let! execOutput = FSharpInteractiveTools.ExecuteFSharpCode(service, "let legacySmoke = 5", 30)
+    249 +        let! evalBeforeRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+    250 +        let! _ = FSharpInteractiveTools.RestartFSISession(service, 30)
+    251 +        let! evalAfterRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+    252 +        let! asyncId = FSharpInteractiveTools.ExecuteFSharpCodeAsync(service, "let legacySmoke = 9", 30)
+    253 +        let! asyncStatus = waitForCompletion service asyncId
+    254 +        let! evalAfterAsync = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+    255 +
+    256 +        Assert.Contains("legacySmoke", execOutput)
+    257 +        Assert.Equal("5", evalBeforeRestart)
+    258 +        Assert.Contains("not defined", evalAfterRestart, StringComparison.OrdinalIgnoreCase)
+    259 +        Assert.True(asyncStatus.IsCompleted)
+    260 +        Assert.True(asyncStatus.ResultId.IsSome)
+    261 +        Assert.Equal("9", evalAfterAsync)
+    262 +    }
+    263 +
+    264 +[<Fact>]
+    265 +let ``Smoke multi-host routed execution keeps host state isolated`` () =
+    266 +    task {
+    267 +        let service = createNet10SmokeService ()
+    268 +        use _cleanup = service :> IDisposable
+    269 +
+    270 +        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-mh", "Multi Host Agent")
+    271 +
+    272 +        let! _ = McpControlPlaneTools.CreateFsiHost(service, "agent-mh", "net10", "dotnet", "", "/srv/fsi", "host-a", "PING", 1000)
+    273 +        let! _ = McpControlPlaneTools.CreateFsiHost(service, "agent-mh", "net10", "dotnet", "", "/srv/fsi", "host-b", "PING", 1000)
+    274 +        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-mh", "host-a", "session-shared", "A")
+    275 +        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-mh", "host-b", "session-shared", "B")
+    276 +
+    277 +        let execA = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-mh", "host-a", "session-shared", "let hostValue = 101", 30)
+    278 +        let execB = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-mh", "host-b", "session-shared", "let hostValue = 202", 30)
+    279 +        do! Task.WhenAll(execA, execB)
+    280 +
+    281 +        let evalA = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-mh", "host-a", "session-shared", "hostValue", 30)
+    282 +        let evalB = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-mh", "host-b", "session-shared", "hostValue", 30)
+    283 +        let! values = Task.WhenAll(evalA, evalB)
+    284 +
+    285 +        Assert.Equal("101", values.[0])
+    286 +        Assert.Equal("202", values.[1])
+    287 +    }
+    288 +
+    289 +[<Fact>]
+    290 +let ``Smoke multi-session routed execution keeps session state isolated`` () =
+    291 +    task {
+    292 +        let service = createNet10SmokeService ()
+    293 +        use _cleanup = service :> IDisposable
+    294 +
+    295 +        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-ms", "Multi Session Agent")
+    296 +
+    297 +        let! _ = McpControlPlaneTools.CreateFsiHost(service, "agent-ms", "net10", "dotnet", "", "/srv/fsi", "host-ms", "PING", 1000)
+    298 +        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-ms", "host-ms", "session-a", "Session A")
+    299 +        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-ms", "host-ms", "session-b", "Session B")
+    300 +
+    301 +        let! _ = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-ms", "host-ms", "session-a", "let sessionValue = 11", 30)
+    302 +        let! _ = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-ms", "host-ms", "session-b", "let sessionValue = 22", 30)
+    303 +        let! valueA = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-ms", "host-ms", "session-a", "sessionValue", 30)
+    304 +        let! valueB = McpExecutionTools.EvaluateFSharpExpressionRouted(service, "agent-ms", "host-ms", "session-b", "sessionValue", 30)
+    305 +
+    306 +        Assert.Equal("11", valueA)
+    307 +        Assert.Equal("22", valueB)
+    308 +    }
+    309 +
+    310 +[<Fact>]
+    311 +let ``Smoke async queue remains FIFO and links result ids`` () =
+    312 +    task {
+    313 +        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    314 +        use _cleanup = service :> IDisposable
+    315 +
+    316 +        let asyncId1 = service.EnqueueExecuteCode("let mutable fifoCounter = 1", TimeSpan.FromSeconds 30.0)
+    317 +        let asyncId2 = service.EnqueueExecuteCode("fifoCounter <- fifoCounter + 1", TimeSpan.FromSeconds 30.0)
+    318 +
+    319 +        let! status1 = waitForCompletion service asyncId1
+    320 +        let! status2 = waitForCompletion service asyncId2
+    321 +        let! evalRecord = service.ExecuteOperation(EvaluateExpression, "fifoCounter", timeout = TimeSpan.FromSeconds 30.0)
+    322 +
+    323 +        Assert.True(status1.IsCompleted)
+    324 +        Assert.True(status2.IsCompleted)
+    325 +        Assert.True(status1.ResultId.IsSome)
+    326 +        Assert.True(status2.ResultId.IsSome)
+    327 +        Assert.Equal(Some "2", evalRecord.Result.Value)
+    328 +    }
+    329 +
+    330 +[<Fact>]
+    331 +let ``Smoke result queries support exists forall and compare`` () =
+    332 +    task {
+    333 +        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    334 +        use _cleanup = service :> IDisposable
+    335 +
+    336 +        let! _ = service.ExecuteOperation(ExecuteCode, "let querySmoke = 7", timeout = TimeSpan.FromSeconds 30.0)
+    337 +        let! first = service.ExecuteOperation(EvaluateExpression, "querySmoke", timeout = TimeSpan.FromSeconds 30.0)
+    338 +        let! _ = service.ExecuteOperation(ExecuteCode, "let querySmoke = 8", timeout = TimeSpan.FromSeconds 30.0)
+    339 +        let! second = service.ExecuteOperation(EvaluateExpression, "querySmoke", timeout = TimeSpan.FromSeconds 30.0)
+    340 +
+    341 +        let existsJson =
+    342 +            McpResultTools.QueryFsiResults(
+    343 +                service,
+    344 +                "default-agent",
+    345 +                "exists",
+    346 +                $"{first.ResultId}\n{second.ResultId}",
+    347 +                queryText = "valuecontains:8"
+    348 +            )
+    349 +
+    350 +        let forallJson =
+    351 +            McpResultTools.QueryFsiResults(
+    352 +                service,
+    353 +                "default-agent",
+    354 +                "forall",
+    355 +                $"{first.ResultId}\n{second.ResultId}",
+    356 +                queryText = "isSuccess"
+    357 +            )
+    358 +
+    359 +        let compareJson =
+    360 +            McpResultTools.CompareFsiResults(
+    361 +                service,
+    362 +                "default-agent",
+    363 +                first.ResultId,
+    364 +                second.ResultId,
+    365 +                queryText = "value"
+    366 +            )
+    367 +
+    368 +        let existsResponse = JsonSerializer.Deserialize<ResultQueryResponse>(existsJson)
+    369 +        let forallResponse = JsonSerializer.Deserialize<ResultQueryResponse>(forallJson)
+    370 +        let compareResponse = JsonSerializer.Deserialize<ResultQueryResponse>(compareJson)
+    371 +
+    372 +        Assert.True(existsResponse.IsSuccess)
+    373 +        Assert.Equal("True", existsResponse.Output)
+    374 +        Assert.True(forallResponse.IsSuccess)
+    375 +        Assert.Equal("True", forallResponse.Output)
+    376 +        Assert.True(compareResponse.IsSuccess)
+    377 +        Assert.Contains(first.ResultId, compareResponse.MaterializedJson.Value)
+    378 +        Assert.Contains(second.ResultId, compareResponse.MaterializedJson.Value)
+    379 +    }
+
+  └ tests/doc/WBS.md (+11 -0)
+    178  | TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | done |
+    179 +
+    180 +## WP-T15 Smoke / Regression
+    181 +
+    182 +驗證目前主進度已完成功能的高階 smoke/regression 場景。
+    183 +
+    184 +| ID | 工作項目 | 產出 | 驗收標準 | 進度 |
+    185 +| --- | --- | --- | --- | --- |
+    186 +| TT37 | 新增 `SmokeRegressionTests.fs` 舊工具 smoke | default route regression 測試 | 舊工具相容性可回歸 | done |
+    187 +| TT38 | 補 multi-host / multi-session smoke | stateful fake supervisor smoke 測試 | host/session state 隔離可回歸 | done |
+    188 +| TT39 | 補 async / result query smoke | FIFO/result-plane smoke 測試 | async linkage 與 built-in query 可回歸 | done |
+    189 +| TT40 | 重新執行 `dotnet test -f net10.0` | 測試結果 | smoke/regression 補齊後仍全數通過 | todo |
+
+─ Worked for 1m 28s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試檔已補上，現在先跑 dotnet test -f net10.0。這一輪如果失敗，優先修的是 smoke fake 的 state model，不會去動 production code。
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +56 lines
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/SmokeRegressionTests.fs(279,13): warning FS0025: Incomplete pattern matches on this expression. [/workspace/home/mcp/
+    FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj]
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試卡在兩個小問題：一個是舊工具 restart method 名稱實際不在 FSharpInteractiveTools 上，另一個是 Task.WhenAll 的型別推斷。我先對準實際 API 修掉，然後重跑。
+
+• Explored
+  └ Read SmokeRegressionTests.fs
+    Search RestartFSI|RestartFsi|RestartFSISession in McpFsiTools.fs
+    Read McpFsiTools.fs
+
+• Edited tests/SmokeRegressionTests.fs (+2 -2)
+    249          let! evalBeforeRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+    250 -        let! _ = FSharpInteractiveTools.RestartFSISession(service, 30)
+    250 +        let! _ = FSharpInteractiveTools.ResetFSISession(service, 30)
+    251          let! evalAfterRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+        ⋮
+    278          let execB = McpExecutionTools.ExecuteFSharpCodeRouted(service, "agent-mh", "host-b", "session-shared", "let hostValue = 202", 30)
+    279 -        do! Task.WhenAll(execA, execB)
+    279 +        let! _ = Task.WhenAll [| execA; execB |]
+    280
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +50 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• WP10 smoke/regression 已經綠燈，現在我把 TT40、README、log/op_log 一起補齊，然後再做一次 commit + push + check。
+
+• Edited 3 files (+23 -1)
+  └ log/20260322163520.WP10SmokeRegression完成.00001.00001.log (+19 -0)
+     1 +背景：`WP08/WP09` 的 control-plane、routed execution、result plane 已落地，但 `WBS` 尚有 `WP10` 的 smoke/regression 未收尾，而且 milestone/phase 進度表也沒同步。
+     2 +目標：補齊 `T43-T47` smoke/regression、更新 `WBS` aggregate 進度，並新增 tests README 讓測試案例流程可追溯。
+     3 +計畫步驟：
+     4 +1. 修正 `doc/WBS.md` 的里程碑與 phase 進度，讓 aggregate status 與 task-level status 一致。
+     5 +2. 新增 `tests/SmokeRegressionTests.fs`，覆蓋舊工具 smoke、multi-host、multi-session、async FIFO、result query smoke。
+     6 +3. 更新 `tests/doc/WBS.md` 與 `tests/README.md`。
+     7 +4. 執行 `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`。
+     8 +執行命令/參數：
+     9 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+    10 +結果：
+    11 +- 已更新 `doc/WBS.md` 里程碑與 phase 進度
+    12 +- 已新增 `tests/SmokeRegressionTests.fs`
+    13 +- 已更新 `tests/doc/WBS.md`
+    14 +- 已新增 `tests/README.md`
+    15 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+    16 +根因判讀：里程碑仍是 `todo` 不是因為功能沒做，而是前面只同步了 `Txx` 層級，漏掉 aggregate 層。這輪順手把 smoke/regression 補齊後，`WBS` 才能真實反映目前完成度，而不是
+        只靠零散 task 狀態。
+    17 +下一步：commit/push/check 本輪 smoke/regression 與 README 文件，再回到剩餘主線缺口 `T41` 或更完整的 closeout。
+    18 +關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、tests/README.md、tests/SmokeRegressionTests.fs
+    19 +prompt/上下文摘要：先回答為什麼 WBS 里程碑還是 todo，然後繼續主線開發。
+
+  └ log/20260322163520.WP10SmokeRegression完成.op_log (+3 -0)
+    1 +[2026-03-22T16:35:20Z] Updated WBS milestone/phase aggregate progress.
+    2 +[2026-03-22T16:36:11Z] Added SmokeRegressionTests covering old tools, multi-host, multi-session, async FIFO, and result query smoke.
+    3 +[2026-03-22T16:36:54Z] dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 passed.
+
+  └ tests/doc/WBS.md (+1 -1)
+    188  | TT39 | 補 async / result query smoke | FIFO/result-plane smoke 測試 | async linkage 與 built-in query 可回歸 | done |
+    189 -| TT40 | 重新執行 `dotnet test -f net10.0` | 測試結果 | smoke/regression 補齊後仍全數通過 | todo |
+    189 +| TT40 | 重新執行 `dotnet test -f net10.0` | 測試結果 | smoke/regression 補齊後仍全數通過 | done |
+
+• Ran git status --short
+  └  M doc/WBS.md
+     M tests/FSharp.MCP.DevKit.Tests.fsproj
+    … +4 lines
+    ?? tests/README.md
+    ?? tests/SmokeRegressionTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• build 我也補跑一次 serial 模式，確認 smoke tests 加進 solution 後沒有額外破壞。接著就提交這一段。
+
+• Waited for background terminal · dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln -m:1
+
+• Ran dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    … +136 lines
+
+    Time Elapsed 00:00:27.30
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這批 smoke/regression 與 README 都是綠的。我現在直接提交，之後再跑一次 check.fsx 把最新 log/op_log 與工作樹一起驗掉。
+
+• Ran git add -A && git commit -m "test: add smoke regression coverage and test README" && git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       3b95c85..a5d80a3  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Ran CODEX_THREAD_ID=20260322-wp10-check dotnet fsi --exec /workspace/home/mcp/FSharp.MCP.DevKit/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /
+  │ workspace/home/mcp/FSharp.MCP.DevKit
+  └ SessionId   : 20260322-wp10-check
+    State file  : /workspace/home/codex/20260322-wp10-check.state.json
+    … +15 lines
+    [PASS] git_clean - repo 工作樹乾淨
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 原因是文件同步漏了一層，不是功能沒做。之前我只更新了 doc/WBS.md 裡的 Txx 任務列，沒有把上面的 里程碑 和 phase schedule 彙總表一起回寫，所以 aggregate status 一直停在 todo。
+  我現在已經補正：
+
+  - M1-M4 改成 done
+  - M5-M6 改成 doing
+  - P1-P7 改成 done
+  - P8-P9 改成 doing
+
+  主線我也繼續往前推了，不只是改文件。這一輪新增了 tests/SmokeRegressionTests.fs 和 tests/README.md，把 WP10 的 smoke/regression 補起來，覆蓋：
+
+  - 舊工具 default-route smoke
+  - multi-host isolation
+  - multi-session isolation
+  - async FIFO + ResultId linkage
+  - result query smoke
+
+  同步更新了 tests/doc/WBS.md 與 doc/WBS.md，T43-T47 和 TT40 都已標成 done。驗證結果：
+
+  - dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 通過
+  - dotnet build FSharp.MCP.DevKit.Async.sln -m:1 通過
+  - check.fsx 通過，PASS=15 WARN=0 FAIL=0
+
+  已提交並推上：
+
+  - a5d80a3 test: add smoke regression coverage and test README
+
+  現在剩下最明確的主線缺口是 doc/WBS.md 的 T41，也就是 FSharpCode result query。
+
+
+› 1. 你的測試是起 MCP Client 測嗎?
+
+
+• 不是。
+
+  目前這批測試分成三層，但都不是「真的起一個外部 MCP client 去打 server」：
+
+  - 單元/契約層
+      - 直接測 registry、backend adapter、DTO、query service
+  - service/tool 層
+      - 直接 new FsiMcpService
+      - 直接呼叫 FSharpInteractiveTools、McpControlPlaneTools、McpExecutionTools、McpResultTools
+  - resource 層
+      - 直接 new resource class，例如 src/FSharp.MCP.DevKit.Server/Program.fs 的 FsiResources、src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs、src/
+        FSharp.MCP.DevKit.Server/ResultResources.fs
+      - 然後直接 call method
+
+  所以現在有測到：
+
+  - MCP tool/resource 的 server-side surface
+  - service/backend/control-plane 行為
+  - fake remote / fake supervisor 整合
+
+  但還沒測到：
+
+  - 真正啟動 ASP.NET + MCP endpoint
+  - 真正 tools/list / tools/call / resources/read
+  - 真正外部 MCP client transport
+
+  也就是說，目前不是 MCP client e2e test，而是 server-side integration test。
+  如果你要，我下一步可以補一層真正的 MCP client smoke test。
+
+
+› 為什麼要 smoke 啊?
+
+
+• 因為這一輪改的是控制面和路由，不是單一純函式。
+
+  單元測試能證明：
+
+  - 某個 adapter 會不會 map 對
+  - 某個 registry 會不會存對
+  - 某個 query service 會不會算對
+
+  但它不保證這些東西串起來後還對。這次風險最大的地方其實是「串接」：
+
+  - 舊工具是不是還走得到 default route
+  - 顯式 agentId/hostId/sessionId 是不是真的一路帶到 backend
+  - 多 host / 多 session 狀態會不會互相污染
+  - async queue 的順序和 asyncId -> ResultId linkage 有沒有斷
+  - result plane 從 execution record 到 query/materialization 能不能接起來
+
+  這些都不是單一 module 的責任，所以要有 smoke。
+
+  我這裡說的 smoke，不是大型 e2e 壓測，而是最低限度的高階回歸：
+
+  - 用最短路徑確認主線真的通
+  - 專門抓「每個零件都對，但串起來壞掉」這種問題
+
+  如果不做 smoke，這次很容易出現：
+
+  - WBS 看起來很多 done
+  - 單元測試也都綠
+  - 但實際 agent 用起來在 control-plane / route / result-plane 的交界處壞掉
+
+  所以 smoke 的目的不是取代單元測試，而是補 integration gap。
+  如果你覺得名稱不精準，也可以把它理解成「高階回歸測試」。
+
+
+› 1. 請在主專案加入 mcp client (不要只加在 test 專案，雖然這樣做有啥好處目前不確定，但是請放在主專案中)
+  2. 使用 1. 中的 mcp client  單元測試測 mcp server 的可用性
+  3. 完成 smoke test (e.g. 假設 f# 官方對 fsi 測了什麼，理論上我們就應該測什麼)，如果可以的話，請你去 clone fsharp 的專案到 /workspace/home/work 然後參考裡面針對 fsi 的測試
+  照搬過來
+  4. 完成 E2E 測試，使用 1. 中的 mcp client 測 3. 裡面的所有 smoke test
+  5. 完成後沒錯誤就繼續進行 主線缺口 doc/WBS.md 的 T41，也就是 FSharpCode result query
+
+
+• Working (2s • esc to interrupt)
