@@ -20,6 +20,7 @@ type McpClientAvailabilityTests() =
                 assertContains "execute_f_sharp_code" toolNames
                 assertContains "execute_f_sharp_code_async" toolNames
                 assertContains "register_fsi_agent" toolNames
+                assertContains "ensure_fsi_route" toolNames
                 assertContains "query_fsi_results" toolNames
                 assertContains "worldtime" resourceUris
                 assertContains "fsi/async/{asyncId}" templateUris
@@ -37,4 +38,3 @@ type McpClientAvailabilityTests() =
                 Assert.Contains("\"tz\":\"Asia/Taipei\"", worldTime)
                 Assert.Contains("\"tz\":\"Asia-Taipei\"", taipei)
             })
-

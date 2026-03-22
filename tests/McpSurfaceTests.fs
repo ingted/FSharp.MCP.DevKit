@@ -1,7 +1,6 @@
 module McpSurfaceTests
 
 open System
-open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
@@ -61,7 +60,7 @@ let ``Fsi async status resource reflects async tool completion`` () =
         let! _ = waitForCompletion service asyncId
         let resource = FSharp.MCP.DevKit.Server.Program.FsiResources(service)
         let json = resource.AsyncStatus(asyncId)
-        let status = JsonSerializer.Deserialize<AsyncFsiStatusDto>(json)
+        let status = FSharpJson.deserialize<AsyncFsiStatusDto> json
 
         Assert.Equal(asyncId, status.AsyncId)
         Assert.True(status.Exists)

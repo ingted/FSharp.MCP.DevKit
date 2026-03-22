@@ -247,3 +247,32 @@
   - `tests/SmokeRegressionTests.fs`
   - `/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/Contracts.fs`
   - `/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs`
+
+## 2026-03-22 23:15:00
+
+- 背景：完成 `.NET 10` reset 後，開始用真 `McpClientHarness + stdio MCP transport` 自試 routed onboarding 與 demo path，結果暴露出幾個 direct-call 測不到的 transport 級問題。
+- 動作：
+  - 在 `Core` 新增 `FSharpJson`，統一用 `FSharp.SystemTextJson` 處理 F# DU/option/list 的 JSON serialize/deserialize
+  - 將 `Program`、control-plane resources、result resources、result tools、client harness 的 JSON 路徑全部切到 `FSharpJson`
+  - 修正 `Program` 中 `FsiMcpService` 的 DI 註冊，避免 optional constructor parameter 讓容器誤判 `FSharpOption<bool>` 依賴
+  - 新增 `ensure_fsi_route` tool 與 `EnsureRouteResponse` DTO，讓 routed execution onboarding 不必先手動分辨 default route 與已存在 route
+  - 將 `query_fsi_results` / `compare_fsi_results` / `list_fsi_results` 的高風險 optional parameter façade 改成 transport-safe string contract
+  - 新增 `examples/FSharp.MCP.DevKit.DemoClient`，並補 `DemoClientSmokeTests`
+- 結果：
+  - 真 stdio MCP client 現在可穩定跑通 `discover`、`legacy-roundtrip`、`ensure-default-route`、`async-roundtrip`、`result-aggregation`
+  - `ensure_fsi_route` 現在可作為 routed onboarding helper，但不會偷幫 out-of-proc host provisioning；要建 host 仍必須明確呼叫 `create_fsi_host`
+  - `CreatedHost` 對 legacy `default-host` 不再誤報成 `true`
+- 困境：
+  - direct-call 測試不會暴露 F# optional parameter 與 F# DU JSON 在 MCP binder/serializer 上的相容性問題
+  - 真 client 路徑下，若 deserialize 失敗，沒有 raw response 與 stderr 很難定位
+- 解法：
+  - client harness 在 JSON parse 失敗時附上 raw response + stderr
+  - 對高流量 MCP façade 優先收斂成 transport-safe 參數，減少把 F# type system 直接暴露給 JSON binder
+  - 將外部 consumer 的第一層體驗改為 demo client，而不是鼓勵從裸 `.fsx` 起手
+- 關聯：
+  - `src/FSharp.MCP.DevKit.Core/Json.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpResultTools.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
+  - `examples/FSharp.MCP.DevKit.DemoClient/Program.fs`
+  - `tests/DemoClientSmokeTests.fs`

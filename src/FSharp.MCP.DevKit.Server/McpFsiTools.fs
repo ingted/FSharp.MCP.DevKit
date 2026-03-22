@@ -554,6 +554,139 @@ module McpFsiTools =
             | None, Some value -> pathMappingRegistry.ListByHost(value)
             | None, None -> pathMappingRegistry.List()
 
+        member this.EnsureRoute
+            (
+                agentId: string,
+                ?displayName: string,
+                ?hostId: string,
+                ?sessionId: string,
+                ?sessionName: string,
+                ?hostKind: HostKind,
+                ?hostSpec: ProcHostSpec
+            ) : Task<EnsureRouteResponse> =
+            task {
+                let agentExisted = agentRegistry.TryGet agentId |> Option.isSome
+                let agent = this.RegisterAgent(agentId, ?displayName = displayName)
+
+                let resolvedHostId =
+                    defaultArg hostId (agent.DefaultHostId |> Option.defaultValue $"{agentId}-host")
+
+                let resolvedSessionId = defaultArg sessionId DefaultRouting.DefaultSessionId
+                let hostPreviouslyExisted = hostRegistry.TryGet resolvedHostId |> Option.isSome
+                let sessionPreviouslyExisted = sessionRegistry.TryGet(resolvedHostId, resolvedSessionId) |> Option.isSome
+
+                let! host, hostCreatedByProvisioning =
+                    task {
+                        match hostRegistry.TryGet resolvedHostId with
+                        | Some existing ->
+                            if existing.AgentId <> agentId then
+                                invalidOp $"Host '{resolvedHostId}' does not belong to agent '{agentId}'."
+
+                            return existing, false
+                        | None when
+                            agentId = DefaultRouting.DefaultAgentId
+                            && resolvedHostId = DefaultRouting.DefaultHostId
+                            && resolvedSessionId = DefaultRouting.DefaultSessionId
+                            ->
+                            let route = resolveRoute None
+
+                            let defaultHost =
+                                hostRegistry.TryGet route.HostId
+                                |> Option.defaultWith (fun () -> invalidOp $"Host '{route.HostId}' was not found.")
+
+                            return defaultHost, false
+                        | None ->
+                            match hostKind, hostSpec, hostProvisioningService with
+                            | Some kind, Some spec, Some _ ->
+                                let! created = this.CreateHost(agentId, kind, spec, requestedHostId = resolvedHostId)
+                                return created, true
+                            | _, _, None ->
+                                return raise (InvalidOperationException("ProcSupervisor client is not configured for this FsiMcpService instance."))
+                            | _ ->
+                                return
+                                    raise (
+                                        InvalidOperationException(
+                                            $"Host '{resolvedHostId}' was not found for agent '{agentId}'. Pre-create the host with create_fsi_host, or call the service-level EnsureRoute overload with a host specification."
+                                        )
+                                    )
+                    }
+
+                let updatedAgent =
+                    match agentRegistry.TryGet agentId with
+                    | Some existing when existing.DefaultHostId = Some host.HostId -> existing
+                    | Some existing ->
+                        { existing with
+                            LastSeenAt = DateTime.UtcNow
+                            DefaultHostId = Some host.HostId }
+                        |> agentRegistry.Register
+                    | None ->
+                        { agent with
+                            LastSeenAt = DateTime.UtcNow
+                            DefaultHostId = Some host.HostId }
+                        |> agentRegistry.Register
+
+                let! session, sessionCreatedByProvisioning =
+                    task {
+                        match sessionRegistry.TryGet(host.HostId, resolvedSessionId) with
+                        | Some existing ->
+                            if existing.AgentId <> agentId then
+                                invalidOp $"Session '{resolvedSessionId}' does not belong to agent '{agentId}'."
+
+                            return existing, false
+                        | None ->
+                            let! created =
+                                this.CreateSession(
+                                    agentId,
+                                    host.HostId,
+                                    sessionId = resolvedSessionId,
+                                    ?sessionName = sessionName
+                                )
+
+                            return created, true
+                    }
+
+                let createdHost =
+                    (not hostPreviouslyExisted)
+                    && hostCreatedByProvisioning
+                    && host.HostId = resolvedHostId
+
+                let createdSession = (not sessionPreviouslyExisted) && (session.SessionId = resolvedSessionId || sessionCreatedByProvisioning)
+
+                let notes =
+                    [ if not agentExisted then
+                          "Agent was registered during bootstrap."
+                      if createdHost then
+                          "Host was created through ProcSupervisor."
+                      elif host.HostId = DefaultRouting.DefaultHostId && host.HostKind = InProcHost then
+                          "Resolved to the legacy in-proc default route."
+                      else
+                          "Host already existed and was reused."
+                      if createdSession then
+                          "Session was created or hydrated under the ensured host."
+                      else
+                          "Session already existed and was reused." ]
+
+                return
+                    { Agent = updatedAgent
+                      Host = host
+                      Session = session
+                      Route =
+                        { AgentId = updatedAgent.AgentId
+                          HostId = host.HostId
+                          SessionId = session.SessionId }
+                      CreatedAgent = not agentExisted
+                      CreatedHost = createdHost
+                      CreatedSession = createdSession
+                      Notes = notes
+                      RecommendedNextTools =
+                        [ "execute_f_sharp_code_routed"
+                          "execute_f_sharp_code_async_routed"
+                          "evaluate_f_sharp_expression_routed"
+                          "get_fsi_state_routed"
+                          "fsi/hosts/{hostId}/sessions/{sessionId}"
+                          "fsi/results/{resultId}" ] }
+            }
+
         member _.GetHostHealth(hostId: string) =
             task {
                 let host =

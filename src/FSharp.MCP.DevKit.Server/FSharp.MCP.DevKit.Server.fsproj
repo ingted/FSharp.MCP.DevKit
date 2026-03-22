@@ -46,6 +46,7 @@
     <Compile Include="ControlPlane\ResultRegistry.fs" />
     <Compile Include="ControlPlane\PathMappingRegistry.fs" />
     <Compile Include="ControlPlane\DefaultRouting.fs" />
+    <Compile Include="ControlPlane\ControlPlaneDtos.fs" />
     <Compile Include="ControlPlane\ExecutionRouter.fs" />
     <Compile Include="ControlPlane\ProvisioningServices.fs" />
     <Compile Include="ResultQuery\ResultQueryTypes.fs" />

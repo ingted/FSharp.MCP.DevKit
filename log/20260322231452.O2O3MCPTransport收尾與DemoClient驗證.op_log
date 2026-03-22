@@ -1,0 +1,4 @@
+[2026-03-22T23:14:52Z] Re-ran real stdio MCP demo scenarios and confirmed async-roundtrip plus result-aggregation now succeed through the true client transport.
+[2026-03-22T23:15:25Z] Fixed ensure_fsi_route semantics so legacy default-route bootstrap no longer reports CreatedHost=true or implies ProcSupervisor provisioning.
+[2026-03-22T23:16:10Z] Updated DEMO/WBS/DevLog/tests README and strengthened DemoClientSmokeTests to parse JSON plus include async-roundtrip.
+[2026-03-22T23:16:45Z] Rebuilt demo client/server and re-ran net10 test suite in preparation for final check and commit.

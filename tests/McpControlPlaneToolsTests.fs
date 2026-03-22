@@ -1,13 +1,13 @@
 module McpControlPlaneToolsTests
 
 open System
-open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.Backends
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 
@@ -119,12 +119,12 @@ let ``McpControlPlaneTools register host session and health flow works`` () =
         let sessionsJson = McpControlPlaneTools.ListFsiSessions(service, "host-cp")
         let! healthJson = McpControlPlaneTools.GetFsiHostHealth(service, "host-cp")
 
-        let agent = JsonSerializer.Deserialize<AgentRecord>(agentJson)
-        let host = JsonSerializer.Deserialize<HostRecord>(hostJson)
-        let session = JsonSerializer.Deserialize<SessionRecord>(sessionJson)
-        let hosts = JsonSerializer.Deserialize<HostRecord list>(hostsJson)
-        let sessions = JsonSerializer.Deserialize<SessionRecord list>(sessionsJson)
-        let health : BackendHealth = JsonSerializer.Deserialize<BackendHealth>(healthJson)
+        let agent = FSharpJson.deserialize<AgentRecord> agentJson
+        let host = FSharpJson.deserialize<HostRecord> hostJson
+        let session = FSharpJson.deserialize<SessionRecord> sessionJson
+        let hosts = FSharpJson.deserialize<HostRecord list> hostsJson
+        let sessions = FSharpJson.deserialize<SessionRecord list> sessionsJson
+        let health : BackendHealth = FSharpJson.deserialize<BackendHealth> healthJson
 
         Assert.Equal("agent-cp", agent.AgentId)
         Assert.Equal("host-cp", host.HostId)
@@ -217,4 +217,112 @@ let ``ControlPlaneResources expose registered host and session`` () =
         Assert.Contains("session-r", hostSessionsJson)
         Assert.Contains("session-r", sessionJson)
         Assert.Equal("[]", mappingsJson)
+    }
+
+[<Fact>]
+let ``EnsureFsiRoute materializes legacy default route without ProcSupervisor`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! ensuredJson =
+            McpControlPlaneTools.EnsureFsiRoute(
+                service,
+                DefaultRouting.DefaultAgentId,
+                "Default Agent",
+                DefaultRouting.DefaultHostId,
+                DefaultRouting.DefaultSessionId,
+                ""
+            )
+
+        let ensured = FSharpJson.deserialize<EnsureRouteResponse> ensuredJson
+
+        Assert.Equal(DefaultRouting.DefaultAgentId, ensured.Route.AgentId)
+        Assert.Equal(DefaultRouting.DefaultHostId, ensured.Route.HostId)
+        Assert.Equal(DefaultRouting.DefaultSessionId, ensured.Route.SessionId)
+        Assert.Equal(InProcHost, ensured.Host.HostKind)
+        Assert.True(ensured.CreatedAgent)
+        Assert.False(ensured.CreatedHost)
+        Assert.True(ensured.CreatedSession)
+        Assert.Contains("Resolved to the legacy in-proc default route.", ensured.Notes)
+    }
+
+[<Fact>]
+let ``FsiMcpService EnsureRoute creates missing host and session when spec is provided`` () =
+    task {
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9300
+                      FsiSupervisorPath = Some "akka://fsi-demo"
+                      NodeAddress = Some "akka://node-demo"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9300
+                          FsiSupervisorPath = Some "akka://fsi-demo"
+                          NodeAddress = Some "akka://node-demo"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            FakeFsiSupervisorClient(fun (_, sessionId) ->
+                { SessionId = sessionId
+                  Status = "ready"
+                  Refs = []
+                  Loads = []
+                  SearchPaths = []
+                  Variables = []
+                  LastCheckpointId = None
+                  RunningSinceUtc = Some DateTime.UtcNow })
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let! ensured =
+            service.EnsureRoute(
+                "agent-ensure",
+                displayName = "Ensure Agent",
+                hostId = "host-ensure",
+                sessionId = "session-ensure",
+                sessionName = "Ensure Session",
+                hostKind = Net10Host,
+                hostSpec =
+                    { ExecutablePath = "dotnet"
+                      Arguments = [ "--dll"; "fsi-host.dll" ]
+                      WorkingDirectory = Some "/srv/fsi"
+                      Role = Some "net10"
+                      ProbeMessage = Some "PING"
+                      ProbeCron = None
+                      ProbeIntervalMs = Some 1000 }
+            )
+
+        Assert.Equal("agent-ensure", ensured.Route.AgentId)
+        Assert.Equal("host-ensure", ensured.Route.HostId)
+        Assert.Equal("session-ensure", ensured.Route.SessionId)
+        Assert.Equal(Net10Host, ensured.Host.HostKind)
+        Assert.Equal("Ensure Session", ensured.Session.SessionName)
+        Assert.True(ensured.CreatedAgent)
+        Assert.True(ensured.CreatedHost)
+        Assert.True(ensured.CreatedSession)
+        Assert.Contains("execute_f_sharp_code_routed", ensured.RecommendedNextTools)
     }

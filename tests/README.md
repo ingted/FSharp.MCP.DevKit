@@ -101,6 +101,12 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `MCP client E2E runner executes all smoke scenarios without failures` | 建立 scenario catalog，並對每個 scenario 各自起一個真 client/server | 驗證所有 client smoke 案例整體可回歸 | 迭代執行 catalog 內所有 scenario，收集失敗項 | 每輪起一個新 client，執行對應 smoke scenario | 若 scenario 失敗則收集名稱與錯誤訊息 | loop 結束後彙整 failures | 若有 failure 則整體 fail，否則結束 |
 
+## DemoClientSmokeTests.fs
+
+| 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `Demo client scenarios run successfully` | 先 build `examples/FSharp.MCP.DevKit.DemoClient`，再用 helper 以已編譯 DLL 啟動 scenario | 驗證 repo 對外示範用的 demo client 真的能透過真 MCP stdio 跑通核心 scenario | 依序執行 `discover`、`ensure-default-route`、`legacy-roundtrip`、`result-aggregation` | 每輪準備 scenario 名稱並啟動一個新的 demo client process | 每輪收集 `stdout/stderr/exitCode`；若失敗則帶原始輸出 fail fast | loop 結束後確認每個 scenario 都有對應 marker | process 自然結束，無額外清理 |
+
 ## McpSurfaceTests.fs
 
 | 測試 | 前準備 | 測試目的 | 測試方法 | loop 內準備 | loop 內 post test op | post loop op | end test/clean |

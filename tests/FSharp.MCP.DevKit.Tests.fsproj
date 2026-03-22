@@ -35,6 +35,7 @@
     <Compile Include="McpClientAvailabilityTests.fs" />
     <Compile Include="McpClientSmokeTests.fs" />
     <Compile Include="McpClientE2ETests.fs" />
+    <Compile Include="DemoClientSmokeTests.fs" />
     <Compile Include="BackendSelectorTests.fs" />
     <Compile Include="BackendAdaptersTests.fs" />
     <Compile Include="ControlPlaneTests.fs" />

@@ -2,7 +2,6 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
-open System.Text.Json
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
@@ -56,17 +55,20 @@ type McpResultTools =
             [<Description("Target result id.")>] resultId: string
         ) : string =
         fsiService.TryGetResultForAgent(agentId, resultId)
-        |> JsonSerializer.Serialize
+        |> FSharpJson.serialize
 
     [<McpServerTool(Name = "list_fsi_results"); Description("List execution results for an agent, optionally narrowed to a specific host/session.")>]
     static member ListFsiResults
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
-            [<Description("Optional host id filter. Requires sessionId when used.")>] ?hostId: string,
-            [<Description("Optional session id filter. Requires hostId when used.")>] ?sessionId: string
+            [<Description("Optional host id filter. Use an empty string to omit.")>] hostId: string,
+            [<Description("Optional session id filter. Use an empty string to omit.")>] sessionId: string
         ) : string =
-        match hostId, sessionId with
+        let hostIdOpt = if String.IsNullOrWhiteSpace hostId then None else Some hostId
+        let sessionIdOpt = if String.IsNullOrWhiteSpace sessionId then None else Some sessionId
+
+        match hostIdOpt, sessionIdOpt with
         | Some resolvedHostId, Some resolvedSessionId ->
             let route =
                 { AgentId = agentId
@@ -74,10 +76,10 @@ type McpResultTools =
                   SessionId = resolvedSessionId }
 
             fsiService.ListSessionResults(route)
-            |> JsonSerializer.Serialize
+            |> FSharpJson.serialize
         | None, None ->
             fsiService.ListAgentResults(agentId)
-            |> JsonSerializer.Serialize
+            |> FSharpJson.serialize
         | _ -> invalidOp "hostId and sessionId must be provided together."
 
     [<McpServerTool(Name = "query_fsi_results"); Description("Run a built-in result query over one or two result id sets. Best flow for agents: 1. Collect result ids from execution or list_fsi_results. 2. Call query_fsi_results. 3. If materialization is enabled, reuse the returned produced result id in later queries.")>]
@@ -87,22 +89,22 @@ type McpResultTools =
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Query kind: filter, map, exists, forall, zip, diff, groupBy.")>] kind: string,
             [<Description("Primary result ids, separated by newlines, commas, or semicolons.")>] primaryResultIds: string,
-            [<Description("Optional secondary result ids, separated by newlines, commas, or semicolons.")>] ?secondaryResultIds: string,
-            [<Description("Optional query text. Examples: isSuccess, value, hostId, backendKind:Net10Remote, valueContains:foo.")>] ?queryText: string,
-            [<Description("Optional language. builtIn (default) or fsharpCode.")>] ?language: string,
-            [<Description("Optional materialization mode. none (default) or syntheticResult.")>] ?materialization: string
+            [<Description("Optional secondary result ids, separated by newlines, commas, or semicolons. Use an empty string to omit.")>] secondaryResultIds: string,
+            [<Description("Optional query text. Examples: isSuccess, value, hostId, backendKind:Net10Remote, valueContains:foo. Use an empty string to omit.")>] queryText: string,
+            [<Description("Optional language. builtIn (default) or fsharpCode. Use an empty string for builtIn.")>] language: string,
+            [<Description("Optional materialization mode. none (default) or syntheticResult. Use an empty string for none.")>] materialization: string
         ) : string =
         let request =
             { QueryId = Guid.NewGuid().ToString("N")
               AgentId = agentId
               PrimaryResultIds = splitIds primaryResultIds
-              SecondaryResultIds = secondaryResultIds |> Option.map splitIds |> Option.defaultValue []
-              Language = parseLanguage language
+              SecondaryResultIds = splitIds secondaryResultIds
+              Language = parseLanguage (if String.IsNullOrWhiteSpace language then None else Some language)
               Kind = parseKind kind
-              QueryText = defaultArg queryText ""
-              Materialization = parseMaterialization materialization }
+              QueryText = if String.IsNullOrWhiteSpace queryText then "" else queryText
+              Materialization = parseMaterialization (if String.IsNullOrWhiteSpace materialization then None else Some materialization) }
 
-        fsiService.QueryResults(request) |> JsonSerializer.Serialize
+        fsiService.QueryResults(request) |> FSharpJson.serialize
 
     [<McpServerTool(Name = "compare_fsi_results"); Description("Compare two ordered result id sets and return a diff-style response.")>]
     static member CompareFsiResults
@@ -111,8 +113,8 @@ type McpResultTools =
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Primary result ids, separated by newlines, commas, or semicolons.")>] primaryResultIds: string,
             [<Description("Secondary result ids, separated by newlines, commas, or semicolons.")>] secondaryResultIds: string,
-            [<Description("Optional compare field. Defaults to value.")>] ?queryText: string,
-            [<Description("Optional materialization mode. none (default) or syntheticResult.")>] ?materialization: string
+            [<Description("Optional compare field. Defaults to value. Use an empty string for the default.")>] queryText: string,
+            [<Description("Optional materialization mode. none (default) or syntheticResult. Use an empty string for none.")>] materialization: string
         ) : string =
         let request =
             { QueryId = Guid.NewGuid().ToString("N")
@@ -121,7 +123,7 @@ type McpResultTools =
               SecondaryResultIds = splitIds secondaryResultIds
               Language = BuiltIn
               Kind = Diff
-              QueryText = defaultArg queryText "value"
-              Materialization = parseMaterialization materialization }
+              QueryText = if String.IsNullOrWhiteSpace queryText then "value" else queryText
+              Materialization = parseMaterialization (if String.IsNullOrWhiteSpace materialization then None else Some materialization) }
 
-        fsiService.QueryResults(request) |> JsonSerializer.Serialize
+        fsiService.QueryResults(request) |> FSharpJson.serialize

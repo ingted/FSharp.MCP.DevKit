@@ -1,7 +1,6 @@
 module McpResultToolsTests
 
 open System
-open System.Text.Json
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
@@ -21,7 +20,7 @@ let ``McpResultTools get list query compare and resources work`` () =
         let! second = service.ExecuteOperation(EvaluateExpression, "resultQueryValue", timeout = TimeSpan.FromSeconds 30.0)
 
         let singleJson = McpResultTools.GetFsiResult(service, "default-agent", first.ResultId)
-        let listJson = McpResultTools.ListFsiResults(service, "default-agent")
+        let listJson = McpResultTools.ListFsiResults(service, "default-agent", "", "")
 
         let mapJson =
             McpResultTools.QueryFsiResults(
@@ -29,7 +28,10 @@ let ``McpResultTools get list query compare and resources work`` () =
                 "default-agent",
                 "map",
                 $"{first.ResultId}\n{second.ResultId}",
-                queryText = "value"
+                "",
+                "value",
+                "",
+                ""
             )
 
         let compareJson =
@@ -38,7 +40,8 @@ let ``McpResultTools get list query compare and resources work`` () =
                 "default-agent",
                 first.ResultId,
                 second.ResultId,
-                queryText = "value"
+                "value",
+                ""
             )
 
         let fsharpJson =
@@ -47,8 +50,10 @@ let ``McpResultTools get list query compare and resources work`` () =
                 "default-agent",
                 "map",
                 $"{first.ResultId}\n{second.ResultId}",
-                queryText = "records1 |> Seq.map (fun record -> record.Result.Value |> Option.defaultValue \"\") |> Seq.toList",
-                language = "fsharpCode"
+                "",
+                "records1 |> Seq.map (fun record -> record.Result.Value |> Option.defaultValue \"\") |> Seq.toList",
+                "fsharpCode",
+                ""
             )
 
         let filterMaterializedJson =
@@ -57,8 +62,10 @@ let ``McpResultTools get list query compare and resources work`` () =
                 "default-agent",
                 "filter",
                 $"{first.ResultId}\n{second.ResultId}",
-                queryText = "isSuccess",
-                materialization = "syntheticResult"
+                "",
+                "isSuccess",
+                "",
+                "syntheticResult"
             )
 
         let resultResource = ResultResources(service)
@@ -66,12 +73,12 @@ let ``McpResultTools get list query compare and resources work`` () =
         let agentResultsJson = resultResource.AgentResults("default-agent")
         let sessionResultsJson = resultResource.SessionResults("default-host", "default-session")
 
-        let single = JsonSerializer.Deserialize<FsiExecutionRecord option>(singleJson)
-        let listed = JsonSerializer.Deserialize<FsiExecutionRecord list>(listJson)
-        let mapResponse = JsonSerializer.Deserialize<ResultQueryResponse>(mapJson)
-        let compareResponse = JsonSerializer.Deserialize<ResultQueryResponse>(compareJson)
-        let fsharpResponse = JsonSerializer.Deserialize<ResultQueryResponse>(fsharpJson)
-        let materializedResponse = JsonSerializer.Deserialize<ResultQueryResponse>(filterMaterializedJson)
+        let single = FSharpJson.deserialize<FsiExecutionRecord option> singleJson
+        let listed = FSharpJson.deserialize<FsiExecutionRecord list> listJson
+        let mapResponse = FSharpJson.deserialize<ResultQueryResponse> mapJson
+        let compareResponse = FSharpJson.deserialize<ResultQueryResponse> compareJson
+        let fsharpResponse = FSharpJson.deserialize<ResultQueryResponse> fsharpJson
+        let materializedResponse = FSharpJson.deserialize<ResultQueryResponse> filterMaterializedJson
         let synthetic = materializedResponse.ProducedResultIds |> List.head |> fun resultId -> service.TryGetResult(resultId)
 
         Assert.True(single.IsSome)

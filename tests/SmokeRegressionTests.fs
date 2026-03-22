@@ -2,7 +2,6 @@ module SmokeRegressionTests
 
 open System
 open System.Collections.Concurrent
-open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
@@ -374,7 +373,10 @@ let ``Smoke result queries support exists forall and compare`` () =
                 "default-agent",
                 "exists",
                 $"{first.ResultId}\n{second.ResultId}",
-                queryText = "valuecontains:8"
+                "",
+                "valuecontains:8",
+                "",
+                ""
             )
 
         let forallJson =
@@ -383,7 +385,10 @@ let ``Smoke result queries support exists forall and compare`` () =
                 "default-agent",
                 "forall",
                 $"{first.ResultId}\n{second.ResultId}",
-                queryText = "isSuccess"
+                "",
+                "isSuccess",
+                "",
+                ""
             )
 
         let compareJson =
@@ -392,12 +397,13 @@ let ``Smoke result queries support exists forall and compare`` () =
                 "default-agent",
                 first.ResultId,
                 second.ResultId,
-                queryText = "value"
+                "value",
+                ""
             )
 
-        let existsResponse = JsonSerializer.Deserialize<ResultQueryResponse>(existsJson)
-        let forallResponse = JsonSerializer.Deserialize<ResultQueryResponse>(forallJson)
-        let compareResponse = JsonSerializer.Deserialize<ResultQueryResponse>(compareJson)
+        let existsResponse = FSharpJson.deserialize<ResultQueryResponse> existsJson
+        let forallResponse = FSharpJson.deserialize<ResultQueryResponse> forallJson
+        let compareResponse = FSharpJson.deserialize<ResultQueryResponse> compareJson
 
         Assert.True(existsResponse.IsSuccess)
         Assert.Equal("True", existsResponse.Output)

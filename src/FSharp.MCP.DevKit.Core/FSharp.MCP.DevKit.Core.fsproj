@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="FileUtils.fs" />
+    <Compile Include="Json.fs" />
     <Compile Include="ResultTypes.fs" />
     <Compile Include="ExecutionTypes.fs" />
     <Compile Include="FSIService.fs" />
@@ -16,6 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+    <PackageReference Include="FSharp.SystemTextJson" Version="1.4.36" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
     <PackageReference Include="NuGet.Packaging" Version="7.3.0" />
     <PackageReference Include="Paket.Core" Version="9.0.2" />

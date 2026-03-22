@@ -1,0 +1,52 @@
+背景：上一輪已補出 `McpClientHarness`、`ensure_fsi_route`、`examples/FSharp.MCP.DevKit.DemoClient` 與 F#-aware JSON serializer，但還需要把真 MCP transport 的最後幾個語意/文件收尾完成，並確認 demo、tests、check 都一致。
+目標：完成 `O2/O3` 第一段收尾，修正 `ensure_fsi_route` 在 legacy default route 下的語意誤報，將本輪 transport/binder/serializer 決策補進 `DEMO/WBS/DevLog/tests README`，並以 real client + full test + check 驗證。
+計畫步驟：
+1. 重跑真 stdio MCP demo scenarios，確認 `async-roundtrip` 與 `result-aggregation` 已不再被 serializer/binder 問題卡住。
+2. 修正 `ensure_fsi_route` 對 legacy `default-host` 的 `CreatedHost` 語意與對應測試。
+3. 補 `DEMO.md`、`doc/WBS.md`、`doc/DevLog.md`、`tests/README.md`，把 `demo-client`、`ensure_fsi_route`、F# JSON/optional 風險寫清楚。
+4. 強化 `DemoClientSmokeTests`，改為 parse JSON 並納入 `async-roundtrip`。
+5. 執行 `dotnet build`、`dotnet test`、`check.fsx` 收尾後提交。
+執行命令/參數：
+- `dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll async-roundtrip`
+- `dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll result-aggregation`
+- `dotnet build examples/FSharp.MCP.DevKit.DemoClient/FSharp.MCP.DevKit.DemoClient.fsproj --no-restore -m:1`
+- `dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll ensure-default-route`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore --filter "FullyQualifiedName~DemoClientSmokeTests" -v minimal`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+結果：
+- 真 stdio MCP client 現在可跑通：
+  - `async-roundtrip`
+  - `result-aggregation`
+  - `ensure-default-route`
+- `ensure_fsi_route` 已修正：對 legacy `default-host/default-session` 不再把 `CreatedHost` 誤報成 `true`，notes 會正確顯示 `Resolved to the legacy in-proc default route.`
+- `DemoClientSmokeTests` 已改成 parse JSON 驗證 `scenario` 欄位，並納入 `async-roundtrip`，不再依賴脆弱的字串 marker。
+- `O2` 與 `O3` 已完成第一段，可從 backlog 移到 `done`：
+  - `O2`: `examples/FSharp.MCP.DevKit.DemoClient`
+  - `O3`: `ensure_fsi_route` + onboarding docs/helper
+- 文件已同步更新：
+  - `DEMO.md`
+  - `doc/WBS.md`
+  - `doc/DevLog.md`
+  - `tests/README.md`
+根因判讀：
+- 真 MCP transport 下，direct-call 測不到的問題主要來自兩種邊界：
+  - F# DU/option/list 用 plain `System.Text.Json` 會失真
+  - F# optional parameter 直接暴露給 MCP binder 很容易踩 runtime contract 問題
+- 另外，legacy default route 的 bootstrap 若重用 `DefaultRouting.resolveRoute`，很容易把「materialize in-proc default host」誤解成「ProcSupervisor created host」。
+下一步：
+- 將本輪 log/op_log、程式與文件一併 commit/push。
+- 後續 backlog 僅保留 `O4/O5/O6`。
+關聯文件/工單/PR：
+- `src/FSharp.MCP.DevKit.Core/Json.fs`
+- `src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs`
+- `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+- `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
+- `examples/FSharp.MCP.DevKit.DemoClient/Program.fs`
+- `tests/DemoClientSmokeTests.fs`
+- `DEMO.md`
+- `doc/WBS.md`
+- `doc/DevLog.md`
+- `tests/README.md`
+prompt/上下文摘要：使用者要求繼續主線開發；本輪實際完成 O2/O3 第一段收尾，並把真 MCP transport 自試中暴露的序列化、binder 與 onboarding 細節補齊。

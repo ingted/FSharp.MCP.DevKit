@@ -22,6 +22,26 @@
 | Documentation | `generate_package_documentation` `generate_project_documentation` `list_cached_packages` `show_package_info` `search_documentation` `show_documentation_config` `set_documentation_output_directory` | 產出與查詢 NuGet / project 文件 |
 | Parse / Code Editing | `parse_and_check_fsharp_code`、`parse_source_to_ast`、`analyze_code_structure`、`preview_code_injection` | parse/check 與 code-editing 前置分析 |
 
+## Demo 0: 直接跑 demo client
+
+如果你要先用真 MCP stdio client 快速驗證 server，而不是自己手打 MCP request，先 build demo client：
+
+```bash
+dotnet build examples/FSharp.MCP.DevKit.DemoClient/FSharp.MCP.DevKit.DemoClient.fsproj -m:1
+```
+
+然後直接跑已 build 的 DLL：
+
+```bash
+dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll discover
+dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll legacy-roundtrip
+dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll ensure-default-route
+dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll async-roundtrip
+dotnet examples/FSharp.MCP.DevKit.DemoClient/bin/Debug/net10.0/FSharp.MCP.DevKit.DemoClient.dll result-aggregation
+```
+
+這五個 scenario 現在都會真的透過 `McpClientHarness -> stdio MCP transport -> server tools/resources` 跑，不是 direct call mock。
+
 ## Demo 1: 最小互動
 
 適合舊 client 或先確認 server 是否能正常跑。
@@ -55,15 +75,17 @@ Prompt 範例：
 預期 tool flow：
 
 1. `register_fsi_agent(agentId = "demo-agent", displayName = "Demo Agent")`
-2. `execute_f_sharp_code_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", code = "let sample = 40")`
-3. `execute_f_sharp_code_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", code = "let sample = sample + 1")`
-4. `evaluate_f_sharp_expression_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", expression = "sample")`
+2. `ensure_fsi_route(agentId = "demo-agent", displayName = "Demo Agent", hostId = "default-host", sessionId = "default-session", sessionName = "")`
+3. `execute_f_sharp_code_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", code = "let sample = 40")`
+4. `execute_f_sharp_code_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", code = "let sample = sample + 1")`
+5. `evaluate_f_sharp_expression_routed(agentId = "demo-agent", hostId = "default-host", sessionId = "default-session", expression = "sample")`
 
 補充：
 
 - 如果不是沿用 `default-host/default-session`，就先走：
   - `create_fsi_host`
   - `create_fsi_session`
+- 如果只是要 bootstrap `default-host/default-session` 或一個已存在的 host/session，先走 `ensure_fsi_route`
 - out-of-proc host 目前只支援 `netfx` / `net10`
 
 ## Demo 3: Async + polling
@@ -214,6 +236,7 @@ Prompt 範例：
 ## 實務注意事項
 
 1. 對非 default agent 做 routed execution 前，先確保 host / session 已存在。
-2. `execute_f_sharp_code_async` 最佳流程是 tool -> `fsi/async/{asyncId}` polling -> `resultId`。
-3. `FSharpCode` query 是 server-side 受控 FSI session，不是直接傳 quotation object。
-4. 若你要在 repo 外用 `.fsx` 腳本直接重用 `McpClientHarness`，除了 server/core DLL，還要帶 `ModelContextProtocol.*` 與相關相依 assemblies；最穩的是直接在本 repo 的測試或正式 app 裡引用專案/套件，而不是裸 `#r` 少量 DLL。
+2. 若只是要進入 legacy default route 或已存在 route，先用 `ensure_fsi_route`；若要新建 out-of-proc host，必須先 `create_fsi_host`。
+3. `execute_f_sharp_code_async` 最佳流程是 tool -> `fsi/async/{asyncId}` polling -> `resultId`。
+4. `FSharpCode` query 是 server-side 受控 FSI session，不是直接傳 quotation object。
+5. 若你要在 repo 外重用 client，優先用 `examples/FSharp.MCP.DevKit.DemoClient` 或正式 app 參考專案，不要從裸 `.fsx` + 少量 `#r` 開始；真 MCP client 對 transport/相依/序列化的要求比 direct call 高。

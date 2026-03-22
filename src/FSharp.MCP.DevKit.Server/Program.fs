@@ -12,7 +12,7 @@ open Microsoft.Extensions.Logging
 open Microsoft.Extensions.Hosting.WindowsServices
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
-open System.Text.Json
+open FSharp.MCP.DevKit.Core
 
 [<McpServerResourceType>]
 type TimeResources() =
@@ -49,7 +49,7 @@ type FsiResources(fsiService: FsiMcpService) =
     [<Description("Read async FSI execution status by asyncId. Best flow for agents: 1. Call execute_f_sharp_code_async to get asyncId. 2. Read fsi/async/{asyncId}. 3. Poll until isCompleted is true.")>]
     member _.AsyncStatus(asyncId: string) =
         let status = fsiService.GetAsyncExecutionStatus(asyncId)
-        JsonSerializer.Serialize(status)
+        FSharpJson.serialize status
 
 let tryGetCommandLineValue (name: string) (argv: string array) =
     argv
@@ -96,7 +96,11 @@ let main argv =
     builder.WebHost.UseUrls(getServerUrls argv) |> ignore
 
     // Register FSI service
-    builder.Services.AddSingleton<FsiMcpService>() |> ignore
+    builder.Services.AddSingleton<FsiMcpService>(fun serviceProvider ->
+        let logger = serviceProvider.GetRequiredService<ILogger<FsiMcpService>>()
+        new FsiMcpService(logger)
+    )
+    |> ignore
 
     // Configure MCP server. Keep stdio enabled by default for local MCP clients,
     // but allow HTTP-only hosting (e.g. container deployment) via MCP_ENABLE_STDIO=false.

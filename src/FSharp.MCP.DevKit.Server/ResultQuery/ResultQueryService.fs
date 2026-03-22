@@ -1,7 +1,6 @@
 namespace FSharp.MCP.DevKit.Server.ResultQuery
 
 open System
-open System.Text.Json
 open FSharp.MCP.DevKit.Core
 
 type private ResultSummary =
@@ -34,7 +33,7 @@ type private ResultGroupBucket =
 
 type ResultQueryService() =
 
-    let serialize value = JsonSerializer.Serialize(value)
+    let serialize value = FSharpJson.serialize value
 
     let trySerializeObject (value: obj option) =
         value
@@ -42,7 +41,7 @@ type ResultQueryService() =
             if isNull resolved then
                 "null"
             else
-                JsonSerializer.Serialize(resolved, resolved.GetType()))
+                FSharpJson.serializeObject resolved)
 
     let withQuerySession (work: FsiService -> 'T) =
         let config =
@@ -118,7 +117,7 @@ type ResultQueryService() =
                     trySerializeObject evaluation.ReflectionValue
                     |> Option.orElseWith (fun () ->
                         evaluation.Result.Value
-                        |> Option.map JsonSerializer.Serialize) }
+                        |> Option.map FSharpJson.serialize) }
             else
                 { QueryId = request.QueryId
                   IsSuccess = false

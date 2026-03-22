@@ -6,6 +6,7 @@ open System.Linq
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Tests.McpClientTestHelpers
 open Xunit
 
@@ -76,6 +77,23 @@ module private McpClientSmokeScenarioCatalog =
             Assert.Equal("default-session", result.Value.SessionId)
         }
 
+    let ensureDefaultRouteScenario (client: McpClientSession) =
+        task {
+            let! ensured =
+                client.EnsureRouteAsync(
+                    DefaultRouting.DefaultAgentId,
+                    displayName = "Default Agent",
+                    hostId = DefaultRouting.DefaultHostId,
+                    sessionId = DefaultRouting.DefaultSessionId
+                )
+
+            Assert.Equal(DefaultRouting.DefaultAgentId, ensured.Route.AgentId)
+            Assert.Equal(DefaultRouting.DefaultHostId, ensured.Route.HostId)
+            Assert.Equal(DefaultRouting.DefaultSessionId, ensured.Route.SessionId)
+            Assert.Equal(InProcHost, ensured.Host.HostKind)
+            Assert.Contains("execute_f_sharp_code_routed", ensured.RecommendedNextTools)
+        }
+
     let multiSessionIsolationScenario (client: McpClientSession) =
         task {
             let! _ = bootstrapDefaultRoute client
@@ -132,7 +150,10 @@ module private McpClientSmokeScenarioCatalog =
                     [ "agentId", box "default-agent"
                       "kind", box "exists"
                       "primaryResultIds", box latestTwo
-                      "queryText", box "valueContains:9" ]
+                      "secondaryResultIds", box ""
+                      "queryText", box "valueContains:9"
+                      "language", box ""
+                      "materialization", box "" ]
 
             Assert.True(existsResponse.IsSuccess)
             Assert.Equal("true", existsResponse.Output)
@@ -158,9 +179,11 @@ module private McpClientSmokeScenarioCatalog =
                     "query_fsi_results"
                     [ "agentId", box "default-agent"
                       "kind", box "map"
+                      "secondaryResultIds", box ""
                       "language", box "fsharpCode"
                       "primaryResultIds", box latestTwo
-                      "queryText", box "records1 |> Seq.map (fun record -> record.Result.Value |> Option.defaultValue \"\") |> Seq.toList" ]
+                      "queryText", box "records1 |> Seq.map (fun record -> record.Result.Value |> Option.defaultValue \"\") |> Seq.toList"
+                      "materialization", box "" ]
 
             Assert.True(response.IsSuccess)
             Assert.Equal("[\"15\",\"19\"]", response.MaterializedJson.Value)
@@ -172,6 +195,7 @@ module private McpClientSmokeScenarioCatalog =
            "shadowing", shadowingScenario
            "reset", resetScenario
            "async-status", asyncStatusScenario
+           "ensure-default-route", ensureDefaultRouteScenario
            "multi-session-isolation", multiSessionIsolationScenario
            "result-query", resultQueryScenario
            "fsharp-result-query", fsharpResultQueryScenario |]
@@ -198,6 +222,10 @@ type McpClientSmokeTests() =
     [<Fact>]
     member _.``Client smoke covers async status and result linkage``() =
         withClient McpClientSmokeScenarioCatalog.asyncStatusScenario
+
+    [<Fact>]
+    member _.``Client smoke covers ensure route onboarding``() =
+        withClient McpClientSmokeScenarioCatalog.ensureDefaultRouteScenario
 
     [<Fact>]
     member _.``Client smoke covers multi-session isolation``() =

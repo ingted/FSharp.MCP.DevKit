@@ -11,6 +11,8 @@ open System.Threading.Tasks
 open Microsoft.Extensions.Logging
 open ModelContextProtocol.Client
 open ModelContextProtocol.Protocol
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Server.ControlPlane
 
 type McpServerLaunchSpec =
     { Command: string
@@ -81,8 +83,45 @@ type McpClientSession internal (client: McpClient, stderrLog: ConcurrentQueue<st
     member this.CallToolJsonAsync<'T>(toolName: string, ?arguments: IReadOnlyDictionary<string, obj>, ?cancellationToken: CancellationToken) =
         task {
             let! json = this.CallToolTextAsync(toolName, ?arguments = arguments, ?cancellationToken = cancellationToken)
-            return JsonSerializer.Deserialize<'T>(json)
+            try
+                return FSharpJson.deserialize<'T> json
+            with ex ->
+                let stderr = String.concat "\n" this.StderrLog
+                return
+                    raise (
+                        JsonException(
+                            $"Failed to deserialize tool response for '{toolName}'. Raw response: {json}\nSTDERR:\n{stderr}",
+                            ex
+                        )
+                    )
         }
+
+    member this.EnsureRouteAsync
+        (
+            agentId: string,
+            ?displayName: string,
+            ?hostId: string,
+            ?sessionId: string,
+            ?sessionName: string,
+            ?cancellationToken: CancellationToken
+        ) =
+        let pairs = ResizeArray<string * obj>()
+        pairs.Add("agentId", box agentId)
+        pairs.Add("displayName", box (defaultArg displayName ""))
+        pairs.Add("hostId", box (defaultArg hostId ""))
+        pairs.Add("sessionId", box (defaultArg sessionId ""))
+        pairs.Add("sessionName", box (defaultArg sessionName ""))
+
+        let dictionary = Dictionary<string, obj>()
+
+        for key, value in pairs do
+            dictionary.[key] <- value
+
+        this.CallToolJsonAsync<EnsureRouteResponse>(
+            "ensure_fsi_route",
+            (dictionary :> IReadOnlyDictionary<string, obj>),
+            ?cancellationToken = cancellationToken
+        )
 
     member _.ReadResourceAsync(uri: string, ?cancellationToken: CancellationToken) =
         client.ReadResourceAsync(uri, cancellationToken = defaultArg cancellationToken CancellationToken.None).AsTask()
@@ -96,8 +135,49 @@ type McpClientSession internal (client: McpClient, stderrLog: ConcurrentQueue<st
     member this.ReadResourceJsonAsync<'T>(uri: string, ?cancellationToken: CancellationToken) =
         task {
             let! json = this.ReadResourceTextAsync(uri, ?cancellationToken = cancellationToken)
-            return JsonSerializer.Deserialize<'T>(json)
+            try
+                return FSharpJson.deserialize<'T> json
+            with ex ->
+                let stderr = String.concat "\n" this.StderrLog
+                return
+                    raise (
+                        JsonException(
+                            $"Failed to deserialize resource '{uri}'. Raw response: {json}\nSTDERR:\n{stderr}",
+                            ex
+                        )
+                    )
         }
+
+    member this.WaitForAsyncStatusAsync
+        (
+            asyncId: string,
+            ?maxAttempts: int,
+            ?pollIntervalMs: int,
+            ?cancellationToken: CancellationToken
+        ) =
+        let effectiveCancellationToken = defaultArg cancellationToken CancellationToken.None
+        let effectiveMaxAttempts = defaultArg maxAttempts 60
+        let effectivePollIntervalMs = defaultArg pollIntervalMs 100
+
+        let rec poll attempt =
+            task {
+                let! status =
+                    this.ReadResourceJsonAsync<AsyncFsiStatusDto>(
+                        $"fsi/async/{asyncId}",
+                        cancellationToken = effectiveCancellationToken
+                    )
+
+                if status.Exists && status.IsCompleted then
+                    return status
+                elif attempt >= effectiveMaxAttempts then
+                    let stderr = String.concat "\n" this.StderrLog
+                    return raise (TimeoutException($"Timed out waiting for async status '{asyncId}'. STDERR:\n{stderr}"))
+                else
+                    do! Task.Delay(effectivePollIntervalMs, effectiveCancellationToken)
+                    return! poll (attempt + 1)
+            }
+
+        poll 0
 
     interface IAsyncDisposable with
         member _.DisposeAsync() = client.DisposeAsync()
