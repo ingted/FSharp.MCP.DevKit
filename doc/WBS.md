@@ -198,9 +198,9 @@
 |---|---|---|---|---|
 | T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | control-plane tools 已搬到獨立檔案，`McpFsiTools` 不再承載 host/session 管理入口 | done |
 | T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | done |
-| T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` | todo |
-| T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 | todo |
-| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`, `fsi/hosts/*`, `fsi/path-mappings` 已可讀 | done |
+| T35 | 新增 routed execution tools | explicit route tools | 已新增 `execute/evaluate/reset/get_state/add_search_path/reference_assembly` routed tools，可指定 `agentId/hostId/sessionId` | done |
+| T36 | 新增 result tools | `get/list/query/compare` | 已新增 `get/list/query/compare` result tools，且支援 synthetic result materialization | done |
+| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`、`fsi/hosts/*`、`fsi/results/*`、`fsi/path-mappings` 已可讀 | done |
 | T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | done |
 
 依賴：
@@ -218,11 +218,11 @@
 
 | ID | 工作 | 產出 | 驗收 | 進度 |
 |---|---|---|---|---|
-| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | 可編譯 | todo |
-| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 可用 | todo |
+| T39 | 新增 `ResultQueryTypes.fs` | query request/response types | `ResultQueryRequest/Response/Language/Kind/Materialization` 已可編譯 | done |
+| T40 | 新增 `ResultQueryService.fs` | built-in ops | `exists/forall/map/filter/zip/diff/groupBy` 已可用 | done |
 | T41 | 支援 `FSharpCode` query | server-side analysis execution | 可對 `ResultId seq` 執行 F# query string | todo |
-| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | agent 可串下一步 | todo |
-| T42a | parent-level result orchestration | host parent / server orchestration flow | result query 不進 session actor | todo |
+| T42 | 加入 result materialization policy | query 產出可轉新 `ResultId` 或 json | built-in query 已支援 `syntheticResult` materialization | done |
+| T42a | parent-level result orchestration | host parent / server orchestration flow | result query 由 server-side `ResultQueryService` 協調，不進 session actor | done |
 
 依賴：
 

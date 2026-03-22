@@ -1,0 +1,27 @@
+背景：`WP08` 第一段已完成 control-plane MCP surface。這一輪要把 routed execution 與 result plane 真正做成 agent 可直接使用的 MCP interface。
+目標：完成 routed execution tools、built-in result query service、result tools/resources，並以測試與 build 驗證收尾。
+計畫步驟：
+1. 新增 `McpExecutionTools.fs`，提供 explicit route tools。
+2. 新增 `ResultQueryTypes.fs` / `ResultQueryService.fs`，先支援 built-in `exists/forall/map/filter/zip/diff/groupBy`。
+3. 更新 `FsiMcpService`，提供 agent-scoped result get/list/query 與 synthetic result materialization。
+4. 新增 `McpResultTools.fs` / `ResultResources.fs`。
+5. 補 `McpExecutionToolsTests.fs` / `McpResultToolsTests.fs`，執行 build/test。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+- `dotnet build FSharp.MCP.DevKit.Async.sln -m:1`
+結果：
+- 已新增 `src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryTypes.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/ResultQuery/ResultQueryService.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/McpResultTools.fs`
+- 已新增 `src/FSharp.MCP.DevKit.Server/ResultResources.fs`
+- `FsiMcpService` 已補 `TryGetResultForAgent`、`ListAgentResults`、`ListHostSessionResults`、`QueryResults`
+- `Program.fs` 已註冊 `ResultResources`
+- 已新增 `tests/McpExecutionToolsTests.fs`
+- 已新增 `tests/McpResultToolsTests.fs`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+- `dotnet build FSharp.MCP.DevKit.Async.sln -m:1` 通過
+根因判讀：control-plane 只做到 create/list 仍不夠，agent 還是缺兩個關鍵面向。第一是顯式 route 的 execution surface，否則 multi-agent/multi-host/multi-session 只是 registry 能力；第二是 result plane，否則 `asyncId -> ResultId` 只能追蹤，不能進一步做比較、分組、篩選與 materialization。這一輪把兩者補上後，MCP server 才開始接近真正可操作的 production control plane。
+下一步：進 `WP09` 第二段，評估是否要補 `FSharpCode` result query，否則先做 smoke/regression 與 closeout。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs、src/FSharp.MCP.DevKit.Server/McpResultTools.fs、src/FSharp.MCP.DevKit.Server/ResultResources.fs、src/FSharp.MCP.DevKit.Server/ResultQuery/*、tests/McpExecutionToolsTests.fs、tests/McpResultToolsTests.fs
+prompt/上下文摘要：在 `WP08` control-plane surface 已 commit/push/check 後，繼續補 routed execution 與 result plane。

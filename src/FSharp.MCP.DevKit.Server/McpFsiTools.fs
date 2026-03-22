@@ -15,6 +15,7 @@ open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Backends
 open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.Integration
+open FSharp.MCP.DevKit.Server.ResultQuery
 open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Analysis
 open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
@@ -259,6 +260,7 @@ module McpFsiTools =
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+        let resultQueryService = ResultQueryService()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend
 
         let enableRemoteClient = defaultArg enableRemoteClient true
@@ -417,9 +419,85 @@ module McpFsiTools =
 
         member _.TryGetResult(resultId: string) = resultRegistry.TryGet resultId
 
+        member _.TryGetResultForAgent(agentId: string, resultId: string) =
+            resultRegistry.TryGet resultId
+            |> Option.filter (fun value -> value.AgentId = agentId)
+
         member _.ListSessionResults(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             resultRegistry.ListBySession route
+
+        member _.ListHostSessionResults(hostId: string, sessionId: string) =
+            resultRegistry.ListBySession(
+                { AgentId =
+                    sessionRegistry.TryGet(hostId, sessionId)
+                    |> Option.map (fun value -> value.AgentId)
+                    |> Option.defaultWith (fun () -> invalidOp $"Session '{sessionId}' was not found under host '{hostId}'.")
+                  HostId = hostId
+                  SessionId = sessionId }
+            )
+
+        member _.ListAgentResults(agentId: string) = resultRegistry.ListByAgent agentId
+
+        member _.QueryResults(request: ResultQueryRequest) =
+            let loadOwnedRecords resultIds =
+                resultIds
+                |> List.distinct
+                |> List.map (fun resultId ->
+                    match resultRegistry.TryGet resultId with
+                    | Some record when record.AgentId = request.AgentId -> record
+                    | Some _ -> invalidOp $"Result '{resultId}' does not belong to agent '{request.AgentId}'."
+                    | None -> invalidOp $"Result '{resultId}' was not found.")
+
+            let materializeResponse (response: ResultQueryResponse) (records: FsiExecutionRecord list) =
+                if not response.IsSuccess || request.Materialization <> SyntheticResult then
+                    response
+                else
+                    let now = DateTime.UtcNow
+
+                    let basis = records |> List.tryHead
+
+                    let record =
+                        { ResultId = Guid.NewGuid().ToString("N")
+                          RequestId = request.QueryId
+                          AgentId = request.AgentId
+                          BackendKind = basis |> Option.map (fun value -> value.BackendKind) |> Option.defaultValue InProc
+                          HostId = basis |> Option.map (fun value -> value.HostId) |> Option.defaultValue "query-host"
+                          SessionId = basis |> Option.map (fun value -> value.SessionId) |> Option.defaultValue "query-session"
+                          OperationKind = ResultQuery
+                          SubmittedAt = now
+                          StartedAt = Some now
+                          CompletedAt = Some now
+                          RawErrorType = None
+                          Result =
+                            { Output = response.MaterializedJson |> Option.defaultValue response.Output
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = None
+                              Diagnostics = [||]
+                              Value =
+                                if String.IsNullOrWhiteSpace response.Output then
+                                    None
+                                else
+                                    Some response.Output } }
+
+                    resultRegistry.Put record
+
+                    { response with
+                        ProducedResultIds = [ record.ResultId ] }
+
+            try
+                let primaryRecords = loadOwnedRecords request.PrimaryResultIds
+                let secondaryRecords = loadOwnedRecords request.SecondaryResultIds
+                let response = resultQueryService.Run(request, primaryRecords, secondaryRecords)
+                materializeResponse response (primaryRecords @ secondaryRecords)
+            with ex ->
+                { QueryId = request.QueryId
+                  IsSuccess = false
+                  Output = ""
+                  Errors = ex.Message
+                  ProducedResultIds = []
+                  MaterializedJson = None }
 
         member _.RegisterAgent(agentId: string, ?displayName: string, ?metadata: IDictionary<string, string>) =
             let now = DateTime.UtcNow

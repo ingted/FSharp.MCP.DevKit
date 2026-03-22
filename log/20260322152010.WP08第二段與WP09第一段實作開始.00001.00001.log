@@ -1,0 +1,17 @@
+背景：`WP08` 第一段已完成 control-plane tools/resources。下一段要讓 agent 能顯式指定 route 執行，並把 `ResultId` 真正變成可查、可比、可串接的 result plane。
+目標：完成 `McpExecutionTools`、`McpResultTools`、`ResultQueryService`、`ResultResources`，並補對應測試。
+計畫步驟：
+1. 新增 `ResultQueryTypes.fs` / `ResultQueryService.fs`，先支援 built-in `exists/forall/map/filter/zip/diff/groupBy`。
+2. 更新 `FsiMcpService`，提供 agent-scoped result 查詢、list、query 與 synthetic result materialization。
+3. 新增 `McpExecutionTools.fs`，提供 explicit route tools。
+4. 新增 `McpResultTools.fs` 與 `ResultResources.fs`，暴露 result plane。
+5. 補 `McpExecutionToolsTests.fs` / `McpResultToolsTests.fs`，跑 `dotnet test -f net10.0`。
+執行命令/參數：
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+- `dotnet build FSharp.MCP.DevKit.Async.sln`
+結果：
+- 進行中
+根因判讀：若沒有 routed execution tools，agent 雖能建立 host/session，仍必須退回隱式 default route。若沒有 result plane，`asyncId -> ResultId` 的追蹤也停在半套，無法進一步做 compare/filter/groupBy 等集合運算。
+下一步：完成 compile/test 後，更新 WBS 並跑 `check.fsx`。
+關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/ResultQuery/*、src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs、src/FSharp.MCP.DevKit.Server/McpResultTools.fs、src/FSharp.MCP.DevKit.Server/ResultResources.fs
+prompt/上下文摘要：在 `WP08` 第一段已 commit/push 後，繼續補 routed execution 與 result plane。

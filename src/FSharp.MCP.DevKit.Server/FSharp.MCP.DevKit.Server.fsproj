@@ -48,10 +48,15 @@
     <Compile Include="ControlPlane\DefaultRouting.fs" />
     <Compile Include="ControlPlane\ExecutionRouter.fs" />
     <Compile Include="ControlPlane\ProvisioningServices.fs" />
+    <Compile Include="ResultQuery\ResultQueryTypes.fs" />
+    <Compile Include="ResultQuery\ResultQueryService.fs" />
     <Compile Include="Backends\Net10HostBackend.fs" />
     <Compile Include="McpFsiTools.fs" />
     <Compile Include="McpControlPlaneTools.fs" />
+    <Compile Include="McpExecutionTools.fs" />
+    <Compile Include="McpResultTools.fs" />
     <Compile Include="ControlPlaneResources.fs" />
+    <Compile Include="ResultResources.fs" />
     <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="McpDocumentationTools.fs" />
     <Compile Include="Program.fs" />

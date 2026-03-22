@@ -166,3 +166,13 @@
 ## 備註
 
 - 本 WBS 已擴充覆蓋到 `WP08` 第一階段的 control-plane MCP surface。
+
+## WP-T14 Routed Execution And Result Plane Tests
+
+驗證 `WP08` 第二階段與 `WP09` 第一階段的 routed execution / result plane。
+
+| ID | 工作項目 | 產出 | 驗收標準 | 進度 |
+| --- | --- | --- | --- | --- |
+| TT34 | 新增 `McpExecutionToolsTests.fs` | explicit route tool 測試 | routed execute/evaluate/reset/async 可回歸 | done |
+| TT35 | 新增 `McpResultToolsTests.fs` | result tool/resource 測試 | get/list/query/compare/materialization 可回歸 | done |
+| TT36 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08/WP09` 後仍全數通過 | done |

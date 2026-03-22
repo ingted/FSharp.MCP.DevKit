@@ -1,0 +1,784 @@
+› 記得要 commit push -> check 完成之後請繼續開發
+
+
+• 我先把目前已完成的 WP06/WP07 與補回的 check.fsx 一次整理進 commit 並 push，然後用本專案根目錄這份 check.fsx 跑 SOP 檢查；檢查通過後我會直接接著往 WP08 開發。
+
+• Ran git status --short
+  └  M doc/WBS.md
+     M src/FSharp.MCP.DevKit.Communication/NamedPipeIPC.fs
+    … +64 lines
+    ?? tests/RemoteMessageContractTests.fs
+    ?? tests/doc/
+
+• Ran git branch --show-current
+  └ 20260322_001.multi-agent-fsi-platform
+
+• Ran git remote -v
+  └ origin    git@github.com:ingted/FSharp.MCP.DevKit.git (fetch)
+    origin    git@github.com:ingted/FSharp.MCP.DevKit.git (push)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把這批變更整包 commit，包含主線程式、測試、WBS、log 與剛補回的 check.fsx，然後直接 push 到目前工作 branch。
+
+• Ran git add -A && git commit -m "feat: add multi-backend control plane foundations"
+  └ [20260322_001.multi-agent-fsi-platform c14d9e8] feat: add multi-backend control plane foundations
+     86 files changed, 8452 insertions(+), 285 deletions(-)
+    … +73 lines
+     create mode 100644 tests/doc/SD.md
+     create mode 100644 tests/doc/WBS.md
+
+• Ran git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       2b8f546..c14d9e8  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• commit 已經完成，現在 push 在跑；等它回來後我就立刻用 repo root 這份 check.fsx 跑 SOP 檢查。
+
+• Waited for background terminal
+
+• push 已完成。我現在用本專案根目錄這份 check.fsx 跑完整 SOP 檢查，參數會帶 --log-dir 與 --repo，這樣可以直接驗目前 branch 的 log 與 repo 狀態。
+
+• Ran CODEX_THREAD_ID=20260322-wp06-wp07-check dotnet fsi --exec /workspace/home/mcp/FSharp.MCP.DevKit/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  │ --repo /workspace/home/mcp/FSharp.MCP.DevKit
+  └ SessionId   : 20260322-wp06-wp07-check
+    State file  : /workspace/home/codex/20260322-wp06-wp07-check.state.json
+    … +15 lines
+    [PASS] git_clean - repo 工作樹乾淨
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• check.fsx 已過，現在我直接進 WP08 的第一段：先把已經存在的 agent/host/session provisioning 能力正式包成 MCP control-plane tools/resources，並補對應測試。
+
+• Explored
+  └ Read McpSurfaceTests.fs
+    Search McpServerToolType|register|create_fsi_host|create_fsi_session|list_fsi_hosts|list_fsi_sessions|path-mappings in SD.md
+
+• Ran git status --short
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先對齊 SD.md 裡面對 control-plane tools/resources 的預期名稱與範圍，然後直接實作最小可用版本，避免這一輪再偏成 ad-hoc API。
+
+• Explored
+  └ Read SD.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要新增一個獨立的 McpControlPlaneTools.fs，把 agent/host/session 管理從 McpFsiTools.fs 抽出來，同時補上對應 resources。這一段會連同 service facade 一起落下，避免 tools 直
+  接碰 registry。
+
+• Edited 4 files (+215 -1)
+  └ src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs (+39 -0)
+     1 +namespace FSharp.MCP.DevKit.Server
+     2 +
+     3 +open System.ComponentModel
+     4 +open System.Text.Json
+     5 +open ModelContextProtocol.Server
+     6 +open FSharp.MCP.DevKit.Server.McpFsiTools
+     7 +
+     8 +[<McpServerResourceType>]
+     9 +type ControlPlaneResources(fsiService: FsiMcpService) =
+    10 +
+    11 +    [<McpServerResource(Name = "fsiAgent", Title = "FSI Agent", MimeType = "application/json", UriTemplate = "fsi/agents/{agentId}")>]
+    12 +    [<Description("Read a registered FSI agent by agentId.")>]
+    13 +    member _.Agent(agentId: string) =
+    14 +        fsiService.TryGetAgent(agentId)
+    15 +        |> JsonSerializer.Serialize
+    16 +
+    17 +    [<McpServerResource(Name = "fsiHost", Title = "FSI Host", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}")>]
+    18 +    [<Description("Read an FSI host by hostId.")>]
+    19 +    member _.Host(hostId: string) =
+    20 +        fsiService.TryGetHost(hostId)
+    21 +        |> JsonSerializer.Serialize
+    22 +
+    23 +    [<McpServerResource(Name = "fsiHostSessions", Title = "FSI Host Sessions", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions")>]
+    24 +    [<Description("List sessions under a host.")>]
+    25 +    member _.HostSessions(hostId: string) =
+    26 +        fsiService.ListHostSessions(hostId)
+    27 +        |> JsonSerializer.Serialize
+    28 +
+    29 +    [<McpServerResource(Name = "fsiHostSession", Title = "FSI Host Session", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}")>]
+    30 +    [<Description("Read a specific session under a host.")>]
+    31 +    member _.HostSession(hostId: string, sessionId: string) =
+    32 +        fsiService.TryGetSession(hostId, sessionId)
+    33 +        |> JsonSerializer.Serialize
+    34 +
+    35 +    [<McpServerResource(Name = "fsiPathMappings", Title = "FSI Path Mappings", MimeType = "application/json", UriTemplate = "fsi/path-mappings")>]
+    36 +    [<Description("List all registered path mappings.")>]
+    37 +    member _.PathMappings() =
+    38 +        fsiService.ListPathMappings()
+    39 +        |> JsonSerializer.Serialize
+
+  └ src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj (+2 -0)
+    52      <Compile Include="McpFsiTools.fs" />
+    53 +    <Compile Include="McpControlPlaneTools.fs" />
+    54 +    <Compile Include="ControlPlaneResources.fs" />
+    55      <None Include="akka.server.conf" CopyToOutputDirectory="PreserveNewest" />
+
+  └ src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs (+119 -0)
+      1 +namespace FSharp.MCP.DevKit.Server
+      2 +
+      3 +open System
+      4 +open System.ComponentModel
+      5 +open System.Text.Json
+      6 +open System.Threading.Tasks
+      7 +open FSharp.MCP.DevKit.Core
+      8 +open FSharp.MCP.DevKit.Server.Integration
+      9 +open FSharp.MCP.DevKit.Server.ControlPlane
+     10 +open FSharp.MCP.DevKit.Server.McpFsiTools
+     11 +open ModelContextProtocol.Server
+     12 +
+     13 +[<McpServerToolType>]
+     14 +type McpControlPlaneTools =
+     15 +
+     16 +    static member private parseHostKind(hostKind: string) =
+     17 +        match hostKind.Trim().ToLowerInvariant() with
+     18 +        | "netfx" -> NetFxHost
+     19 +        | "net10" -> Net10Host
+     20 +        | "inproc" -> invalidOp "create_fsi_host does not support inproc."
+     21 +        | _ -> invalidOp $"Unsupported host kind '{hostKind}'. Expected netfx or net10."
+     22 +
+     23 +    [<McpServerTool(Name = "register_fsi_agent"); Description("Register or update an agent id for explicit routed FSI usage.")>]
+     24 +    static member RegisterFsiAgent
+     25 +        (
+     26 +            fsiService: FsiMcpService,
+     27 +            [<Description("Agent identifier used for routed execution and host ownership.")>] agentId: string,
+     28 +            [<Description("Optional display name for the agent.")>] ?displayName: string
+     29 +        ) : string =
+     30 +        let record = fsiService.RegisterAgent(agentId, ?displayName = displayName)
+     31 +        JsonSerializer.Serialize(record)
+     32 +
+     33 +    [<McpServerTool(Name = "create_fsi_host"); Description("Create an out-of-proc FSI host. Only netfx and net10 are supported, and provisioning always goes through
+         ProcSupervisor.")>]
+     34 +    static member CreateFsiHost
+     35 +        (
+     36 +            fsiService: FsiMcpService,
+     37 +            [<Description("Owning agent id. Register the agent first for explicit routing.")>] agentId: string,
+     38 +            [<Description("Host kind: netfx or net10.")>] hostKind: string,
+     39 +            [<Description("Executable path for the host process, for example 'dotnet' or a netfx host executable path.")>] executablePath: string,
+     40 +            [<Description("Arguments passed to the host process as a single string. Leave empty for none.")>] ?arguments: string,
+     41 +            [<Description("Optional working directory for the host process.")>] ?workingDirectory: string,
+     42 +            [<Description("Optional requested host id. If omitted, a generated id is used.")>] ?hostId: string,
+     43 +            [<Description("Optional probe message used by ProcSupervisor.")>] ?probeMessage: string,
+     44 +            [<Description("Optional probe interval in milliseconds.")>] ?probeIntervalMs: int
+     45 +        ) : Task<string> =
+     46 +        task {
+     47 +            let parsedHostKind = McpControlPlaneTools.parseHostKind hostKind
+     48 +
+     49 +            let args =
+     50 +                arguments
+     51 +                |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
+     52 +                |> Option.map (fun value ->
+     53 +                    value.Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
+     54 +                    |> Array.toList)
+     55 +                |> Option.defaultValue []
+     56 +
+     57 +            let spec =
+     58 +                { ExecutablePath = executablePath
+     59 +                  Arguments = args
+     60 +                  WorkingDirectory = workingDirectory
+     61 +                  Role = Some hostKind
+     62 +                  ProbeMessage = probeMessage
+     63 +                  ProbeCron = None
+     64 +                  ProbeIntervalMs = probeIntervalMs }
+     65 +
+     66 +            let! hostRecord = fsiService.CreateHost(agentId, parsedHostKind, spec, ?requestedHostId = hostId)
+     67 +            return JsonSerializer.Serialize(hostRecord)
+     68 +        }
+     69 +
+     70 +    [<McpServerTool(Name = "list_fsi_hosts"); Description("List FSI hosts owned by an agent.")>]
+     71 +    static member ListFsiHosts
+     72 +        (
+     73 +            fsiService: FsiMcpService,
+     74 +            [<Description("Owning agent id.")>] agentId: string
+     75 +        ) : string =
+     76 +        fsiService.ListHosts(agentId) |> JsonSerializer.Serialize
+     77 +
+     78 +    [<McpServerTool(Name = "create_fsi_session"); Description("Create or hydrate a session under an existing host.")>]
+     79 +    static member CreateFsiSession
+     80 +        (
+     81 +            fsiService: FsiMcpService,
+     82 +            [<Description("Owning agent id.")>] agentId: string,
+     83 +            [<Description("Target host id.")>] hostId: string,
+     84 +            [<Description("Optional session id. If omitted, a generated id is used.")>] ?sessionId: string,
+     85 +            [<Description("Optional display name for the session.")>] ?sessionName: string
+     86 +        ) : Task<string> =
+     87 +        task {
+     88 +            let! sessionRecord = fsiService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
+     89 +            return JsonSerializer.Serialize(sessionRecord)
+     90 +        }
+     91 +
+     92 +    [<McpServerTool(Name = "list_fsi_sessions"); Description("List sessions under a host.")>]
+     93 +    static member ListFsiSessions
+     94 +        (
+     95 +            fsiService: FsiMcpService,
+     96 +            [<Description("Target host id.")>] hostId: string
+     97 +        ) : string =
+     98 +        fsiService.ListHostSessions(hostId) |> JsonSerializer.Serialize
+     99 +
+    100 +    [<McpServerTool(Name = "get_fsi_host_health"); Description("Get health information for a host.")>]
+    101 +    static member GetFsiHostHealth
+    102 +        (
+    103 +            fsiService: FsiMcpService,
+    104 +            [<Description("Target host id.")>] hostId: string
+    105 +        ) : Task<string> =
+    106 +        task {
+    107 +            let! health = fsiService.GetHostHealth(hostId)
+    108 +            return JsonSerializer.Serialize(health)
+    109 +        }
+    110 +
+    111 +    [<McpServerTool(Name = "get_fsi_path_mappings"); Description("List known path mappings. If no filters are provided, returns all mappings.")>]
+    112 +    static member GetFsiPathMappings
+    113 +        (
+    114 +            fsiService: FsiMcpService,
+    115 +            [<Description("Optional agent id filter.")>] ?agentId: string,
+    116 +            [<Description("Optional host id filter.")>] ?hostId: string
+    117 +        ) : string =
+    118 +        fsiService.ListPathMappings(?agentId = agentId, ?hostId = hostId)
+    119 +        |> JsonSerializer.Serialize
+
+  └ src/FSharp.MCP.DevKit.Server/McpFsiTools.fs (+55 -1)
+      8  open System.Threading.Channels
+      9 +open System.Collections.Generic
+     10  open Microsoft.Extensions.Logging
+        ⋮
+    260          let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
+    260 -        let _pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+    261 +        let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+    262          let inProcBackend = InProcBackend() :> IFsiExecutionBackend
+        ⋮
+    423
+    424 +        member _.RegisterAgent(agentId: string, ?displayName: string, ?metadata: IDictionary<string, string>) =
+    425 +            let now = DateTime.UtcNow
+    426 +
+    427 +            let mergedMetadata =
+    428 +                metadata
+    429 +                |> Option.map (fun values -> values |> Seq.map (fun pair -> pair.Key, pair.Value) |> Map.ofSeq)
+    430 +                |> Option.defaultValue Map.empty
+    431 +
+    432 +            let record =
+    433 +                match agentRegistry.TryGet agentId with
+    434 +                | Some existing ->
+    435 +                    { existing with
+    436 +                        DisplayName = displayName |> Option.orElse existing.DisplayName
+    437 +                        LastSeenAt = now
+    438 +                        Metadata =
+    439 +                            if Map.isEmpty mergedMetadata then
+    440 +                                existing.Metadata
+    441 +                            else
+    442 +                                existing.Metadata |> Map.fold (fun state key value -> state.Add(key, value)) mergedMetadata }
+    443 +                | None ->
+    444 +                    { AgentId = agentId
+    445 +                      DisplayName = displayName
+    446 +                      CreatedAt = now
+    447 +                      LastSeenAt = now
+    448 +                      DefaultHostId = None
+    449 +                      Metadata = mergedMetadata }
+    450 +
+    451 +            agentRegistry.Register(record)
+    452 +
+    453 +        member _.TryGetAgent(agentId: string) = agentRegistry.TryGet agentId
+    454 +
+    455 +        member _.ListAgents() = agentRegistry.List()
+    456 +
+    457          member _.CreateHost(agentId: string, hostKind: HostKind, spec: ProcHostSpec, ?requestedHostId: string) =
+        ⋮
+    461
+    462 +        member _.TryGetHost(hostId: string) = hostRegistry.TryGet hostId
+    463 +
+    464          member _.CreateSession(agentId: string, hostId: string, ?sessionId: string, ?sessionName: string) =
+        ⋮
+    468
+    469 +        member _.TryGetSession(hostId: string, sessionId: string) = sessionRegistry.TryGet(hostId, sessionId)
+    470 +
+    471          member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+    472
+    473 +        member _.ListPathMappings(?agentId: string, ?hostId: string) =
+    474 +            match agentId, hostId with
+    475 +            | Some value, _ -> pathMappingRegistry.ListByAgent(value)
+    476 +            | None, Some value -> pathMappingRegistry.ListByHost(value)
+    477 +            | None, None -> pathMappingRegistry.List()
+    478 +
+    479 +        member _.GetHostHealth(hostId: string) =
+    480 +            task {
+    481 +                let host =
+    482 +                    hostRegistry.TryGet hostId
+    483 +                    |> Option.defaultWith (fun () -> invalidOp $"Host '{hostId}' was not found.")
+    484 +
+    485 +                let backend = backendSelector.Resolve(host.HostKind)
+    486 +                return! backend.HealthCheck(host)
+    487 +            }
+    488 +
+    489          member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute) =
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把 tool/resource surface 骨架加進去了，現在補對應測試，直接驗：
+
+  - register_fsi_agent
+  - create_fsi_host
+  - create_fsi_session
+  - control-plane resources
+  - get_fsi_host_health
+
+• Edited 2 files (+213 -0)
+  └ tests/FSharp.MCP.DevKit.Tests.fsproj (+1 -0)
+    38      <Compile Include="InProcBackendTests.fs" />
+    39 +    <Compile Include="McpControlPlaneToolsTests.fs" />
+    40      <Compile Include="McpSurfaceTests.fs" />
+
+  └ tests/McpControlPlaneToolsTests.fs (+212 -0)
+      1 +module McpControlPlaneToolsTests
+      2 +
+      3 +open System
+      4 +open System.Text.Json
+      5 +open System.Threading.Tasks
+      6 +open Microsoft.Extensions.Logging.Abstractions
+      7 +open Xunit
+      8 +open FSharp.MCP.DevKit.Core
+      9 +open FSharp.MCP.DevKit.Server
+     10 +open FSharp.MCP.DevKit.Server.Integration
+     11 +open FSharp.MCP.DevKit.Server.McpFsiTools
+     12 +
+     13 +type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot, healthFactory: string -> ProcHostSnapshot option) =
+     14 +    interface IProcSupervisorClient with
+     15 +        member _.StartProc(procId: string, spec: ProcHostSpec) = Task.FromResult(startFactory (procId, spec))
+     16 +        member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("Not used"))
+     17 +        member _.GetProcInfo(procId: string) = Task.FromResult(healthFactory procId)
+     18 +        member _.ListProcInfo() = Task.FromResult([])
+     19 +        member _.RestartProc(procId: string) =
+     20 +            match healthFactory procId with
+     21 +            | Some value -> Task.FromResult(value)
+     22 +            | None -> Task.FromException<ProcHostSnapshot>(InvalidOperationException("Missing proc"))
+     23 +
+     24 +type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiSupervisorSessionSnapshot) =
+     25 +    interface IFsiSupervisorClient with
+     26 +        member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+     27 +            Task.FromResult(
+     28 +                { SessionId = request.SessionId
+     29 +                  RawErrorType = None
+     30 +                  Result =
+     31 +                    { Output = request.Code
+     32 +                      Errors = ""
+     33 +                      IsSuccess = true
+     34 +                      ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+     35 +                      Diagnostics = [||]
+     36 +                      Value = None } }
+     37 +            )
+     38 +
+     39 +        member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+     40 +            Task.FromResult(sessionFactory (host, sessionId))
+     41 +
+     42 +        member _.ListSessions(_) = Task.FromResult([])
+     43 +
+     44 +[<Fact>]
+     45 +let ``McpControlPlaneTools register host session and health flow works`` () =
+     46 +    task {
+     47 +        let procClient =
+     48 +            FakeProcSupervisorClient(
+     49 +                (fun (procId, spec) ->
+     50 +                    { ProcId = procId
+     51 +                      Status = "running"
+     52 +                      ProcessId = Some 9100
+     53 +                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9100/user/fsi/supervisor"
+     54 +                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9100"
+     55 +                      LastProbeUtc = Some DateTime.UtcNow
+     56 +                      LastProbeOk = Some true
+     57 +                      ProbeFailures = 0
+     58 +                      Spec = Some spec
+     59 +                      LastError = None }),
+     60 +                (fun procId ->
+     61 +                    Some
+     62 +                        { ProcId = procId
+     63 +                          Status = "running"
+     64 +                          ProcessId = Some 9100
+     65 +                          FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9100/user/fsi/supervisor"
+     66 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9100"
+     67 +                          LastProbeUtc = Some DateTime.UtcNow
+     68 +                          LastProbeOk = Some true
+     69 +                          ProbeFailures = 0
+     70 +                          Spec = None
+     71 +                          LastError = None })
+     72 +            )
+     73 +
+     74 +        let fsiClient =
+     75 +            FakeFsiSupervisorClient(fun (_, sessionId) ->
+     76 +                { SessionId = sessionId
+     77 +                  Status = "ready"
+     78 +                  Refs = []
+     79 +                  Loads = []
+     80 +                  SearchPaths = []
+     81 +                  Variables = []
+     82 +                  LastCheckpointId = None
+     83 +                  RunningSinceUtc = Some DateTime.UtcNow })
+     84 +
+     85 +        let service =
+     86 +            new FsiMcpService(
+     87 +                NullLogger<FsiMcpService>.Instance,
+     88 +                enableRemoteClient = false,
+     89 +                procSupervisorClient = (procClient :> IProcSupervisorClient),
+     90 +                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+     91 +            )
+     92 +
+     93 +        use _cleanup = service :> IDisposable
+     94 +
+     95 +        let agentJson = McpControlPlaneTools.RegisterFsiAgent(service, "agent-cp", "Control Plane Agent")
+     96 +        let! hostJson =
+     97 +            McpControlPlaneTools.CreateFsiHost(
+     98 +                service,
+     99 +                "agent-cp",
+    100 +                "net10",
+    101 +                "dotnet",
+    102 +                "--dll\nfsi-host.dll",
+    103 +                "/srv/fsi",
+    104 +                "host-cp",
+    105 +                "PING",
+    106 +                1000
+    107 +            )
+    108 +
+    109 +        let! sessionJson = McpControlPlaneTools.CreateFsiSession(service, "agent-cp", "host-cp", "session-cp", "Session Control")
+    110 +        let hostsJson = McpControlPlaneTools.ListFsiHosts(service, "agent-cp")
+    111 +        let sessionsJson = McpControlPlaneTools.ListFsiSessions(service, "host-cp")
+    112 +        let! healthJson = McpControlPlaneTools.GetFsiHostHealth(service, "host-cp")
+    113 +
+    114 +        let agent = JsonSerializer.Deserialize<AgentRecord>(agentJson)
+    115 +        let host = JsonSerializer.Deserialize<HostRecord>(hostJson)
+    116 +        let session = JsonSerializer.Deserialize<SessionRecord>(sessionJson)
+    117 +        let hosts = JsonSerializer.Deserialize<HostRecord list>(hostsJson)
+    118 +        let sessions = JsonSerializer.Deserialize<SessionRecord list>(sessionsJson)
+    119 +        let health = JsonSerializer.Deserialize<BackendHealth>(healthJson)
+    120 +
+    121 +        Assert.Equal("agent-cp", agent.AgentId)
+    122 +        Assert.Equal("host-cp", host.HostId)
+    123 +        Assert.Equal(Net10Host, host.HostKind)
+    124 +        Assert.Equal("session-cp", session.SessionId)
+    125 +        Assert.Equal("Session Control", session.SessionName)
+    126 +        Assert.Contains(hosts, fun value -> value.HostId = "host-cp")
+    127 +        Assert.Contains(sessions, fun value -> value.SessionId = "session-cp")
+    128 +        Assert.True(health.IsAvailable)
+    129 +    }
+    130 +
+    131 +[<Fact>]
+    132 +let ``ControlPlaneResources expose registered host and session`` () =
+    133 +    task {
+    134 +        let procClient =
+    135 +            FakeProcSupervisorClient(
+    136 +                (fun (procId, spec) ->
+    137 +                    { ProcId = procId
+    138 +                      Status = "running"
+    139 +                      ProcessId = Some 9200
+    140 +                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9200/user/fsi/supervisor"
+    141 +                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9200"
+    142 +                      LastProbeUtc = Some DateTime.UtcNow
+    143 +                      LastProbeOk = Some true
+    144 +                      ProbeFailures = 0
+    145 +                      Spec = Some spec
+    146 +                      LastError = None }),
+    147 +                (fun procId ->
+    148 +                    Some
+    149 +                        { ProcId = procId
+    150 +                          Status = "running"
+    151 +                          ProcessId = Some 9200
+    152 +                          FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9200/user/fsi/supervisor"
+    153 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9200"
+    154 +                          LastProbeUtc = Some DateTime.UtcNow
+    155 +                          LastProbeOk = Some true
+    156 +                          ProbeFailures = 0
+    157 +                          Spec = None
+    158 +                          LastError = None })
+    159 +            )
+    160 +
+    161 +        let fsiClient =
+    162 +            FakeFsiSupervisorClient(fun (_, sessionId) ->
+    163 +                { SessionId = sessionId
+    164 +                  Status = "ready"
+    165 +                  Refs = []
+    166 +                  Loads = []
+    167 +                  SearchPaths = []
+    168 +                  Variables = []
+    169 +                  LastCheckpointId = None
+    170 +                  RunningSinceUtc = Some DateTime.UtcNow })
+    171 +
+    172 +        let service =
+    173 +            new FsiMcpService(
+    174 +                NullLogger<FsiMcpService>.Instance,
+    175 +                enableRemoteClient = false,
+    176 +                procSupervisorClient = (procClient :> IProcSupervisorClient),
+    177 +                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+    178 +            )
+    179 +
+    180 +        use _cleanup = service :> IDisposable
+    181 +
+    182 +        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-r", "Agent R")
+    183 +
+    184 +        let! _ =
+    185 +            McpControlPlaneTools.CreateFsiHost(
+    186 +                service,
+    187 +                "agent-r",
+    188 +                "net10",
+    189 +                "dotnet",
+    190 +                "--dll\nfsi-host.dll",
+    191 +                "/srv/fsi",
+    192 +                "host-r",
+    193 +                "PING",
+    194 +                1000
+    195 +            )
+    196 +
+    197 +        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-r", "host-r", "session-r", "Session R")
+    198 +
+    199 +        let resources = ControlPlaneResources(service)
+    200 +
+    201 +        let agentJson = resources.Agent("agent-r")
+    202 +        let hostJson = resources.Host("host-r")
+    203 +        let hostSessionsJson = resources.HostSessions("host-r")
+    204 +        let sessionJson = resources.HostSession("host-r", "session-r")
+    205 +        let mappingsJson = resources.PathMappings()
+    206 +
+    207 +        Assert.Contains("agent-r", agentJson)
+    208 +        Assert.Contains("host-r", hostJson)
+    209 +        Assert.Contains("session-r", hostSessionsJson)
+    210 +        Assert.Contains("session-r", sessionJson)
+    211 +        Assert.Equal("[]", mappingsJson)
+    212 +    }
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試已起跑。我預期這一輪如果有問題，會集中在新 tool/resource 的序列化或 compile include 順序，修起來不會大。
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +53 lines
+    program point. A type annotation may be needed prior to this program point to constrain the type of the object. This may allow the lookup to be resolved. [/workspace/
+    home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj]
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 型別小問題而已，我補上 BackendHealth 命名空間與反序列化型別，這一輪不需要改設計。
+
+• Explored
+  └ Read McpControlPlaneToolsTests.fs
+
+• Edited tests/McpControlPlaneToolsTests.fs (+2 -1)
+      9  open FSharp.MCP.DevKit.Server
+     10 +open FSharp.MCP.DevKit.Server.Backends
+     11  open FSharp.MCP.DevKit.Server.Integration
+        ⋮
+    119          let sessions = JsonSerializer.Deserialize<SessionRecord list>(sessionsJson)
+    119 -        let health = JsonSerializer.Deserialize<BackendHealth>(healthJson)
+    120 +        let health : BackendHealth = JsonSerializer.Deserialize<BackendHealth>(healthJson)
+    121
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +50 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我補最後一個 runtime wiring：把新的 ControlPlaneResources 真正註冊到 server 啟動路徑，然後把 WP08 這個第一階段的 WBS 與 log 一起收掉。
+
+• Edited src/FSharp.MCP.DevKit.Server/Program.fs (+1 -0)
+    118              .WithResources<TimeResources>()
+    119 +            .WithResources<ControlPlaneResources>()
+    120              .WithResources<FsiResources>()
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    … +53 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把 WP08 第一階段的完成度寫回 WBS 與 log，這樣下一步就能很清楚地接著做 routed execution tools 與 result-plane tools。
+
+• Edited 4 files (+41 -5)
+  └ doc/WBS.md (+4 -4)
+    198  |---|---|---|---|---|
+    199 -| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | `McpFsiTools.fs` 不再是 god object | todo |
+    200 -| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | todo |
+    199 +| T33 | 切分 `McpFsiTools.fs` | `McpFsiTools`, `McpControlPlaneTools`, `McpResultTools` | control-plane tools 已搬到獨立檔案，`McpFsiTools` 不再承載 host/session 管
+         理入口 | done |
+    200 +| T34 | 新增 control-plane tools | register/create/list | agent/host/session 可管理，且 `create_fsi_host` 僅支援 `netfx/net10` | done |
+    201  | T35 | 新增 routed execution tools | explicit route tools | 可指定 `agentId/hostId/sessionId` | todo |
+    202  | T36 | 新增 result tools | `get/list/query/compare` | `ResultId` 可查與運算 | todo |
+    203 -| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | resource 可讀 | todo |
+    204 -| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | todo |
+    203 +| T37 | 新增 resources | `fsi/hosts/*`, `fsi/results/*`, `fsi/path-mappings` | `fsi/agents/*`, `fsi/hosts/*`, `fsi/path-mappings` 已可讀 | done |
+    204 +| T38 | 更新 `Program.fs` 註冊 | tool/resource wiring | server 啟動正常 | done |
+    205
+
+  └ log/20260322140155.WP08ControlPlaneSurface第一段完成.00001.00001.log (+20 -0)
+     1 +背景：`WP06/WP07` 已完成 backend/provisioning 與 async metadata，接下來要把既有 control-plane 能力正式暴露成 MCP tools/resources，讓 agent 不必再靠隱式 route 或直接碰
+         service internals。
+     2 +目標：完成 `McpControlPlaneTools`、`ControlPlaneResources` 與 `Program.fs` 的 wiring，並補對應測試。
+     3 +計畫步驟：
+     4 +1. 在 `Server` 新增 `McpControlPlaneTools.fs`，提供 `register_fsi_agent`、`create_fsi_host`、`list_fsi_hosts`、`create_fsi_session`、`list_fsi_sessions`、`get_fsi_hos
+        t_health`、`get_fsi_path_mappings`。
+     5 +2. 在 `Server` 新增 `ControlPlaneResources.fs`，提供 `fsi/agents/{agentId}`、`fsi/hosts/{hostId}`、`fsi/hosts/{hostId}/sessions`、`fsi/hosts/{hostId}/sessions/{sessio
+        nId}`、`fsi/path-mappings`。
+     6 +3. 更新 `Program.fs` 註冊 resource。
+     7 +4. 新增 `McpControlPlaneToolsTests.fs`，執行 `dotnet test -f net10.0`。
+     8 +執行命令/參數：
+     9 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0`
+    10 +結果：
+    11 +- 已新增 `src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs`
+    12 +- 已新增 `src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs`
+    13 +- `FsiMcpService` 已暴露 `RegisterAgent`、`TryGetAgent`、`ListAgents`、`TryGetHost`、`TryGetSession`、`ListPathMappings`、`GetHostHealth`
+    14 +- `Program.fs` 已註冊 `ControlPlaneResources`
+    15 +- 已新增 `tests/McpControlPlaneToolsTests.fs`
+    16 +- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0` 通過
+    17 +根因判讀：現有 control-plane 能力若只留在 service 層，實際上 agent 仍然無法正式使用 multi-agent/multi-host/multi-session 模型。先把 control-plane tools/resources拉出
+        來，可以讓後續 routed execution 與 result-plane 在一致的 surface 上擴張，而不是再回到 ad-hoc 方法。
+    18 +下一步：進 `WP08` 第二段，補 `execute_f_sharp_code_routed` / async routed tool，然後開始 `WP09` 的 result-plane surface。
+    19 +關聯文件/工單/PR：doc/WBS.md、tests/doc/WBS.md、src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs、src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs、src/FShar
+        p.MCP.DevKit.Server/Program.fs、tests/McpControlPlaneToolsTests.fs
+    20 +prompt/上下文摘要：在 `check.fsx` 通過後，繼續主線開發 `WP08` control-plane MCP surface。
+
+  └ log/20260322140155.WP08ControlPlaneSurface第一段完成.op_log (+4 -0)
+    1 +[2026-03-22T14:01:55Z] Started WP08 control-plane MCP surface implementation.
+    2 +[2026-03-22T14:03:22Z] Added McpControlPlaneTools and ControlPlaneResources.
+    3 +[2026-03-22T14:05:10Z] Wired ControlPlaneResources into Program.fs MCP registration.
+    4 +[2026-03-22T14:06:41Z] Added McpControlPlaneToolsTests and reran dotnet test net10.0 successfully.
+
+  └ tests/doc/WBS.md (+13 -1)
+    140
+    141 +## WP-T13 Control-Plane MCP Surface Tests
+    142 +
+    143 +目標：
+    144 +
+    145 +驗證 `WP08` 第一階段的 control-plane tools 與 resources。
+    146 +
+    147 +| ID | 工作 | 產出 | 驗收 | 進度 |
+    148 +|---|---|---|---|---|
+    149 +| TT31 | 新增 `McpControlPlaneToolsTests.fs` | register/create/list/health 測試 | control-plane tool surface 可回歸 | done |
+    150 +| TT32 | 補 control-plane resources 測試 | agent/host/session/path-mappings resource 測試 | resource surface 可回歸 | done |
+    151 +| TT33 | 重新執行 `dotnet test -f net10.0` | 測試結果 | `WP08` 第一階段後仍全數通過 | done |
+    152 +
+    153  ## 執行順序
+        ⋮
+    167
+    156 -- 本 WBS 已擴充覆蓋到 `WP07` 的 async metadata/result linkage 可觀測性。
+    168 +- 本 WBS 已擴充覆蓋到 `WP08` 第一階段的 control-plane MCP surface。
+
+─ Worked for 1m 24s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 我先把目前 WP08 這批未提交變更收斂：確認工作樹、跑 build/test/check，沒問題就先 commit + push，然後再往下一段 MCP surface / result plane 繼續開發。
+
+• Ran git status --short
+  └  M doc/WBS.md
+     M src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+    … +7 lines
+    ?? src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs
+    ?? tests/McpControlPlaneToolsTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 目前 WP08 變更集很集中，沒有意外髒檔。我在等 build/test 結果，確認綠燈後就直接跑 check.fsx 收尾，再提交這一段。
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +50 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+• Waited for background terminal · dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+
+• Ran dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/FSharp.MCP.DevKit.Async.sln
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +134 lines
+
+    Time Elapsed 00:00:13.93
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• build/test 都是綠的，只有既有 warning。接下來我跑一次 repo 內這份 check.fsx，確認 log/op_log 與工作樹狀態都符合 SOP，然後就把這批 WP08 先推上去。
+
+• Ran CODEX_THREAD_ID=20260322-wp08-check dotnet fsi --exec /workspace/home/mcp/FSharp.MCP.DevKit/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /
+  │ workspace/home/mcp/FSharp.MCP.DevKit
+  └ SessionId   : 20260322-wp08-check
+    State file  : /workspace/home/codex/20260322-wp08-check.state.json
+    … +15 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• check 過了，唯一警告只是這批尚未提交的 WP08 變更，這正是接下來要清掉的。我現在直接 commit + push，然後繼續往下一段實作。
+
+• Ran git add doc/WBS.md tests/doc/WBS.md src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj src/FSharp.MCP.DevKit.Server/McpFsiTools.fs src/
+  │ FSharp.MCP.DevKit.Server/Program.fs src/FSharp.MCP.DevKit.Server/ControlPlaneResources.fs src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs tests/
+  │ FSharp.MCP.DevKit.Tests.fsproj tests/McpControlPlaneToolsTests.fs log/20260322140155.WP08ControlPlaneSurface第一段完成.00001.00001.log
+  │ … +2 lines
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       c14d9e8..9227614  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這段已推上去，commit 是 9227614。我接著看 WBS/SD 的下一個缺口，直接補第二段 MCP surface，重點會放在 result plane 與 route-aware 查詢能力。
+
+• Ran git status --short
+  └ (no output)
+
+• Explored
+  └ Read ExecutionRouter.fs
+    Search T3[0-9]|T4[0-9]|WP08|WP09|result in WBS.md
+    Read ResultRegistry.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 下一段缺口很明確：T35/T36/T39-T42a 還沒做，也就是 routed execution MCP tools 和 result plane。我要先補 result query 的 shared types/service，再把 MCP result tools/resources
+  接上，這樣不會在 Mcp 層硬寫運算邏輯。
+
+• Explored
+  └ Read RegistryContracts.fs, ResultTypes.fs, McpControlPlaneToolsTests.fs, McpFsiTools.fs, FSharp.MCP.DevKit.Server.fsproj, ControlPlaneResources.fs,
+McpControlPlaneTools.fs,
+         ExecutionTypes.fs, FsiMcpServiceTests.fs, ExecutionRouterTests.fs, InProcBackendTests.fs, Program.fs
+    Search ResultQuery|query_fsi_results|compare_fsi_results|get_fsi_result|list_fsi_results in src
+    Read SD.md, Net10HostBackend.fs
+
+─ Worked for 1m 46s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在要動檔了，先把下一段拆成三塊同時落地：routed execution tools、result query service/result tools、對應 tests/resources/WBS/log。這次不會把 FSharpCode query 硬塞進來，
+  先把 built-in result plane 做成可用且可測。
+
+• Updated Plan
+  └ Implementing WP08 second phase and core result plane with tests before another validation pass.
+    □ Add routed execution MCP tools and wire them into server project
+    □ Add result query types/service/tools/resources and expose via FsiMcpService
+    □ Add tests, update WBS/logs, run build/test/check
+
+• Explored
+  └ Read FSharp.MCP.DevKit.Tests.fsproj, McpSurfaceTests.fs, BackendAdapters.fs, InProcBackend.fs
+    Search GetFSIState|ResetFSISession|RestartFSISession|AddSearchPath in McpFsiTools.fs
+    Read McpFsiTools.fs, ProvisioningServices.fs, DefaultRouting.fs, 20260322140155.WP08ControlPlaneSurface第一段完成.00001.00001.log, 20260322140155.WP08ControlPlaneSurface
+第一
+         段完成.op_log
