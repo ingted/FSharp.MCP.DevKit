@@ -1,0 +1,34 @@
+背景：使用者確認目前架構下 `fsihost` 已不適合在部署時一開始就註冊為 Windows service，要求將本機與遠端部署腳本都收斂到新的 host provisioning 模型，並另外提供本機 uninstall 腳本。
+目標：讓 Windows 部署腳本符合目前架構：只安裝 `fsharp-devkit` server service；legacy `.NET Framework` `FsiHost` 只作為 artifact staged 到部署目錄，供後續 `create_fsi_host` 使用；同時補遠端/本機文件與 uninstall 腳本。
+計畫步驟：
+1. 重寫 `scripts/deploy-local-service.ps1`，使其只安裝 `fsharp-devkit`，並保留對舊 `fsihost` service 的 stop/recreate 相容清理。
+2. 新增 `scripts/uninstall-local-service.ps1`，可停掉並刪除 `fsharp-devkit` 與舊 `fsihost`，必要時刪 deploy root。
+3. 更新 `scripts/deploy-remote-services.ps1`，使遠端只註冊 `fsharp-devkit`，將 legacy netfx host 改為 stage 到 `<RemoteRoot>\hosts\netfx`。
+4. 更新 `doc/Deployment.md`、`doc/Runbook.md`、`scripts/README.md`，讓操作手冊與新腳本一致。
+5. 以 `pwsh` parser 驗證三支 Windows 腳本語法，確認沒有 PowerShell parse error。
+執行命令/參數：
+- `pwsh -NoLogo -NoProfile -Command '$null=$null; $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "scripts/deploy-local-service.ps1"), [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | ForEach-Object { $_.ToString() }; exit 1 }'`
+- `pwsh -NoLogo -NoProfile -Command '$null=$null; $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "scripts/uninstall-local-service.ps1"), [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | ForEach-Object { $_.ToString() }; exit 1 }'`
+- `pwsh -NoLogo -NoProfile -Command '$null=$null; $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path "scripts/deploy-remote-services.ps1"), [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { $errors | ForEach-Object { $_.ToString() }; exit 1 }'`
+結果：
+- `deploy-local-service.ps1` 現在只會安裝 `fsharp-devkit` Windows service。
+- `deploy-local-service.ps1` 仍會把 legacy `.NET Framework` `FsiHost` publish 到 `DeployRoot\hosts\netfx`，但不會把它註冊成 `fsihost` service。
+- `uninstall-local-service.ps1` 已新增，可停掉並刪除 `fsharp-devkit` 與舊 `fsihost`，可選擇一併刪掉 deploy root。
+- `deploy-remote-services.ps1` 現在只會在遠端建立 `fsharp-devkit` service，並將 legacy netfx host artifact stage 到 `<RemoteRoot>\hosts\netfx`。
+- `deploy-remote-services.ps1` 原本尾端漂出去的 `$shouldSkipStart` 變數也一併修正。
+- `doc/Deployment.md`、`doc/Runbook.md`、`scripts/README.md` 已同步改成新模型。
+- 三支 Windows PowerShell 腳本語法都已經 parse 通過。
+根因判讀：
+- 舊腳本把 `fsihost` 視為必須先常駐的 service，這對舊「單一遠端 host」模型成立，但不符合現在的 host provisioning 架構。
+- 現在正確模型是：`fsharp-devkit` server 先常駐；是否建立 `netfx/net10` host，改由 control plane 的 `create_fsi_host` 決定。
+- 因此部署腳本的責任應從「預先起雙服務」收斂成「安裝 server service + stage 可供 host provisioning 使用的 artifact」。
+下一步：
+- commit / push 這輪 Windows deployment script 與文件更新。
+關聯文件/工單/PR：
+- `scripts/deploy-local-service.ps1`
+- `scripts/uninstall-local-service.ps1`
+- `scripts/deploy-remote-services.ps1`
+- `scripts/README.md`
+- `doc/Deployment.md`
+- `doc/Runbook.md`
+prompt/上下文摘要：使用者要求把本機與遠端 Windows 部署腳本改成符合新架構的版本，不再把 `fsihost` 預先註冊成服務，並提供 uninstall 腳本。

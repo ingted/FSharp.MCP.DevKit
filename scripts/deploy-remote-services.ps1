@@ -1,4 +1,3 @@
-#!/usr/bin/env pwsh
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)]
@@ -28,6 +27,9 @@ param(
 
     [Parameter(Mandatory = $false)]
     [string]$ServerDisplayName = "F# MCP DevKit Server",
+
+    [Parameter(Mandatory = $false)]
+    [string]$LegacyNetFxHostDirName = "hosts\netfx",
 
     [Parameter(Mandatory = $false)]
     [string]$FsiHostArtifactPath,
@@ -125,7 +127,7 @@ $localArtifactRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("fsharp-mcp-de
 $generatedLocalArtifacts = -not $SkipPublish
 $localFsiHostDir = $null
 $localServerDir = $null
-$remoteFsiHostDir = Join-Path $RemoteRoot "fsihost"
+$remoteFsiHostDir = Join-Path $RemoteRoot $LegacyNetFxHostDirName
 $remoteServerDir = Join-Path $RemoteRoot "fsharp-devkit"
 $serverUrls = "http://0.0.0.0:$ServerPort"
 $remoteHealthUrl = "http://localhost:$ServerPort/healthz"
@@ -133,7 +135,7 @@ $requiredRemoteBytes = [int64]0
 $skipStartFlag = if ($SkipStart.IsPresent) { "true" } else { "false" }
 $recreateServicesFlag = if ($RecreateServices.IsPresent) { "true" } else { "false" }
 
-if (-not $PSCmdlet.ShouldProcess("${ComputerName}:$RemoteRoot", "Deploy fsihost and fsharp-devkit services")) {
+if (-not $PSCmdlet.ShouldProcess("${ComputerName}:$RemoteRoot", "Deploy FSharp.MCP.DevKit remote Windows service and stage legacy netfx host artifacts")) {
     return
 }
 
@@ -142,7 +144,7 @@ if ($SkipPublish) {
     $localServerDir = Resolve-ArtifactDirectory -Path $ServerArtifactPath -Label "Server"
 }
 else {
-    $localFsiHostDir = Join-Path $localArtifactRoot "fsihost"
+    $localFsiHostDir = Join-Path $localArtifactRoot "hosts\netfx"
     $localServerDir = Join-Path $localArtifactRoot "fsharp-devkit"
     New-Item -ItemType Directory -Force -Path $localFsiHostDir, $localServerDir | Out-Null
 
@@ -318,7 +320,7 @@ try {
         Clear-DirectoryContents -Path $RemoteServerDir
     } -ArgumentList $RemoteRoot, $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $requiredRemoteBytes, $ServerPort, $recreateServicesFlag
 
-    Write-Step "Copying fsihost artifacts to $remoteFsiHostDir"
+    Write-Step "Copying legacy netfx host artifacts to $remoteFsiHostDir"
     Copy-DirectoryContentsToSession -Session $session -LocalPath $localFsiHostDir -RemotePath $remoteFsiHostDir
 
     Write-Step "Copying server artifacts to $remoteServerDir"
@@ -330,12 +332,13 @@ try {
             $RemoteServerDir,
             $FsiHostServiceName,
             $ServerServiceName,
-            $FsiHostDisplayName,
             $ServerDisplayName,
             $ServerUrls,
             $RemoteHealthUrl,
             $SkipStartFlag
         )
+
+        $shouldSkipStart = [string]::Equals($SkipStartFlag, "true", [System.StringComparison]::OrdinalIgnoreCase)
 
         function Invoke-ServiceCommand {
             param([string[]]$Arguments)
@@ -352,14 +355,8 @@ try {
                 [string]$Name,
                 [string]$DisplayName,
                 [string]$BinaryPath,
-                [string[]]$DependsOn,
                 [string]$Description
             )
-
-            $dependencySpec = $null
-            if ($DependsOn -and $DependsOn.Count -gt 0) {
-                $dependencySpec = ($DependsOn -join "/")
-            }
 
             $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
             $arguments =
@@ -369,10 +366,6 @@ try {
                 else {
                     @("create", $Name, "binPath=", $BinaryPath, "start=", "auto", "DisplayName=", $DisplayName)
                 }
-
-            if ($dependencySpec) {
-                $arguments += @("depend=", $dependencySpec)
-            }
 
             Invoke-ServiceCommand -Arguments $arguments
             Invoke-ServiceCommand -Arguments @("description", $Name, $Description)
@@ -416,28 +409,16 @@ try {
             throw "Remote server executable not found: $serverExe"
         }
 
-        $fsiHostBinaryPath = '"' + $fsiHostExe + '" --service --service-name "' + $FsiHostServiceName + '"'
         $serverBinaryPath =
             '"' + $serverExe + '" --service-name "' + $ServerServiceName + '" --urls "' + $ServerUrls + '"'
-
-        Ensure-ServiceConfigured `
-            -Name $FsiHostServiceName `
-            -DisplayName $FsiHostDisplayName `
-            -BinaryPath $fsiHostBinaryPath `
-            -DependsOn @() `
-            -Description "net472 FSI session host for FSharp.MCP.DevKit"
 
         Ensure-ServiceConfigured `
             -Name $ServerServiceName `
             -DisplayName $ServerDisplayName `
             -BinaryPath $serverBinaryPath `
-            -DependsOn @($FsiHostServiceName) `
             -Description "MCP server for FSharp.MCP.DevKit"
 
         if (-not $shouldSkipStart) {
-            Start-Service -Name $FsiHostServiceName
-            Wait-ServiceRunning -Name $FsiHostServiceName
-
             Start-Service -Name $ServerServiceName
             Wait-ServiceRunning -Name $ServerServiceName
 
@@ -448,14 +429,14 @@ try {
         }
 
         [pscustomobject]@{
-            FsiHostService = $FsiHostServiceName
             ServerService = $ServerServiceName
-            FsiHostPath = $RemoteFsiHostDir
+            LegacyNetFxHostPath = $RemoteFsiHostDir
             ServerPath = $RemoteServerDir
             HealthUrl = $RemoteHealthUrl
+            LegacyNetFxHostNote = "Legacy netfx host is staged as an artifact only; it is not registered as a Windows service by this script."
             HealthResponse = $healthResponse | ConvertTo-Json -Compress
         }
-    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $FsiHostDisplayName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, $skipStartFlag
+    } -ArgumentList $remoteFsiHostDir, $remoteServerDir, $FsiHostServiceName, $ServerServiceName, $ServerDisplayName, $serverUrls, $remoteHealthUrl, $skipStartFlag
 
     Write-Step "Deployment completed."
     $remoteSummary | Format-List | Out-Host
@@ -469,4 +450,3 @@ finally {
         Remove-Item -LiteralPath $localArtifactRoot -Recurse -Force
     }
 }
-        $shouldSkipStart = [string]::Equals($SkipStartFlag, "true", [System.StringComparison]::OrdinalIgnoreCase)

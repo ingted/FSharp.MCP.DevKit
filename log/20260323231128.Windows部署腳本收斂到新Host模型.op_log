@@ -1,0 +1,4 @@
+[2026-03-23T23:11:28Z] Reworked deploy-local-service.ps1 to install only the fsharp-devkit Windows service and stage legacy netfx host artifacts under hosts\netfx.
+[2026-03-23T23:12:05Z] Added uninstall-local-service.ps1 to stop/delete fsharp-devkit plus any legacy fsihost registration and optionally remove the deploy root.
+[2026-03-23T23:12:42Z] Updated deploy-remote-services.ps1 to match the new provisioning model and fixed the stray shouldSkipStart variable bug.
+[2026-03-23T23:13:10Z] Updated Deployment.md, Runbook.md, and scripts/README.md, then validated all Windows PowerShell scripts with pwsh parser checks.

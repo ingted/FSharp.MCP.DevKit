@@ -2,12 +2,13 @@
 
 ## 目標拓樸
 
-- `fsihost`
-  - runtime: `net472`
-  - role: 持有唯一 FSI session，提供 Akka remote actor
 - `fsharp-devkit`
   - runtime: `.NET 10`
   - role: 提供 MCP server、async queue、HTTP `/mcp`、`/healthz`
+- legacy `FsiHost`
+  - runtime: `net472`
+  - role: 只作為 artifact staged 到部署目錄，供後續 `create_fsi_host` 指向該 exe 啟動
+  - 不會在部署時預先註冊成 Windows service
 
 ## 正式部署腳本
 
@@ -22,16 +23,16 @@
 
 給定 `-RemoteRoot <path>` 後，腳本會部署到：
 
-- `<RemoteRoot>\fsihost`
+- `<RemoteRoot>\hosts\netfx`
 - `<RemoteRoot>\fsharp-devkit`
 - `RemoteRoot` 必須是遠端主機上的本機固定磁碟路徑，例如 `C:\services\FSharp.MCP.DevKit.Async`
 - `ServerPort` 必須是遠端主機上尚未被占用的 TCP port
 
 ## 預設服務名稱
 
-- `fsihost`
 - `fsharp-devkit`
 - 若指定 `-RecreateServices`，腳本會在重部署時先刪除既有 service registration，再重新建立
+- 若遠端曾有舊版 `fsihost` service，腳本也會先 stop；若指定 `-RecreateServices`，也會一併刪除舊 registration
 
 ## 常用指令
 
@@ -82,9 +83,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-remote-services.ps1 `
 ## 驗證
 
 - 服務啟動後，腳本會驗證：
-  - `fsihost` service 狀態為 `Running`
   - `fsharp-devkit` service 狀態為 `Running`
   - `http://localhost:<ServerPort>/healthz` 可回應 JSON
+  - `<RemoteRoot>\hosts\netfx\FSharp.MCP.DevKit.FsiHost.exe` 存在，可供之後 `create_fsi_host` 使用
 
 ## 本輪驗證證據
 

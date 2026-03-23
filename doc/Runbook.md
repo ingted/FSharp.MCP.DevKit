@@ -2,10 +2,10 @@
 
 ## 啟動順序
 
-1. `fsihost`
-2. `fsharp-devkit`
+1. `fsharp-devkit`
 
-`fsharp-devkit` 會相依 `fsihost`，部署腳本也會先啟動 `fsihost` 再啟動 server。
+目前部署腳本只會安裝與啟動 `fsharp-devkit`。  
+legacy `FsiHost` 只會被 staged 到部署目錄，之後若要建立 out-of-proc `netfx` host，再由 `create_fsi_host` 指向該 exe 啟動。
 
 ## 健康檢查
 
@@ -20,11 +20,10 @@
 ## 常用維運指令
 
 ```powershell
-Get-Service fsihost, fsharp-devkit
+Get-Service fsharp-devkit
 ```
 
 ```powershell
-Restart-Service fsihost
 Restart-Service fsharp-devkit
 ```
 
@@ -34,17 +33,17 @@ Invoke-RestMethod http://localhost:5000/healthz
 
 ## 異常處理
 
-### `fsihost` 無法啟動
-
-- 檢查遠端主機是否安裝 .NET Framework 4.7.2 以上
-- 檢查 `<RemoteRoot>\fsihost\FSharp.MCP.DevKit.FsiHost.exe` 是否存在
-- 檢查 `akka.conf` 是否隨 artifact 一起複製
-
 ### `fsharp-devkit` 無法啟動
 
-- 先確認 `fsihost` 已進入 `Running`
 - 檢查 `<RemoteRoot>\fsharp-devkit\FSharp.MCP.DevKit.exe` 是否存在
 - 檢查 `http://localhost:<port>/healthz` 是否被其他程序占用或被防火牆阻擋
+- 檢查是否有舊版 `fsihost` service 或其他程序占用資源
+
+### legacy `FsiHost` artifact 不存在
+
+- 檢查遠端主機是否安裝 .NET Framework 4.7.2 以上
+- 檢查 `<RemoteRoot>\hosts\netfx\FSharp.MCP.DevKit.FsiHost.exe` 是否存在
+- 檢查相關 `akka*.conf` 是否隨 artifact 一起複製
 
 ### 部署腳本失敗
 
@@ -66,7 +65,7 @@ Invoke-Command -ComputerName 10.36.205.160 {
 ## 回滾
 
 - 本輪腳本採固定目錄覆寫部署：
-  - `<RemoteRoot>\fsihost`
+  - `<RemoteRoot>\hosts\netfx`
   - `<RemoteRoot>\fsharp-devkit`
 - 回滾方式：
   1. 重新準備上一版 artifact
