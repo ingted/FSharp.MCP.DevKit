@@ -95,10 +95,20 @@ let main argv =
 
     builder.WebHost.UseUrls(getServerUrls argv) |> ignore
 
+    let enableRemoteClient =
+        let value = Environment.GetEnvironmentVariable("FSI_ENABLE_REMOTE_CLIENT")
+        if String.IsNullOrWhiteSpace(value) then
+            true
+        else
+            not (
+                value.Equals("0", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("no", StringComparison.OrdinalIgnoreCase))
+
     // Register FSI service
     builder.Services.AddSingleton<FsiMcpService>(fun serviceProvider ->
         let logger = serviceProvider.GetRequiredService<ILogger<FsiMcpService>>()
-        new FsiMcpService(logger)
+        new FsiMcpService(logger, enableRemoteClient = enableRemoteClient)
     )
     |> ignore
 
@@ -144,6 +154,7 @@ let main argv =
             Results.Json(
                 {| status = "ok"
                    transport = if enableStdio then "http+stdio-or-http" else "http-only"
+                   remoteClient = if enableRemoteClient then "enabled" else "disabled"
                    isWindowsService = isWindowsService
                    serviceName = serviceName |}))
     )
