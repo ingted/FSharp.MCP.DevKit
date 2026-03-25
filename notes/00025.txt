@@ -1,0 +1,679 @@
+› 請 驗證最新版 fsharp-devkit 的 MCP host/session 隔離
+
+
+• 我先讀現有的真實 net10 host 隔離測試，照相同參數去打現在連到的 fsharp-devkit MCP server，避免把驗證失敗和參數誤用混在一起。
+
+• Explored
+  └ Search create_fsi_host|RealNet10HostIsolationTests|exec --runtimeconfig|Akka.Proc.Supervisor.dll|proc-system in tests
+    Read RealNet10HostIsolationTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我開始做實機驗證：先註冊一個新 agent，再照測試裡的參數格式建立兩個 net10 host，之後在相同 sessionId 下執行不同程式碼比對取值。
+
+• Called fsharp-devkit.register_fsi_agent({"agentId":"verify-iso-20260325b","displayName":"Isolation Verification 2026-03-25B"})
+  └ {"agentId": "verify-iso-20260325b", "displayName": "Isolation Verification 2026-03-25B", "createdAt": "2026-03-25T13:32:59.7807248Z", "lastSeenAt": "2026-03-
+        25T13:32:59.7807248Z", "defaultHostId": null, "metadata": {}}
+
+• Called fsharp-devkit.list_fsi_hosts({"agentId":"verify-iso-20260325b"})
+  └ []
+
+• Called
+  └ fsharp-devkit.create_fsi_host({"agentId":"verify-iso-20260325b","hostKind":"net10","executablePath":"dotnet","arguments":"exec\n--runtimeconfig\n/app/
+        FSharp.MCP.DevKit.runtimeconfig.json\n--depsfile\n/app/FSharp.MCP.DevKit.deps.json\n/app/Akka.Proc.Supervisor.dll\n--mode\nprocnode\n--procid\nverify-host-a-
+        20260325b\n--systemname\nproc-system\n--supervisor\nakka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor\n--seed\nakka.tcp://proc-
+        system@127.0.0.1:8110\n--host\n127.0.0.1\n--port\n8321","workingDirectory":"/app","hostId":"verify-host-a-20260325b","probeMessage":"PING","probeIntervalMs":1000})
+    {"hostId": "verify-host-a-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "backendKind": {"Case": "Net10Remote"}, "status": {"Case": "C
+        reating"}, "address": "akka.tcp://proc-system@127.0.0.1:8321/user/fsi/supervisor", "procId": 279, "createdAt": "2026-03-25T13:33:12.0314532Z", "lastHealthCheckAt": "
+        2026-03-25T13:33:12.2660187Z", "lastError": null}
+
+• Called
+  └ fsharp-devkit.create_fsi_host({"agentId":"verify-iso-20260325b","hostKind":"net10","executablePath":"dotnet","arguments":"exec\n--runtimeconfig\n/app/
+        FSharp.MCP.DevKit.runtimeconfig.json\n--depsfile\n/app/FSharp.MCP.DevKit.deps.json\n/app/Akka.Proc.Supervisor.dll\n--mode\nprocnode\n--procid\nverify-host-b-
+        20260325b\n--systemname\nproc-system\n--supervisor\nakka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor\n--seed\nakka.tcp://proc-
+        system@127.0.0.1:8110\n--host\n127.0.0.1\n--port\n8322","workingDirectory":"/app","hostId":"verify-host-b-20260325b","probeMessage":"PING","probeIntervalMs":1000})
+    {"hostId": "verify-host-b-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "backendKind": {"Case": "Net10Remote"}, "status": {"Case": "C
+        reating"}, "address": "akka.tcp://proc-system@127.0.0.1:8322/user/fsi/supervisor", "procId": 307, "createdAt": "2026-03-25T13:33:12.2965696Z", "lastHealthCheckAt": "
+        2026-03-25T13:33:12.3039249Z", "lastError": null}
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 兩個 host 都建立成功了，現在我輪詢 health 與 host 清單，確認它們真的進到 Ready，再去建相同 sessionId 做隔離測試。
+
+• Called fsharp-devkit.get_fsi_host_health({"hostId":"verify-host-a-20260325b"})
+  └ {"backendKind": {"Case": "Net10Remote"}, "isAvailable": false, "message": "starting", "hostId": "verify-host-a-20260325b", "checkedAt": "2026-03-25T13:33:19.1978289Z"}
+
+• Called fsharp-devkit.get_fsi_host_health({"hostId":"verify-host-b-20260325b"})
+  └ {"backendKind": {"Case": "Net10Remote"}, "isAvailable": false, "message": "starting", "hostId": "verify-host-b-20260325b", "checkedAt": "2026-03-25T13:33:19.2032177Z"}
+
+• Called fsharp-devkit.list_fsi_hosts({"agentId":"verify-iso-20260325b"})
+  └ [{"hostId": "verify-host-a-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "backendKind": {"Case": "Net10Remote"}, "status": {"Case": "
+        Creating"}, "address": "akka.tcp://proc-system@127.0.0.1:8321/user/fsi/supervisor", "procId": 279, "createdAt": "2026-03-25T13:33:12.0314532Z", "lastHealthCheckAt":
+        "2026-03-25T13:33:12.2660187Z", "lastError": null}, {"hostId": "verify-host-b-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "back
+        endKind": {"Case": "Net10Remote"}, "status": {"Case": "Creating"}, "address": "akka.tcp://proc-system@127.0.0.1:8322/user/fsi/supervisor", "procId": 307, "createdAt":
+        "2026-03-25T13:33:12.2965696Z", "lastHealthCheckAt": "2026-03-25T13:33:12.3039249Z", "lastError": null}]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 兩個 host 還在 warm-up。我等幾秒再讀一次 health；如果 Ready 了，就直接建 session 並各自寫入不同值。
+
+• Ran sleep 4
+  └ (no output)
+
+• Called fsharp-devkit.get_fsi_host_health({"hostId":"verify-host-a-20260325b"})
+  └ {"backendKind": {"Case": "Net10Remote"}, "isAvailable": false, "message": "stopped", "hostId": "verify-host-a-20260325b", "checkedAt": "2026-03-25T13:33:35.6895269Z"}
+
+• Called fsharp-devkit.get_fsi_host_health({"hostId":"verify-host-b-20260325b"})
+  └ {"backendKind": {"Case": "Net10Remote"}, "isAvailable": false, "message": "stopped", "hostId": "verify-host-b-20260325b", "checkedAt": "2026-03-25T13:33:35.6929162Z"}
+
+• Called fsharp-devkit.list_fsi_hosts({"agentId":"verify-iso-20260325b"})
+  └ [{"hostId": "verify-host-a-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "backendKind": {"Case": "Net10Remote"}, "status": {"Case": "
+        Creating"}, "address": "akka.tcp://proc-system@127.0.0.1:8321/user/fsi/supervisor", "procId": 279, "createdAt": "2026-03-25T13:33:12.0314532Z", "lastHealthCheckAt":
+        "2026-03-25T13:33:12.2660187Z", "lastError": null}, {"hostId": "verify-host-b-20260325b", "agentId": "verify-iso-20260325b", "hostKind": {"Case": "Net10Host"}, "back
+        endKind": {"Case": "Net10Remote"}, "status": {"Case": "Creating"}, "address": "akka.tcp://proc-system@127.0.0.1:8322/user/fsi/supervisor", "procId": 307, "createdAt":
+        "2026-03-25T13:33:12.2965696Z", "lastHealthCheckAt": "2026-03-25T13:33:12.3039249Z", "lastError": null}]
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• net10 兩個 host 都沒進到 Ready，反而停掉了。我先把 session 隔離單獨驗掉：在 default-host 下建兩個不同 session，各自寫不同值並讀回，確認 control-plane 至少是否正常。
+
+• Called fsharp-devkit.create_fsi_session({"agentId":"default-agent","hostId":"default-host","sessionId":"verify-session-a-20260325c","sessionName":"Verify Session A"})
+  └ An error occurred invoking 'create_fsi_session'.
+
+• Called fsharp-devkit.create_fsi_session({"agentId":"default-agent","hostId":"default-host","sessionId":"verify-session-b-20260325c","sessionName":"Verify Session B"})
+  └ An error occurred invoking 'create_fsi_session'.
+
+• Called fsharp-devkit.list_fsi_sessions({"hostId":"default-host"})
+  └ []
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• create_fsi_session 仍然失敗。我再試一次 ensure_fsi_route，看這台部署是否至少能為 default-host materialize 新 session route。
+
+• Called
+  └ fsharp-devkit.ensure_fsi_route({"agentId":"default-agent","displayName":"","hostId":"default-host","sessionId":"verify-session-a-20260325c","sessionName":"Verify Session
+        A"})
+    An error occurred invoking 'ensure_fsi_route'.
+
+• Called fsharp-devkit.execute_f_sharp_code({"code":"let legacySmoke = 42","timeoutSeconds":30})
+  └ val legacySmoke: int = 42
+
+
+
+• Called
+  └ fsharp-devkit.execute_f_sharp_code_routed({"agentId":"default-agent","hostId":"default-host","sessionId":"default-session","code":"let routedSmoke =
+        7","timeoutSeconds":30})
+    val routedSmoke: int = 7
+
+
+
+• Called fsharp-devkit.get_fsi_state({"timeoutSeconds":30})
+  └ FSI Session State:
+    - Loaded Assemblies: val it: int = 148
+
+
+    - Session Active: True
+    - Bindings Info: val it: int = 149
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再做一個相容性探針：用額外帶 --role procnode 的參數再起一個 host。這不是正式使用方式，但能幫我判斷你部署中的 ProcSupervisor/FSI Supervisor 是否其實還停在舊行為。
+
+• Called
+  └ fsharp-devkit.create_fsi_host({"agentId":"verify-iso-20260325b","hostKind":"net10","executablePath":"dotnet","arguments":"exec\n--runtimeconfig\n/app/
+        FSharp.MCP.DevKit.runtimeconfig.json\n--depsfile\n/app/FSharp.MCP.DevKit.deps.json\n/app/Akka.Proc.Supervisor.dll\n--mode\nprocnode\n--procid\nverify-host-c-
+        20260325b\n--systemname\nproc-system\n--supervisor\nakka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor\n--seed\nakka.tcp://proc-
+        system@127.0.0.1:8110\n--role\nprocnode\n--host\n127.0.0.1\n--port\n8323","workingDirectory":"/app","hostId":"verify-host-c-
+        20260325b","probeMessage":"PING","probeIntervalMs":1000})
+    An error occurred invoking 'create_fsi_host'.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我用實際 fsharp-devkit MCP tools 驗證了，結論是：最新版部署的 host/session 隔離目前還沒有正確運作。
+
+  實測結果：
+
+  - 可用：
+      - register_fsi_agent("verify-iso-20260325b", ...) 成功
+      - execute_f_sharp_code("let legacySmoke = 42") 成功
+      - execute_f_sharp_code_routed(default-agent/default-host/default-session, "let routedSmoke = 7") 成功
+      - get_fsi_state() 成功
+  - 不可用：
+      - create_fsi_host(net10, ...) 雖然對 host-a / host-b 一開始有回 Creating，但幾秒後 get_fsi_host_health 變成 isAvailable=false, message="stopped"
+      - create_fsi_host 加 --role procnode 的相容性探針也直接失敗
+      - create_fsi_session(default-agent, default-host, verify-session-a/b) 失敗
+      - ensure_fsi_route(default-agent, default-host, verify-session-a) 失敗
+      - list_fsi_sessions(default-host) 回 []
+
+  所以目前部署狀態可以很精準地描述成：
+
+  - legacy in-proc FSI 還活著
+  - default-agent/default-host/default-session 這條特例還活著
+  - 真正的多 host 隔離：失敗
+  - 真正的多 session 隔離：失敗
+
+  我這次實際打到的關鍵證據是：
+
+  - create_fsi_host 回傳過 hostKind=Net10Host, backendKind=Net10Remote, status=Creating
+  - 但稍後 get_fsi_host_health(hostId) 變成 message="stopped"
+  - create_fsi_session 與 ensure_fsi_route 都只回 generic error
+
+  所以這台部署還不能算「最新版功能完整可用」。下一步最值得查的是部署端 log：
+
+  1. create_fsi_host 後 child proc 為什麼立刻停掉
+  2. create_fsi_session/ensure_fsi_route 為什麼在 default-host 也失敗
+  3. 這台實例是否真的已吃到 FAkka.FSI.Supervisor 1.562.101.201-dgx.6 / FAkka.Proc.Supervisor 1.562.101.201-dgx.5
+
+  如果你要，我下一步就直接沿著這三點 debug 部署中的 server/container。
+
+
+› 你先在 FAkka.FSI.Supervisor 以及 FAkka.Proc.Supervisor  的 supervisor actor 加一個 receive getVersion ，在 probe getVersion 時要取得 dll版號，這樣mcp tool call 的時候至少
+  你可以直接起一個 fsi 跑 f# 腳本 建立 actor 直接 akka.tcp ask 判斷版本到底對不對，你覺得呢?
+
+
+• 我先查 FAkka.FSI.Supervisor 與 FAkka.Proc.Supervisor 現有 message/actor 邊界，確認 getVersion 應該加在 contract、actor 還是 parser/REST 哪一層，再決定最小變更面。
+
+• Explored
+  └ Search GetVersion|version|Version|Receive|receive|PING|probe|Probe|status|ListSessions|ForwardMessage|ProcMessageParser|FsiSupervisor in Akka.FSI.Supervisor
+    Read Contracts.fs, Supervisor.fs, ProcSupervisor.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再看 ProcContracts、ProcRest、ProcMessageParser，把 getVersion 接成能從 ProcSupervisor 直通到 FSI Supervisor，這樣之後既能用 probe，也能用 akka.tcp 直接 ask。
+
+• Explored
+  └ Read ProcContracts.fs, ProcMessageParser.fs, ProcRest.fs
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› 把 getVersion 接成能從 ProcSupervisor 直通到 FSI Supervisor <= 沒有必要，反正都是 actor，能走 akka.remote 都會通，不需要再 send 之類
+
+
+• 了解，不走 /send。我改成最小方案：ProcSupervisorActor 與 FsiSupervisorActor 各自直接 Receive<GetVersion>，之後你在任何能跑 Akka.Remote 的 F# 腳本裡，直接
+  ActorSelection(...).Ask<GetVersionInfo> 就能驗版本。
+
+• Explored
+  └ Read Supervisor.fs, ProcSupervisor.fs, AkkaFsiBootstrap.fs, ProcHost.fs
+    Search module AkkaFsiBootstrap|supervisorPath|guardianPath|fsi/supervisor|proc-supervisor in Akka.FSI.Supervisor
+    Read Api.fs, ProcHost.fs
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› 你宣告個 type OpCmd = | GetVesion 吧，這樣還有擴充性
+
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› 1. 你宣告個 type OpCmd = | GetVesion 放在 FAkka.Fsi.Contracts 吧，這樣還有擴充性
+  2. fsi supervisor 與 proc supervisor 專案都有測試專案，你都有跑過嗎? /workspace/sa/gemini4/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/
+  Akka.Proc.Supervisor.Tests.fsproj /workspace/sa/gemini4/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj
+
+
+• 我會照你的方向改成共用 OpCmd 契約，直接讓兩個 supervisor actor 都能 Receive<OpCmd>。然後我會把兩個既有測試專案真的跑一遍，不靠猜。
+
+• Explored
+  └ List Libs
+    Read Akka.Proc.Supervisor.Tests.fsproj, Akka.FSI.Supervisor.Tests.fsproj
+    Search Fact|Theory|OpCmd|GetVersion|GetVesion|SupervisorActor|ProcSupervisorActor|FsiSupervisorActor in Akka.Proc.Supervisor.Tests
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已確認兩個測試專案都存在，但我先前沒有跑過它們。這輪我會順便補：
+
+  - FAkka.FSI.Supervisor.Tests 驗 FsiSupervisorActor 收 OpCmd.GetVesion
+  - Akka.Proc.Supervisor.Tests 驗 ProcSupervisorActor 收 OpCmd.GetVesion
+    然後兩個測試專案都實跑。
+
+• Explored
+  └ Read SupervisorTests.fs, ProcSupervisorTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我會把 OpCmd 放在 FAkka.Fsi.Contracts，回傳則用一個 JSON/Remote 都安全的 record，不把 exception 或 runtime 物件直接穿 transport。測試上只驗兩件事：收到 GetVesion 後能回當前
+  assembly 版號，且 actor path 正確。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/Contracts.fs (+46 -0)
+     3  open System
+     4 +open System.Diagnostics
+     5 +open System.Reflection
+     6  open System.Runtime.CompilerServices
+       ⋮
+    52
+    53 +type OpCmd =
+    54 +    | GetVesion
+    55 +
+    56 +    interface IMessage
+    57 +
+    58 +[<CLIMutable>]
+    59 +type OpResult =
+    60 +    { op: string
+    61 +      assemblyName: string
+    62 +      assemblyVersion: string option
+    63 +      fileVersion: string option
+    64 +      informationalVersion: string option
+    65 +      actorPath: string option }
+    66 +
+    67 +    interface IMessage
+    68 +
+    69 +module OpResult =
+    70 +    let fromAssembly (op: OpCmd) (actorPath: string option) (assembly: Assembly) =
+    71 +        let asmName = assembly.GetName()
+    72 +        let location =
+    73 +            try assembly.Location
+    74 +            with _ -> String.Empty
+    75 +        let fileVersion =
+    76 +            if String.IsNullOrWhiteSpace location then
+    77 +                None
+    78 +            else
+    79 +                try
+    80 +                    FileVersionInfo.GetVersionInfo(location).FileVersion
+    81 +                    |> Option.ofObj
+    82 +                with _ -> None
+    83 +        let informationalVersion =
+    84 +            try
+    85 +                assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    86 +                |> Option.ofObj
+    87 +                |> Option.map (fun attr -> attr.InformationalVersion)
+    88 +            with _ -> None
+    89 +
+    90 +        { op = string op
+    91 +          assemblyName = asmName.Name
+    92 +          assemblyVersion = asmName.Version |> Option.ofObj |> Option.map string
+    93 +          fileVersion = fileVersion
+    94 +          informationalVersion = informationalVersion
+    95 +          actorPath = actorPath }
+    96 +
+    97  [<CLIMutable>]
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+11 -0)
+    409          |> ignore
+    410 +        this.Receive<OpCmd>(fun cmd ->
+    411 +            let ctx = this.ActorCtx
+    412 +            match cmd with
+    413 +            | GetVesion ->
+    414 +                let result =
+    415 +                    OpResult.fromAssembly
+    416 +                        cmd
+    417 +                        (Some(ctx.Self.Path.ToStringWithAddress(ctx.System.Provider.DefaultAddress)))
+    418 +                        (System.Reflection.Assembly.GetExecutingAssembly())
+    419 +                ctx.Sender.Tell(result, ctx.Self))
+    420 +        |> ignore
+    421          this.ReceiveAsync<ResetSession>(fun (msg: ResetSession) ->
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcSupervisor.fs (+10 -0)
+    433      do
+    434 +        this.Receive<OpCmd>(fun cmd ->
+    435 +            let ctx: IActorContext = this.ActorCtx
+    436 +            match cmd with
+    437 +            | GetVesion ->
+    438 +                let result =
+    439 +                    OpResult.fromAssembly
+    440 +                        cmd
+    441 +                        (Some(ctx.Self.Path.ToStringWithAddress(ctx.System.Provider.DefaultAddress)))
+    442 +                        (System.Reflection.Assembly.GetExecutingAssembly())
+    443 +                ctx.Sender.Tell(result, ctx.Self))
+    444          this.Receive<StartProc>(fun (msg: StartProc) ->
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs (+14 -0)
+    115
+    116 +            testAsync "Supervisor returns assembly version for GetVesion" {
+    117 +                do!
+    118 +                    withSupervisorUsing (fun () -> RecordingStorage()) (fun _ supervisor _ ->
+    119 +                        async {
+    120 +                            let! version = ask<OpResult> supervisor GetVesion
+    121 +                            Expect.equal version.op "GetVesion" "operation name should round-trip"
+    122 +                            Expect.equal version.assemblyName "Akka.FSI.Supervisor" "assembly name should match package"
+    123 +                            Expect.equal version.assemblyVersion (Some "1.562.101.201") "assembly version should match current build"
+    124 +                            Expect.isTrue version.fileVersion.IsSome "file version should be available"
+    125 +                            Expect.isTrue version.actorPath.IsSome "actor path should be included"
+    126 +                            Expect.stringContains version.actorPath.Value "/user/fsi/supervisor" "actor path should point to supervisor"
+    127 +                        })
+    128 +            }
+    129 +
+    130              testAsync "ExecCode returns result, captures value and auto commits" {
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs (+21 -0)
+    250      [<Fact>]
+    251 +    member _.``ProcSupervisor returns assembly version for GetVesion``() =
+    252 +        task {
+    253 +            let systemName = "proc-tests-" + Guid.NewGuid().ToString("N")
+    254 +            let! _ =
+    255 +                TestHelpers.withSystem systemName (fun system ->
+    256 +                    task {
+    257 +                        let cluster, supervisor = TestHelpers.startSupervisor system TestHelpers.shortSettings
+    258 +                        let! _ = TestHelpers.waitForClusterUp cluster
+    259 +                        let! version = TestHelpers.ask<OpResult> supervisor GetVesion
+    260 +                        Assert.Equal("GetVesion", version.op)
+    261 +                        Assert.Equal("Akka.Proc.Supervisor", version.assemblyName)
+    262 +                        Assert.Equal(Some "1.562.101.201", version.assemblyVersion)
+    263 +                        Assert.True(version.fileVersion.IsSome, "file version should be present")
+    264 +                        Assert.True(version.actorPath.IsSome, "actor path should be present")
+    265 +                        Assert.Contains("/user/proc-supervisor", version.actorPath.Value)
+    266 +                        return ()
+    267 +                    })
+    268 +            return ()
+    269 +        }
+    270 +
+    271 +    [<Fact>]
+    272      member _.``StartProc launches process``() =
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在直接跑兩個現有測試專案本體，不只跑新加的 case。這樣回答你時可以很明確地說哪些是全綠、哪些是既有失敗。
+
+• 兩個測試都在跑。這一步如果卡住，我會先收斂成 restore/build 問題；如果能進 test host，再看是不是有既有測試壞掉。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj (in 2.14 sec).
+    … +6 lines
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs(417,76): error FS0039: The type 'ActorSystem' does not define the field, constructor or member
+    'Provider'. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +16 lines
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs(417,76): error FS0039: The type 'ActorSystem' does not define the field, constructor or member
+    'Provider'. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 編譯卡在 ctx.System.Provider.DefaultAddress。這是 Akka API 用錯，不是設計問題。我把 actor path 收成 ctx.Self.Path.ToString()，先把測試跑通。
+
+• Edited 2 files (+2 -2)
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+1 -1)
+    416                          cmd
+    417 -                        (Some(ctx.Self.Path.ToStringWithAddress(ctx.System.Provider.DefaultAddress)))
+    417 +                        (Some(ctx.Self.Path.ToString()))
+    418                          (System.Reflection.Assembly.GetExecutingAssembly())
+
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcSupervisor.fs (+1 -1)
+    440                          cmd
+    441 -                        (Some(ctx.Self.Path.ToStringWithAddress(ctx.System.Provider.DefaultAddress)))
+    441 +                        (Some(ctx.Self.Path.ToString()))
+    442                          (System.Reflection.Assembly.GetExecutingAssembly())
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我重新跑兩個測試專案。這次會直接回答你「我有沒有真的跑過」以及結果是 compile fail、單一 case fail，還是全綠。
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +15 lines
+    bin/Debug/FAkka.FSI.Supervisor.1.562.101.201-dgx.6.nupkg' because it is being used by another process. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/
+    Akka.FSI.Supervisor.fsproj]
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Akka.Proc.Supervisor.Tests 這次失敗不是測試失敗，而是我同時跑兩套，兩邊都會 pack Akka.FSI.Supervisor，把 .nupkg 鎖住了。等 FSI 那套跑完後，我再單獨重跑 ProcSupervisor。
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +12 lines
+
+    Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 7 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Akka.FSI.Supervisor.Tests 已跑完且全綠：2 passed, 0 failed。現在單獨重跑 Akka.Proc.Supervisor.Tests。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Akka.Proc.Supervisor.Tests 已經進入 test run，但目前看到至少有一個既有測試失敗，不是這次 GetVesion 新增 case。我要把整包結果收完整，再把「新 case 是否通過」和「既有失敗有哪
+  些」分開報。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +58 lines
+
+    Failed!  - Failed:     3, Passed:     5, Skipped:     0, Total:     8, Duration: 42 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把新加的 GetVesion case 再各自單獨跑一次，這樣能把「新功能 OK」和「既有 ProcSupervisor 測試還有 3 個 fail」切開。
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1 --filter "FullyQualifiedName~Supervisor returns
+  │ assembly version for GetVesion"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +11 lines
+    Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.FSI.Supervisor.Tests.dll
+
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1 --filter "FullyQualifiedName~ProcSupervisor
+  │ returns assembly version for GetVesion"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +22 lines
+
+    Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 1 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 有，我照你的意思改了，而且不走 /send。
+
+  目前變更：
+
+  - 在 /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/Contracts.fs 新增
+      - type OpCmd = | GetVesion
+      - type OpResult = { ... }
+  - 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs 的 FsiSupervisorActor 加上 Receive<OpCmd>
+  - 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcSupervisor.fs 的 ProcSupervisorActor 加上 Receive<OpCmd>
+
+  現在兩邊都可以直接 actor ask：
+
+  - FsiSupervisorActor 回自己的 assembly version
+  - ProcSupervisorActor 回自己的 assembly version
+
+  你問的第 2 點，我之前沒有真的把這兩個測試專案都跑過；這次我有跑。
+
+  結果：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj
+      - 已跑
+      - Passed: 2, Failed: 0
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj
+      - 已跑
+      - Passed: 5, Failed: 3
+      - 失敗的是既有測試：
+          - StartProc launches process
+          - Process restarts after exit
+          - Probe failures trigger restart
+      - 新增的 GetVesion case 我有單獨 filter 跑，Passed: 1, Failed: 0
+
+  所以目前判斷是：
+
+  - GetVesion 這個新能力本身已經通了
+  - Akka.FSI.Supervisor 測試全綠
+  - Akka.Proc.Supervisor 本來就還有 3 個既有 lifecycle/probe 測試失敗，不是這次 GetVesion 引入的
+
+  如果你要，我下一步就直接把這批變更 commit/push，然後再修 Akka.Proc.Supervisor.Tests 這 3 個既有 fail。
+
+
+› 1. commit + push
+  2. 修正既有 failure
+  3. 用修好的 package 更新 fsharp-devkit
+  4. fsi/proc supervisor啟動的 akka node 的 port 定義在哪?
+
+
+• 我先處理 Akka.Proc.Supervisor 那 3 個既有 failure，因為 fsharp-devkit 升版要以測試先回綠為前提；同時我也會把 akka node port 的實際定義位置釐清。
+
+• Explored
+  └ Read ProcSupervisorTests.fs
+
+• Ran git status --short && git branch --show-current && git log --oneline -n 5
+  └  M Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+    … +399 lines
+    88f1515 fix: unblock proc supervisor bootstrap sharding
+    b05b08f feat: add reset-session support to FSI supervisor
+
+• Explored
+  └ Read ProcSupervisorTests.fs
+
+─ Worked for 1m 13s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 先把 PulseTrade.fs 這邊的 GetVesion 變更整理乾淨，接著修 Akka.Proc.Supervisor.Tests 既有失敗，再重新跑兩個 supervisor 測試專案；確認綠燈後我再發新版 package、升級 fsharp-
+  devkit，最後把 Akka node port 的定義位置整理清楚。
+
+• Explored
+  └ Read ProcSupervisorTests.fs, SupervisorTests.fs
+
+• Ran git status --short
+  └  M Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+    … +393 lines
+     M Libs/Akka.Proc.Supervisor/ProcSupervisor.fs
+     M Libs/FAkka.Fsi.Contracts/Contracts.fs
+
+• Explored
+  └ Read ProcHost.fs, Contracts.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把 Akka.Proc.Supervisor.Tests 失敗原因縮到測試本身和 supervisor lifecycle 交界，重點看它是不是 Linux/跨平台指令假設、還是 readiness/probe timing 問題；修完才會發新
+  package，避免把已知 fail 連同版本一起放出去。
+
+• Explored
+  └ Read ProcSupervisorTests.fs, ProcSupervisor.fs, ProcContracts.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 三個既有 fail 先看起來很像測試自己把 Windows-only process 指令寫死了，這會把 Linux 上的 lifecycle 測試直接搞成假 fail；我先把 helper 做成跨平台，再驗證 probe/restart 邏輯是
+  不是還有實際缺口。
+
+• Waited for background terminal · dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +56 lines
+
+    Failed!  - Failed:     3, Passed:     5, Skipped:     0, Total:     8, Duration: 56 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+─ Worked for 1m 07s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要改的是測試 helper，不是先動 supervisor 主邏輯。這三個 fail 目前像是測試把 powershell/cmd.exe 寫死，加上 restart case 對第一個 PID 的等待不夠穩，這會讓 Linux 上的結果失
+  真。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs (+36 -16)
+     11  open System.Runtime.ExceptionServices
+     12 +open System.Runtime.InteropServices
+     13  open Xunit
+        ⋮
+    158
+    159 +    let private shellSpec procId shellCommand =
+    160 +        if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+    161 +            { procId = procId
+    162 +              fileName = "powershell"
+    163 +              args = [ "-NoProfile"; "-Command"; shellCommand ]
+    164 +              workingDir = None
+    165 +              role = None
+    166 +              probeMessage = None
+    167 +              probeCron = None
+    168 +              probeIntervalMs = None }
+    169 +        else
+    170 +            { procId = procId
+    171 +              fileName = "/bin/sh"
+    172 +              args = [ "-lc"; shellCommand ]
+    173 +              workingDir = None
+    174 +              role = None
+    175 +              probeMessage = None
+    176 +              probeCron = None
+    177 +              probeIntervalMs = None }
+    178 +
+    179      let longRunningSpec procId =
+    159 -        { procId = procId
+    160 -          fileName = "powershell"
+    161 -          args = [ "-NoProfile"; "-Command"; "Start-Sleep -Seconds 30" ]
+    162 -          workingDir = None
+    163 -          role = None
+    164 -          probeMessage = None
+    165 -          probeCron = None
+    166 -          probeIntervalMs = None }
+    180 +        if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+    181 +            shellSpec procId "Start-Sleep -Seconds 30"
+    182 +        else
+    183 +            shellSpec procId "sleep 30"
+    184
+    185      let shortLivedSpec procId =
+    169 -        { procId = procId
+    170 -          fileName = "cmd.exe"
+    171 -          args = [ "/c"; "exit 0" ]
+    172 -          workingDir = None
+    173 -          role = None
+    174 -          probeMessage = None
+    175 -          probeCron = None
+    176 -          probeIntervalMs = None }
+    186 +        if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+    187 +            shellSpec procId "Start-Sleep -Milliseconds 500"
+    188 +        else
+    189 +            shellSpec procId "sleep 0.5"
+    190
+        ⋮
+    381                          let! _ = TestHelpers.startProc supervisor spec
+    382 +                        let! firstPidReady =
+    383 +                            TestHelpers.waitUntil (TimeSpan.FromSeconds 5.0) (TimeSpan.FromMilliseconds 100.0) (fun () ->
+    384 +                                task {
+    385 +                                    let! snapshot = TestHelpers.getProcInfo supervisor procId
+    386 +                                    return snapshot.pid.IsSome
+    387 +                                })
+    388 +                        Assert.True(firstPidReady, "Proc should report an initial PID before exit.")
+    389                          let! firstSnapshot = TestHelpers.getProcInfo supervisor procId
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試修正已送進去，現在重新跑兩個 supervisor 測試專案。這一輪我只接受兩種結果：要嘛全綠，要嘛把剩下的 fail 收斂到真正的 supervisor 缺陷，而不是平台差異。
+
+• Waited for background terminal · dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Waited for background terminal · dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +10 lines
+
+    Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 8 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal · dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +22 lines
+
+    Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 26 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測試已全綠，現在就進 release 線：把 GetVesion 和既有 fail 修正一起 commit/push 到 PulseTrade.fs，然後升版發 NuGet，再回到 fsharp-devkit 更新參考並重新驗證。
