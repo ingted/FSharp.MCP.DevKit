@@ -1,0 +1,10 @@
+背景=FSharp.MCP.DevKit 已升級為使用新的 FAkka.FSI.Supervisor 1.562.101.201-dgx.5 / FAkka.Proc.Supervisor 1.562.101.201-dgx.4，但需要確認不同 net10 host 的真正 out-of-proc 隔離不是只靠 fake supervisor smoke。
+目標=更新主專案套件參考，補真實 out-of-proc net10 multi-host integration test，並驗證不同 host 下同名 session 可各自執行不同 F# code 並取回正確值。
+計畫步驟=1. 更新 Server.fsproj 套件版本 2. 新增會真啟動 Akka.Proc.Supervisor 的 integration test 3. 用本地 package source restore/build/test 4. 更新 WBS/README/SD/DevLog 5. 收尾 commit/push/check
+執行摘要=已將 FSharp.MCP.DevKit.Server 升級到新的 FAkka 套件版本，新增 RealNet10HostIsolationTests，該測試會實際啟動 ProcSupervisor、建立兩個 net10 procnode host、各自建立同名 session、各自執行與讀回不同變數值。
+變更清單=src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj; tests/RealNet10HostIsolationTests.fs; tests/FSharp.MCP.DevKit.Tests.fsproj; tests/README.md; tests/doc/WBS.md; doc/WBS.md; doc/SD.md; doc/DevLog.md
+執行命令/參數=dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-local-packages.config; dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter FullyQualifiedName~RealNet10HostIsolationTests --no-restore -m:1; dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1; dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1; dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit
+結果=RealNet10HostIsolationTests 通過；整包 net10 tests 通過；server build 通過；目前已證實不同 out-of-proc net10 host 的 state 隔離可用。
+根因判讀=先前 host 隔離只能透過 fake supervisor/client smoke 證明，缺的是真實 ProcSupervisor + procnode 啟動鏈的 integration 驗證；此外，新的 FAkka package 版本尚未在 nuget flatcontainer 即時可見，因此本地驗證需暫時使用 local package source restore。
+關聯文件/工單/PR=doc/WBS.md O5; tests/doc/WBS.md TT46; commit 609a1955eefb6e7a7acda64b926c6b1b19bf86d7; /workspace/home/work/PulseTrade.fs branch 20260325_001.fix-proc-supervisor-bootstrap-role
+下一步=部署端可直接改吃新的 FAkka 套件版本重新 build image/service，若要再往前收斂則優先處理 O4 的 FSharpCode result query serializer policy。
