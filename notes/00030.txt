@@ -1,0 +1,582 @@
+› 1. 之前說的在本機背景用跟 fsharp-devkit 類似的方式起 proc supervisor，打  OpCmd 測的腳本請放到/workspace/sa/gemini4/work/PulseTrade.fs/Libs/TestScripts
+  2. 有確認該基本 akka remoting ask DU 執行正常了嗎?
+
+
+• 我先確認 TestScripts 目前有哪些腳本，然後補上你要的「背景起 ProcSupervisor 再 direct ask OpCmd.GetVesion」腳本，最後直接跑一次確認 remoting 是否真的正常。
+
+• Explored
+  └ List TestScripts
+    Read verify_proc_fsi_versions.fsx
+
+• Ran git status --short
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +388 lines
+     M Libs/Akka.FSI.Supervisor/obj/project.assets.json
+     M Libs/Akka.FSI.Supervisor/obj/project.nuget.cache
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先看 Akka.Proc.Supervisor 的實際 CLI 參數和既有測試怎麼啟動，再補一支「背景起 supervisor、直接 remote ask GetVesion」的獨立腳本到 Libs/TestScripts。
+
+• Explored
+  └ Search systemname|system-name|webport|web-port|procid|proc-id|spawnnone|spawndefault|mode in ProcHost.fs
+    Read ProcHost.fs, ProcSupervisorTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在補一支獨立腳本到 Libs/TestScripts，它會自己背景起 ProcSupervisor、建 client actor system、直接 remote ask GetVesion，用這支腳本把最小 remoting 路徑驗死。
+
+• Explored
+  └ List net10.0
+    List net10.0
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在直接補腳本，會用 release 輸出背景起 ProcSupervisor，然後在同一台機器上用一個 client ActorSystem 直接 Ask<GetVesion>。補完就立刻實跑。
+
+• Added /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx (+217 -0)
+      1 +#r "nuget: Akka, 1.5.62"
+      2 +#r "nuget: Akka.Remote, 1.5.62"
+      3 +#r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Release/net10.0/FAkka.Fsi.Contracts.dll"
+      4 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/net10.0/Akka.Proc.Supervisor.dll"
+      5 +
+      6 +open System
+      7 +open System.Diagnostics
+      8 +open System.IO
+      9 +open System.Net.Http
+     10 +open System.Net.Sockets
+     11 +open System.Threading.Tasks
+     12 +open Akka.Actor
+     13 +open Akka.Configuration
+     14 +open Akka.FSI.Contracts
+     15 +open Akka.Proc.Supervisor
+     16 +
+     17 +type CliArgs =
+     18 +    { TimeoutMs: int
+     19 +      Host: string
+     20 +      ProcSupervisorDll: string
+     21 +      RuntimeConfig: string
+     22 +      DepsFile: string }
+     23 +
+     24 +let repoRoot = "/workspace/home/work/PulseTrade.fs"
+     25 +let procBinDir = Path.Combine(repoRoot, "Libs", "Akka.Proc.Supervisor", "bin", "Release", "net10.0")
+     26 +
+     27 +let defaults =
+     28 +    { TimeoutMs = 10000
+     29 +      Host = "127.0.0.1"
+     30 +      ProcSupervisorDll = Path.Combine(procBinDir, "Akka.Proc.Supervisor.dll")
+     31 +      RuntimeConfig = Path.Combine(procBinDir, "Akka.Proc.Supervisor.runtimeconfig.json")
+     32 +      DepsFile = Path.Combine(procBinDir, "Akka.Proc.Supervisor.deps.json") }
+     33 +
+     34 +let rec parseArgs (state: CliArgs) (args: string list) =
+     35 +    match args with
+     36 +    | [] -> state
+     37 +    | "--timeout-ms" :: value :: rest ->
+     38 +        match Int32.TryParse value with
+     39 +        | true, timeoutMs when timeoutMs > 0 -> parseArgs { state with TimeoutMs = timeoutMs } rest
+     40 +        | _ -> failwithf "Invalid --timeout-ms value: %s" value
+     41 +    | "--host" :: value :: rest ->
+     42 +        parseArgs { state with Host = value } rest
+     43 +    | "--proc-supervisor-dll" :: value :: rest ->
+     44 +        parseArgs { state with ProcSupervisorDll = value } rest
+     45 +    | "--runtimeconfig" :: value :: rest ->
+     46 +        parseArgs { state with RuntimeConfig = value } rest
+     47 +    | "--depsfile" :: value :: rest ->
+     48 +        parseArgs { state with DepsFile = value } rest
+     49 +    | "--help" :: _
+     50 +    | "-h" :: _ ->
+     51 +        printfn "Usage:"
+     52 +        printfn "  dotnet fsi verify_proc_supervisor_getversion.fsx -- [--timeout-ms <ms>] [--host <ip>] [--proc-supervisor-dll <path>] [--runtimeconfig <path>] [--d
+         epsfile <path>]"
+     53 +        printfn ""
+     54 +        printfn "Defaults:"
+     55 +        printfn "  --timeout-ms %d" defaults.TimeoutMs
+     56 +        printfn "  --host %s" defaults.Host
+     57 +        printfn "  --proc-supervisor-dll %s" defaults.ProcSupervisorDll
+     58 +        printfn "  --runtimeconfig %s" defaults.RuntimeConfig
+     59 +        printfn "  --depsfile %s" defaults.DepsFile
+     60 +        Environment.Exit 0
+     61 +        state
+     62 +    | unknown :: _ ->
+     63 +        failwithf "Unknown argument: %s" unknown
+     64 +
+     65 +let argv =
+     66 +    fsi.CommandLineArgs
+     67 +    |> Array.skip 1
+     68 +    |> Array.toList
+     69 +    |> function
+     70 +        | "--" :: rest -> rest
+     71 +        | rest -> rest
+     72 +
+     73 +let cli = parseArgs defaults argv
+     74 +
+     75 +let ensureFile path =
+     76 +    if not (File.Exists path) then
+     77 +        failwithf "Required file not found: %s" path
+     78 +
+     79 +[ cli.ProcSupervisorDll; cli.RuntimeConfig; cli.DepsFile ] |> List.iter ensureFile
+     80 +
+     81 +let getFreePort () =
+     82 +    use listener = new TcpListener(System.Net.IPAddress.Loopback, 0)
+     83 +    listener.Start()
+     84 +    let port = (listener.LocalEndpoint :?> System.Net.IPEndPoint).Port
+     85 +    listener.Stop()
+     86 +    port
+     87 +
+     88 +let supervisorPort = getFreePort ()
+     89 +let webPort = getFreePort ()
+     90 +let systemName = "proc-system-" + Guid.NewGuid().ToString("N")
+     91 +let procId = "verify-proc-" + Guid.NewGuid().ToString("N")
+     92 +let remotePath = sprintf "akka.tcp://%s@%s:%d/user/proc-supervisor" systemName cli.Host supervisorPort
+     93 +
+     94 +let contractConfig =
+     95 +    ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]
+     96 +
+     97 +let clientConfig =
+     98 +    ConfigurationFactory.ParseString(
+     99 +        $"""
+    100 +        akka {{
+    101 +          loglevel = "ERROR"
+    102 +          stdout-loglevel = "ERROR"
+    103 +          actor.provider = remote
+    104 +          remote.dot-netty.tcp {{
+    105 +            hostname = "{cli.Host}"
+    106 +            port = 0
+    107 +          }}
+    108 +        }}
+    109 +        """
+    110 +    ).WithFallback(contractConfig)
+    111 +
+    112 +let timeout = TimeSpan.FromMilliseconds(float cli.TimeoutMs)
+    113 +
+    114 +let startInfo =
+    115 +    let psi = ProcessStartInfo()
+    116 +    psi.FileName <- "dotnet"
+    117 +    psi.WorkingDirectory <- procBinDir
+    118 +    psi.ArgumentList.Add("exec")
+    119 +    psi.ArgumentList.Add("--runtimeconfig")
+    120 +    psi.ArgumentList.Add(cli.RuntimeConfig)
+    121 +    psi.ArgumentList.Add("--depsfile")
+    122 +    psi.ArgumentList.Add(cli.DepsFile)
+    123 +    psi.ArgumentList.Add(cli.ProcSupervisorDll)
+    124 +    psi.ArgumentList.Add("--mode")
+    125 +    psi.ArgumentList.Add("supervisor")
+    126 +    psi.ArgumentList.Add("--systemname")
+    127 +    psi.ArgumentList.Add(systemName)
+    128 +    psi.ArgumentList.Add("--host")
+    129 +    psi.ArgumentList.Add(cli.Host)
+    130 +    psi.ArgumentList.Add("--port")
+    131 +    psi.ArgumentList.Add(string supervisorPort)
+    132 +    psi.ArgumentList.Add("--webhost")
+    133 +    psi.ArgumentList.Add(cli.Host)
+    134 +    psi.ArgumentList.Add("--webport")
+    135 +    psi.ArgumentList.Add(string webPort)
+    136 +    psi.ArgumentList.Add("--spawnnone")
+    137 +    psi.RedirectStandardOutput <- true
+    138 +    psi.RedirectStandardError <- true
+    139 +    psi.UseShellExecute <- false
+    140 +    psi
+    141 +
+    142 +let proc = new Process(StartInfo = startInfo)
+    143 +let stdout = Text.StringBuilder()
+    144 +let stderr = Text.StringBuilder()
+    145 +
+    146 +proc.OutputDataReceived.Add(fun args ->
+    147 +    if not (isNull args.Data) then
+    148 +        stdout.AppendLine(args.Data) |> ignore)
+    149 +proc.ErrorDataReceived.Add(fun args ->
+    150 +    if not (isNull args.Data) then
+    151 +        stderr.AppendLine(args.Data) |> ignore)
+    152 +
+    153 +let waitForHttpReady () =
+    154 +    task {
+    155 +        use client = new HttpClient(Timeout = TimeSpan.FromMilliseconds 1000.0)
+    156 +        let deadline = DateTime.UtcNow + timeout
+    157 +        let mutable ready = false
+    158 +        while not ready && DateTime.UtcNow < deadline do
+    159 +            try
+    160 +                let! response = client.GetAsync(sprintf "http://%s:%d/health" cli.Host webPort)
+    161 +                ready <- response.IsSuccessStatusCode
+    162 +            with _ ->
+    163 +                do! Task.Delay 200
+    164 +        return ready
+    165 +    }
+    166 +
+    167 +let askVersion () =
+    168 +    task {
+    169 +        use system = ActorSystem.Create("proc-version-client-" + Guid.NewGuid().ToString("N"), clientConfig)
+    170 +        let selection = system.ActorSelection(remotePath)
+    171 +        let! version = selection.Ask<OpResult>(GetVesion, timeout)
+    172 +        let! snapshots = selection.Ask<ProcSnapshot array>(GetAllProcInfo, timeout)
+    173 +        let! _ = system.Terminate()
+    174 +        do! system.WhenTerminated
+    175 +        return version, snapshots
+    176 +    }
+    177 +
+    178 +let stopProc () =
+    179 +    try
+    180 +        if not proc.HasExited then
+    181 +            proc.Kill(true)
+    182 +            proc.WaitForExit(5000) |> ignore
+    183 +    with _ ->
+    184 +        ()
+    185 +
+    186 +try
+    187 +    if not (proc.Start()) then
+    188 +        failwith "Failed to start ProcSupervisor process."
+    189 +
+    190 +    proc.BeginOutputReadLine()
+    191 +    proc.BeginErrorReadLine()
+    192 +
+    193 +    let ready = waitForHttpReady().GetAwaiter().GetResult()
+    194 +    if not ready then
+    195 +        failwithf "ProcSupervisor web health did not become ready. stderr:%s" (stderr.ToString())
+    196 +
+    197 +    let version, snapshots = askVersion().GetAwaiter().GetResult()
+    198 +
+    199 +    printfn "Remote ask succeeded."
+    200 +    printfn "  remotePath: %s" remotePath
+    201 +    printfn "  op: %s" version.op
+    202 +    printfn "  assemblyName: %s" version.assemblyName
+    203 +    printfn "  assemblyVersion: %A" version.assemblyVersion
+    204 +    printfn "  fileVersion: %A" version.fileVersion
+    205 +    printfn "  informationalVersion: %A" version.informationalVersion
+    206 +    printfn "  actorPath: %A" version.actorPath
+    207 +    printfn "  procSnapshots: %d" snapshots.Length
+    208 +with ex ->
+    209 +    eprintfn "verify_proc_supervisor_getversion failed: %s" ex.Message
+    210 +    if stdout.Length > 0 then
+    211 +        eprintfn "--- stdout ---\n%s" (stdout.ToString())
+    212 +    if stderr.Length > 0 then
+    213 +        eprintfn "--- stderr ---\n%s" (stderr.ToString())
+    214 +    stopProc()
+    215 +    raise ex
+    216 +
+    217 +stopProc()
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 腳本已補好，現在直接實跑這支最小驗證，確認背景起的 ProcSupervisor 能不能被 remote Ask<GetVesion>。
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └ System.Reflection.ReflectionTypeLoadException: Unable to load one or more of the requested types.
+    Could not load file or assembly 'FsPickler, Version=10.0.102.0, Culture=neutral, PublicKeyToken=null'. The system cannot find the file specified.
+    … +80 lines
+    File name: 'FsPickler, Version=10.0.102.0, Culture=neutral, PublicKeyToken=null'
+    Stopped due to error
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 腳本本體已經到位，現在撞到的是 FSI 自己載入 FAkka.Fsi.Contracts 時拿不到 FsPickler.dll。我先把腳本的引用補齊，再重跑一次。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx (+2 -0)
+    2  #r "nuget: Akka.Remote, 1.5.62"
+    3 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/net10.0/FsPickler.dll"
+    4 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/net10.0/FsPickler.Json.dll"
+    5  #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Release/net10.0/FAkka.Fsi.Contracts.dll"
+
+• Waited for background terminal · dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 腳本已經進到 remoting 路徑了，現在不是 assembly 載入錯，是 FsPickler 在建 serializer config 過程裡又炸到型別反射。我先把完整錯誤撈出來。
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +33 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把這支新腳本單獨收進 PulseTrade.fs branch，避免又有「腳本有了但沒進版控」的狀況；然後我直接回你這次硬驗證的結論。
+
+• Ran git add /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx && git commit -m "test: add proc supervisor direct ask version script"
+  │ && git push origin 20260325_002.fspickler-remoting-contracts
+  └ To github.com:ingted/PulseTrade.fs.git
+       21c8c56..abe049a  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 1. 腳本已放好並推上：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  - branch: 20260325_002.fspickler-remoting-contracts
+  - commit: abe049a
+
+  它做的事就是你要的最小驗證：
+
+  - 背景起一個 ProcSupervisor
+  - 等 /health ready
+  - 用另一個 client ActorSystem
+  - 直接 ActorSelection(...).Ask<OpResult>(GetVesion)
+  - 再 Ask<ProcSnapshot array>(GetAllProcInfo)
+
+  2. 目前我不能確認基本的 Akka remoting ask DU 已正常。我實跑後，結論是：還沒正常。
+
+  我跑的是：
+
+  dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+
+  結果不是 actor 沒起。相反地，背景 ProcSupervisor 起得很正常：
+
+  - remoting started
+  - cluster self-joined
+  - sharding coordinator up
+  - web /health ready
+
+  但 direct ask GetVesion 最後 timeout，而且 server log 已經把根因講得很明白：
+
+  - ActorSelectionMessage payload 用的是 SerializerId=199
+  - manifest 是 Akka.FSI.Contracts.OpCmd, FAkka.Fsi.Contracts
+  - 但 ProcSupervisor 那邊在反序列化時報：
+      - Cannot find serializer with id [199]
+      - akka.actor.serializers is not in sync between the two systems
+
+  所以這次的硬結論是：
+
+  - ProcSupervisor 背景啟動：正常
+  - Akka.Remote 連線/路徑：有通到
+  - F# DU direct ask：還沒通
+  - 當前 blocker 是：兩端 ActorSystem 的 serializer registry 沒真正同步
+
+  也就是說，現在不是 parser 問題，不是 /send 問題，也不是 actor 沒起。
+  是 serializer id 199 在 remote 端沒有被正確註冊/辨識。
+
+  下一步就該只做這件事：
+
+  - 查 FAkka.Fsi.Contracts.ContractSerialization.configForAssemblies 產出的 HOCON 到底有沒有真的把 ContractSerializer 註冊成 id=199
+  - 再查 ProcHost.loadConfig 和 client script 的 config 合成後，為什麼一端有 199、另一端沒有
+
+
+
+› 1. 我很少看到 199
+  2. 你再看一下 /workspace/sa/gemini4/work/ff/SSIS/DB2Query/DB2FQuery/PFCFSharpCore.fs line 834 ~ line 863，學習一下怎麼用反射觀察 actorsystem 的 serializer
+  3. 你在腳本中使用反射，實際比較現在兩邊的 actorsystem 在 serialization  到底有什麼差異...
+
+  有問題嗎?
+
+
+• 我先看你指定的 PFCFSharpCore.fs 反射用法，然後把那套觀察 serializer registry 的邏輯補進剛剛那支腳本，直接把 client 與背景 ProcSupervisor 兩邊的 serializer 差異印出來。
+
+• Explored
+  └ Read PFCFSharpCore.fs
+    Search FindSerializerForType|SerializerMap|serialization in Serialization.cs
+    Read Serialization.cs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把腳本補成會反射列出 client 端的 serializer registry，再把 ContractSerialization.configForAssemblies 產出的 HOCON 也印出來。這樣至少能直接看出是不是少了 serialization-
+  identifiers 或 serializer alias/binding。
+
+• Explored
+  └ Read Serialization.fs, Serializer.cs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把腳本再補一層：直接用反射列出 _serializersById、FindSerializerForType(...)，再建一個「proc 端等價 config 的本地 ActorSystem」跟 client side 並排比。跑完就能知道目前差在
+  哪一層。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx (+53 -1)
+     12  open System.Net.Sockets
+     13 +open System.Reflection
+     14  open System.Threading.Tasks
+        ⋮
+     99
+     99 -let clientConfig =
+    100 +let procProbeConfig =
+    101      ConfigurationFactory.ParseString(
+        ⋮
+    114
+    115 +let clientConfig = procProbeConfig
+    116 +
+    117 +let dumpSerialization (label: string) (system: ActorSystem) =
+    118 +    let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+    119 +    let serializationType = system.Serialization.GetType()
+    120 +    let fields =
+    121 +        serializationType.GetFields(flags)
+    122 +        |> Array.map (fun f -> f.Name, f)
+    123 +        |> Map.ofArray
+    124 +
+    125 +    let serializersByIdObj = fields["_serializersById"].GetValue(system.Serialization)
+    126 +    let serializerMapObj = fields["_serializerMap"].GetValue(system.Serialization)
+    127 +
+    128 +    let serializersById =
+    129 +        match serializersByIdObj with
+    130 +        | :? System.Collections.IDictionary as dict ->
+    131 +            dict.Keys
+    132 +            |> Seq.cast<obj>
+    133 +            |> Seq.map (fun key ->
+    134 +                let serializer = dict[key] :?> Akka.Serialization.Serializer
+    135 +                string key, serializer.GetType().AssemblyQualifiedName)
+    136 +            |> Seq.sortBy fst
+    137 +            |> Seq.toArray
+    138 +        | _ -> [||]
+    139 +
+    140 +    printfn "=== %s serialization-identifiers ===" label
+    141 +    printfn "%s" (system.Settings.Config.GetConfig("akka.actor.serialization-identifiers").ToString())
+    142 +    printfn ""
+    143 +    printfn "=== %s serializersById ===" label
+    144 +    serializersById |> Array.iter (fun (key, serializerType) -> printfn "  %s -> %s" key serializerType)
+    145 +    printfn ""
+    146 +
+    147 +    let interestingTypes: Type array =
+    148 +        [| typeof<OpCmd>; typeof<OpResult>; typeof<GetAllProcInfo>; typeof<ProcSnapshot>; typeof<ProcSnapshot array> |]
+    149 +
+    150 +    printfn "=== %s FindSerializerForType ===" label
+    151 +    interestingTypes
+    152 +    |> Array.iter (fun t ->
+    153 +        let serializer = system.Serialization.FindSerializerForType t
+    154 +        printfn "  %s -> id=%d type=%s" t.AssemblyQualifiedName serializer.Identifier serializer.GetType().AssemblyQualifiedName)
+    155 +    printfn ""
+    156 +
+    157 +    let _ = serializerMapObj
+    158 +    ()
+    159 +
+    160  let timeout = TimeSpan.FromMilliseconds(float cli.TimeoutMs)
+        ⋮
+    217          use system = ActorSystem.Create("proc-version-client-" + Guid.NewGuid().ToString("N"), clientConfig)
+    218 +        dumpSerialization "client" system
+    219          let selection = system.ActorSelection(remotePath)
+        ⋮
+    241
+    242 +    use procProbeSystem = ActorSystem.Create("proc-probe-" + Guid.NewGuid().ToString("N"), procProbeConfig)
+    243 +    dumpSerialization "proc-probe" procProbeSystem
+    244 +
+    245      let ready = waitForHttpReady().GetAwaiter().GetResult()
+        ⋮
+    259      printfn "  procSnapshots: %d" snapshots.Length
+    260 +    let! _ = procProbeSystem.Terminate()
+    261 +    do! procProbeSystem.WhenTerminated |> Async.AwaitTask
+    262  with ex ->
+
+• Explored
+  └ Read verify_proc_supervisor_getversion.fsx
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx (+2 -2)
+    259      printfn "  procSnapshots: %d" snapshots.Length
+    260 -    let! _ = procProbeSystem.Terminate()
+    261 -    do! procProbeSystem.WhenTerminated |> Async.AwaitTask
+    260 +    procProbeSystem.Terminate().GetAwaiter().GetResult() |> ignore
+    261 +    procProbeSystem.WhenTerminated.GetAwaiter().GetResult()
+    262  with ex ->
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └
+
+    /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx(154,87): error FS0597: Successive arguments should be separated by spaces or
+    tupled, and arguments involving function or method applications should be parenthesized
+
+
+• Explored
+  └ Read verify_proc_supervisor_getversion.fsx
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx (+1 -1)
+    153          let serializer = system.Serialization.FindSerializerForType t
+    154 -        printfn "  %s -> id=%d type=%s" t.AssemblyQualifiedName serializer.Identifier serializer.GetType().AssemblyQualifiedName)
+    154 +        printfn "  %s -> id=%d type=%s" t.AssemblyQualifiedName serializer.Identifier ((serializer.GetType()).AssemblyQualifiedName))
+    155      printfn ""
+
+• Waited for background terminal · dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +95 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+─ Worked for 1m 20s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已經把「兩邊 serializer registry」直接印出來，而且結論很明確：client 端和本地 proc-like system 都有 id=199，但真正背景起來的 ProcSupervisor 收到 remote message 時仍然說找
+  不到 199。我先把這版腳本補丁也推上，避免結果和腳本版本不一致。
+
+• Ran git add /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx && git commit -m "test: inspect serializer registry during proc remote
+  │ ask" && git push origin 20260325_002.fspickler-remoting-contracts
+  └ To github.com:ingted/PulseTrade.fs.git
+       abe049a..383eb08  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 1. 已放到你指定的位置，而且我補成兩版後都推上了：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  - branch: 20260325_002.fspickler-remoting-contracts
+  - commits:
+      - abe049a test: add proc supervisor direct ask version script
+      - 383eb08 test: inspect serializer registry during proc remote ask
+
+  2. 目前結論是：基本的 Akka remoting ask F# DU 仍然沒有正常。
+
+  我照你的要求，在腳本裡用反射看了 ActorSystem.Serialization 的內部欄位，重點結果是：
+
+  client 端：
+
+  - serialization-identifiers 有：
+      - Akka.FSI.Contracts.ContractSerialization+ContractSerializer ... = 199
+  - _serializersById 有：
+      - 199 -> ContractSerializer
+  - FindSerializerForType(typeof<OpCmd>) = id 199
+  - FindSerializerForType(typeof<OpResult>) = id 199
+
+  proc-probe 端：
+
+  - 我在同一支腳本裡另外起了一個「proc 端等價 config 的本地 ActorSystem」
+  - 結果跟 client 一樣：
+      - serialization-identifiers 有 199
+      - _serializersById 有 199
+      - OpCmd / OpResult 都走 id 199
+
+  但真正背景起來的 ProcSupervisor 仍然失敗，而且失敗訊息是：
+
+  - Cannot find serializer with id [199]
+  - akka.actor.serializers is not in sync between the two systems
+
+  這表示現在的狀態很清楚：
+
+  - 腳本中的 client ActorSystem：正常
+  - 腳本中的 proc-like 本地 ActorSystem：正常
+  - 真正用 dotnet exec ... Akka.Proc.Supervisor.dll 背景起來的 ProcSupervisor process：不正常
+
+  另外我順手看到一個次要但真實的差異：
+
+  - GetAllProcInfo / ProcSnapshot 目前在兩個本地系統裡都還是 id=1，也就是 NewtonsoftJsonSerializer
+  - 只有 OpCmd / OpResult 走 199
+
+  所以現在最準確的結論是：
+
+  - 你要我驗的「最基本 remote ask OpCmd.GetVesion」
+    還沒通
+  - 問題不是 parser，不是 actor 沒起
+  - 問題也不是 client 端沒裝 serializer
+  - 問題是：真正背景 ProcSupervisor process 啟動後，實際 serializer registry 和我們預期的不一致
+
+  下一刀就不該再猜了，應該直接在 Akka.Proc.Supervisor startup 內部把它自己的：
+
+  - serialization-identifiers
+  - _serializersById
+  - FindSerializerForType(typeof<OpCmd>)
+
+  啟動時印出來。
+  因為現在已經證明「同樣程式碼在腳本內建的本地 ActorSystem 是對的，但背景 process 不是」。
+
+/ps
+
+Background terminals
+
+  • bash
+    ↳ READY
+
+      root@gemini4:/workspace/home/mcp/FSharp.MCP.DevKit$
