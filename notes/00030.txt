@@ -580,3 +580,299 @@ Background terminals
     ↳ READY
 
       root@gemini4:/workspace/home/mcp/FSharp.MCP.DevKit$
+
+
+
+› ?
+
+
+• 意思是：
+
+  我已經證明兩件事同時成立：
+
+  1. FsPickler serializer 設定本身不是完全沒生效
+
+  - 因為在同一支 F# 腳本裡，我自己起的兩個 ActorSystem 都看到：
+      - id=199
+      - OpCmd -> ContractSerializer
+      - OpResult -> ContractSerializer
+
+  2. 但真正背景起來的 ProcSupervisor.exe/dll 那個 process 還是收不到 id=199
+
+  - 因為 remote ask 時，它回：
+      - Cannot find serializer with id [199]
+
+  所以矛盾點在這裡：
+
+  - 同樣是 Akka.Proc.Supervisor 的程式碼
+  - 在腳本裡手動建 system 時，serializer registry 看起來正確
+  - 但在背景 process 實際啟動時，registry 看起來不對
+
+  這代表下一步不該再猜 Akka.Remote 或 FsPickler 理論，而是直接進 ProcSupervisor 啟動流程裡看它實際載入後的 serializer registry。
+
+  也就是要在 ProcHost.startSupervisor 裡直接印：
+
+  - akka.actor.serialization-identifiers
+  - _serializersById
+  - FindSerializerForType(typeof<OpCmd>)
+
+  因為現在只有這個「真正背景 process 內部」的觀察還沒做。
+  做完就能知道到底是：
+
+  - loadConfig 沒真的吃到 contractSerializationConfig
+  - 還是另一個 config fallback 把它蓋掉
+  - 還是 process 啟動路徑跟腳本用的 assembly/config 根本不同
+
+
+› 所以你到底做不做了?繼不繼續了?
+
+
+• 我繼續，而且直接做最短路徑：把 Akka.Proc.Supervisor 啟動中的實際 serializer registry 印出來，再用剛剛那支腳本重跑。這樣就不用再猜是 config fallback、啟動路徑、還是舊
+  binary。
+
+• 我先把 ProcHost.fs 對齊實際內容後再補 instrumentation，避免 patch 打偏。
+
+• Explored
+  └ Read ProcHost.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已經對到實際位置，現在直接把 startup instrumentation 補進 ProcHost，再重 build、重跑那支腳本。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs (+42 -0)
+      9  open System.Threading
+     10 +open System.Collections
+     11  open Akka.Actor
+        ⋮
+     16  open Akka.WebSocketBridge
+     17 +open Akka.Serialization
+     18  open Argu
+        ⋮
+     53  module ProcHost =
+     54 +    let private dumpSerializationState (label: string) (system: ActorSystem) =
+     55 +        try
+     56 +            let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+     57 +            let fields =
+     58 +                system.Serialization.GetType().GetFields(flags)
+     59 +                |> Array.map (fun f -> f.Name, f)
+     60 +                |> Map.ofArray
+     61 +
+     62 +            let serializersById =
+     63 +                match fields.TryFind "_serializersById" with
+     64 +                | Some field ->
+     65 +                    match field.GetValue(system.Serialization) with
+     66 +                    | :? IDictionary as dict ->
+     67 +                        dict.Keys
+     68 +                        |> Seq.cast<obj>
+     69 +                        |> Seq.map (fun key ->
+     70 +                            let serializer = dict[key] :?> Serializer
+     71 +                            string key, serializer.GetType().AssemblyQualifiedName)
+     72 +                        |> Seq.sortBy fst
+     73 +                        |> Seq.toArray
+     74 +                    | _ -> [||]
+     75 +                | None -> [||]
+     76 +
+     77 +            let identifiersCfg = system.Settings.Config.GetConfig("akka.actor.serialization-identifiers")
+     78 +            let opCmdSerializer = system.Serialization.FindSerializerForType(typeof<OpCmd>)
+     79 +            let opResultSerializer = system.Serialization.FindSerializerForType(typeof<OpResult>)
+     80 +            let procInfoSerializer = system.Serialization.FindSerializerForType(typeof<GetAllProcInfo>)
+     81 +
+     82 +            printfn "[ProcHost.Serialization][%s] identifiers=%s" label (if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+     83 +            serializersById
+     84 +            |> Array.iter (fun (key, serializerType) ->
+     85 +                printfn "[ProcHost.Serialization][%s] serializerId=%s type=%s" label key serializerType)
+     86 +            printfn "[ProcHost.Serialization][%s] OpCmd -> id=%d type=%s" label opCmdSerializer.Identifier (opCmdSerializer.GetType().AssemblyQualifiedName)
+     87 +            printfn "[ProcHost.Serialization][%s] OpResult -> id=%d type=%s" label opResultSerializer.Identifier (opResultSerializer.GetType().AssemblyQualifiedName)
+     88 +            printfn "[ProcHost.Serialization][%s] GetAllProcInfo -> id=%d type=%s" label procInfoSerializer.Identifier (procInfoSerializer.GetType().AssemblyQualifie
+         dName)
+     89 +        with ex ->
+     90 +            printfn "[ProcHost.Serialization][%s] dump failed: %s" label ex.Message
+     91 +
+     92      let private getFreePort () =
+        ⋮
+    262          use system = ActorSystem.Create(systemName, config)
+    263 +        dumpSerializationState "supervisor" system
+    264          joinCluster system (args.TryGetResult(<@ Seed @>) |> Option.defaultValue [])
+        ⋮
+    402          use system = ActorSystem.Create(systemName, config)
+    403 +        dumpSerializationState "procnode" system
+    404          joinCluster system (args.TryGetResult(<@ Seed @>) |> Option.defaultValue [])
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 先重 build Akka.Proc.Supervisor，確保 instrumentation 沒壞，再重跑那支 direct-ask 腳本。
+
+• Waited for background terminal · dotnet build /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release -m:1
+
+• Ran dotnet build /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +28 lines
+
+    Time Elapsed 00:00:07.81
+
+• Waited for background terminal · dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +95 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先直接核對 GetAllProcInfo / ProcSnapshot 在 source 裡是不是真的有實作 IMessage。因為現在腳本印出它們仍走 id=1，這代表 shared contract 收斂本身可能還沒完整。
+
+• Explored
+  └ Read ProcContracts.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先不猜，直接用你現在這台機器上同一份 release binary 手動起一次 ProcSupervisor，看 [ProcHost.Serialization] 這幾行到底會不會印出來。這能排除是腳本捕捉 stdout 的問題，還是
+  process 根本沒走到新 code。
+
+• Ran cd /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/net10.0 && timeout 8s dotnet exec --runtimeconfig ./Akka.Proc.Supervisor.runtimeconfig.json
+  │ --depsfile ./Akka.Proc.Supervisor.deps.json ./Akka.Proc.Supervisor.dll --mode supervisor --systemname proc-diag-manual --host 127.0.0.1 --port 39111 --webhost 127.0.0.1
+  │ --webport 39112 --spawnnone
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +60 lines
+    [INFO][03/25/2026 16:49:08.132Z][Thread 0009][remoting (akka://proc-diag-manual)] Remoting shut down
+    [INFO][03/25/2026 16:49:08.132Z][Thread 0009][remoting-terminator] Remoting shut down.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再重跑一次那支腳本。現在 release binary 的手動啟動已經證明背景 process 內真的有 id=199，所以這次是要確認剛剛腳本跑到的超時是不是舊輸出或時序問題。
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +69 lines
+      actorPath: Some "akka://proc-system-ab0869de1b174e68a2e834b1475f8822/user/proc-supervisor"
+      procSnapshots: 0
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已經把最小 direct-ask 路徑跑通了。現在先把 ProcHost 的 serializer instrumentation 和新版腳本一起收進 PulseTrade.fs branch，避免又出現「驗證過但沒進版控」。
+
+• Ran git add /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs /workspace/home/work/PulseTrade.fs/Libs/TestScripts/
+  │ verify_proc_supervisor_getversion.fsx && git commit -m "diag: inspect proc remoting serializer state" && git push origin 20260325_002.fspickler-remoting-contracts
+  └ To github.com:ingted/PulseTrade.fs.git
+       383eb08..dea4308  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 1. 腳本已放在你指定的位置：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+
+  而且相關變更都已 commit + push 到：
+
+  - repo: /workspace/home/work/PulseTrade.fs
+  - branch: 20260325_002.fspickler-remoting-contracts
+
+  最新相關 commits：
+
+  - abe049a test: add proc supervisor direct ask version script
+  - 383eb08 test: inspect serializer registry during proc remote ask
+  - dea4308 diag: inspect proc remoting serializer state
+
+  2. 有，我現在可以明確說：最基本的 Akka remoting ask F# DU 已經正常了。
+
+  我這次不是只看單元測試，而是實際做了你要的最小路徑：
+
+  - 背景起一個 release 版 ProcSupervisor
+  - 用另一個 client ActorSystem
+  - 直接 ActorSelection(...).Ask<OpResult>(GetVesion)
+  - 再 Ask<ProcSnapshot array>(GetAllProcInfo)
+
+  結果現在已經成功，腳本最後輸出的是：
+
+  - Remote ask succeeded.
+  - op: GetVesion
+  - assemblyName: Akka.Proc.Supervisor
+  - assemblyVersion: Some "1.562.101.201"
+  - informationalVersion: Some "1.562.101.201-dgx.7+..."
+
+  另外你要我比對兩邊 ActorSystem.Serialization，我也做了。現在看到的是：
+
+  - client 端有：
+      - serialization-identifiers 裡的 199
+      - _serializersById[199] = ContractSerializer
+  - proc 端也有：
+      - serialization-identifiers 裡的 199
+      - _serializersById[199] = ContractSerializer
+  - FindSerializerForType(typeof<OpCmd>) = id 199
+  - FindSerializerForType(typeof<GetAllProcInfo>) = id 199
+  - FindSerializerForType(typeof<ProcSnapshot>) = id 199
+
+  唯一還沒完全收斂的是：
+
+  - ProcSnapshot[] 目前仍然落到 id=1，也就是 NewtonsoftJsonSerializer
+
+  但你問的核心問題是：
+
+  - 基本 remoting ask DU 有沒有正常？
+
+  現在答案是：
+
+  - 有，已正常
+
+  接下來就可以回去驗：
+
+  - fsharp-devkit 裡的 proc-supervisor / fsi-supervisor 版本探針
+  - 再往上驗 host/session 隔離
+
+
+› 兩邊都 commit  + push
+
+
+• 我先確認 PulseTrade.fs 和 FSharp.MCP.DevKit 兩邊目前有沒有未提交變更；如果有就直接 commit + push，沒有就回報已經是乾淨且已同步。
+
+• Ran git status --short && git rev-parse --abbrev-ref HEAD && git rev-parse HEAD
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +390 lines
+    20260325_002.fspickler-remoting-contracts
+    dea4308a155434df1c577ffb12aa57b482ecad24
+
+• Ran git status --short && git rev-parse --abbrev-ref HEAD && git rev-parse HEAD
+  └  D notes/00028.txt
+    ?? "notes/00028.\346\234\254\346\252\224\346\234\211\351\203\250\345\210\206\346\207\211\350\251\262\346\230\257 00029
+    … +2 lines
+    20260325_002.fspickler-remoting-contracts
+    7521f297c73bc6102140c5f879c4bde000bb4799
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• PulseTrade.fs 這邊沒有新的 source/doc/log/notes 待提交，只有 build/test 產生的 bin/obj 雜訊；FSharp.MCP.DevKit 這邊有真正的 notes 變更，我先核對內容後直接補 commit + push。
+
+• Ran git status --short --untracked-files=all /workspace/home/work/PulseTrade.fs/Libs/TestScripts /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+  └ (no output)
+
+• Explored
+  └ List notes
+
+• Ran ls -la /workspace/home/mcp/FSharp.MCP.DevKit/notes && git diff -- /workspace/home/mcp/FSharp.MCP.DevKit/notes/00028.txt && sed -n '1,200p' /workspace/home/mcp/
+  │ FSharp.MCP.DevKit/notes/00030.txt
+  └ total 1976
+    drwxrwxr-x+  2 root   root     4096 Mar 25 16:33 .
+    … +616 lines
+        160 +                let! response = client.GetAsync(sprintf "http://%s:%d/health" cli.Host webPort)
+        161 +                ready <- response.IsSuccessStatusCode
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• PulseTrade.fs 這邊不需要再提交通用 build 輸出；FSharp.MCP.DevKit 的 notes 目前有一個被改名的 00028 和新的 00030。我先看這兩份內容，再把 notes 收進版控並推上。
+
+• Explored
+  └ Read 00028.本檔有部分應該是 00029 內容的，交錯了.txt, 00030.txt, 00029.txt
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• FSharp.MCP.DevKit 這邊我不會把那個亂掉的檔名直接留在 repo。先把它收回正規的 00028.txt，再把新 00030.txt 一起提交推送。
