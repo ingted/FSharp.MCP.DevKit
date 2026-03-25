@@ -1,0 +1,439 @@
+› 我布署了最新版的 fsharp-devkit mcp server，你能驗證一下嗎? 可用性以及是否能建立不同的 host/session 成功在不同 session 執行一些 f# code 並拿回一些結果?
+
+
+• 我先探測最可能的 HTTP 入口，先看 /healthz 和 /mcp 是否有回應；如果 server 有起來，我就直接用 HTTP MCP client 做完整驗證，不會只停在 curl。
+
+• Ran for base in http://127.0.0.1:15000 http://127.0.0.1:5000 http://localhost:15000 http://localhost:5000; do echo "--- $base/healthz"; curl -fsS --max-time 5 "$base/healt
+  │ hz" || true; echo; done
+  └ --- http://127.0.0.1:15000/healthz
+    {"isWindowsService":false,"remoteClient":"disabled","serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+    … +6 lines
+    curl: (7) Failed to connect to localhost port 5000 after 0 ms: Couldn't connect to server
+
+
+• Ran for base in http://127.0.0.1:15000 http://127.0.0.1:5000; do echo "--- $base/mcp/sse"; curl -iN --max-time 5 "$base/mcp/sse" 2>/dev/null | sed -n '1,12p' || true; echo;
+  │ done
+  └ HTTP/1.1 200 OK
+    Content-Type: text/event-stream
+    … +11 lines
+    --- http://127.0.0.1:5000/mcp/sse
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 我先用實際 MCP transport 驗證這台已部署 server，不只看 /healthz，會直接測 tools/resources、route/session，以及同一 host 下不同 session 的執行隔離。
+
+• Waited for background terminal
+
+• SSE 正常，server 確實有 MCP transport。下一步我用實際 MCP client 打進去，驗證 tool/resource surface 與 session 隔離。
+
+• Explored
+  └ Read McpClientHarness.fs
+    Search createHttpClientAsync|tools/list|ensure_fsi_route|create_fsi_host|create_fsi_session|execute_f_sharp_code_routed|get_fsi_state_routed|list_fsi_results|
+get_fsi_result
+           in src
+    Read Program.fs, McpClientTestHelpers.fs, McpClientSmokeTests.fs, McpClientAvailabilityTests.fs, McpClientHarness.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已確認 server 有 /mcp/sse。接下來會直接用 repo 內的 MCP client harness 連 http://127.0.0.1:15000/mcp，先測 discover/ping，再測 session 隔離與 result 取回。
+
+• Explored
+  └ List net10.0
+    Read McpControlPlaneTools.fs, Program.fs, ProvisioningServicesTests.fs, Net10HostBackendTests.fs
+    Search CreateHost\(|create_fsi_host|ProcSupervisor in tests
+    Search evaluate_f_sharp_expression_routed|list_fsi_sessions|get_fsi_state_routed in FSharp.MCP.DevKit.Server
+    Read ControlPlaneResources.fs, ResultResources.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我會直接跑一支臨時驗證腳本，透過主專案的 McpClientHarness.createHttpClientAsync 連 http://127.0.0.1:15000/mcp，把可用性、雙 session 隔離、結果回讀，以及 out-of-proc host
+  建立能力一併驗掉。
+
+• Ran cat > /tmp/verify_fsharp_devkit_http.fsx <<'EOF'
+  │ #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0/FSharp.MCP.DevKit.Server.dll"
+  │
+  │ … +138 lines
+  └
+
+    … +5 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+• Explored
+  └ List net10.0
+    Search FSharp\.MCP\.DevKit.*\.dll|FSharp\.MCP\.DevKit\.dll
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本機 client 腳本第一輪只是參考到錯的 DLL 名稱。server 組件實際是 FSharp.MCP.DevKit.dll，我直接重跑完整驗證。
+
+• Ran perl -0pi -e 's#FSharp\.MCP\.DevKit\.Server/bin/Debug/net10\.0/FSharp\.MCP\.DevKit\.Server\.dll#FSharp.MCP.DevKit.Server/bin/Debug/net10.0/FSharp.MCP.DevKit.dll#' /tmp/
+  │ verify_fsharp_devkit_http.fsx && dotnet fsi /tmp/verify_fsharp_devkit_http.fsx
+  └
+
+    /tmp/verify_fsharp_devkit_http.fsx(6,24): error FS0039: The namespace 'Core' is not defined.
+
+
+• Ran cat > /tmp/verify_fsharp_devkit_http.fsx <<'EOF'
+  │ #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0/FSharp.MCP.DevKit.Core.dll"
+  │ #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0/FSharp.MCP.DevKit.dll"
+  │ … +116 lines
+  └
+
+    /tmp/verify_fsharp_devkit_http.fsx(17,77): error FS0074: The type referenced through 'ModelContextProtocol.Client.McpClientOptions' is defined in an assembly that is not
+    referenced. You must add a reference to assembly 'ModelContextProtocol.Core'.
+
+
+• Explored
+  └ List net10.0
+    Search ^ModelContextProtocol.*\.dll$
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• client 腳本再補兩個相依就能跑。我用乾淨版重建一次，順便把 result query 改成不需要複雜跳脫的 built-in query，先把部署可用性與 session/async 驗證完成。
+
+• Ran cat > /tmp/verify_fsharp_devkit_http.fsx <<'EOF'
+  │ #I @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0"
+  │ #r "ModelContextProtocol.Core.dll"
+  │ … +150 lines
+  └
+
+    /tmp/verify_fsharp_devkit_http.fsx(23,82): error FS0074: The type referenced through 'Microsoft.Extensions.Logging.ILoggerFactory' is defined in an assembly that is not
+    referenced. You must add a reference to assembly 'Microsoft.Extensions.Logging.Abstractions'.
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 直接用 FSI 裸載組件會一直補相依，效率太差。我改成在 /tmp 起一個一次性的 F# console，直接 ProjectReference 主專案 server，再用它跑 HTTP MCP 驗證。
+
+• Waited for background terminal · rm -rf /tmp/fsdevkit-verify && mkdir -p /tmp/fsdevkit-verify && cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+cat > /tmp/fsdevkit-verify/Program.fs <<'EOF'
+open System
+open System.Threading
+open System.Threading.Tasks
+open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Server
+open FSharp.MCP.DevKit.Server.ControlPlane
+open FSharp.MCP.DevKit.Server.ResultQuery
+let endpoint = Uri("http://127.0.0.1:15000/mcp")
+let pp title value =
+    printfn "=== %s ===" title
+    FSharpJson.serialize value |> printfn "%s"
+let args pairs = McpClientHarness.arguments pairs
+[<EntryPoint>]
+let main _ =
+    let run = task {
+        let! client = McpClientHarness.createHttpClientAsync endpoint Seq.empty None None CancellationToken.None
+        try
+            let! _ = client.PingAsync()
+            let! tools = client.ListToolNamesAsync()
+            let! resources = client.ListResourceUrisAsync()
+            let! templates = client.ListResourceTemplateUrisAsync()
+            pp "DISCOVER"
+                {| ok = true
+                   toolCount = tools.Length
+                   hasExecute = tools |> List.contains "execute_f_sharp_code"
+                   hasExecuteAsync = tools |> List.contains "execute_f_sharp_code_async"
+                   hasEnsureRoute = tools |> List.contains "ensure_fsi_route"
+                   hasCreateHost = tools |> List.contains "create_fsi_host"
+                   hasCreateSession = tools |> List.contains "create_fsi_session"
+                   hasResultQuery = tools |> List.contains "query_fsi_results"
+                   resources = resources
+                   templates = templates |}
+            let! ensured =
+                client.EnsureRouteAsync(
+                    DefaultRouting.DefaultAgentId,
+                    displayName = "Default Agent",
+                    hostId = DefaultRouting.DefaultHostId,
+                    sessionId = DefaultRouting.DefaultSessionId)
+            pp "ENSURE DEFAULT ROUTE" ensured
+            let! sessionA =
+                client.CallToolJsonAsync<SessionRecord>(
+                    "create_fsi_session",
+                    args [ "agentId", box DefaultRouting.DefaultAgentId
+                           "hostId", box DefaultRouting.DefaultHostId
+                           "sessionId", box "verify-session-a"
+                           "sessionName", box "Verify Session A" ])
+            let! sessionB =
+                client.CallToolJsonAsync<SessionRecord>(
+                    "create_fsi_session",
+                    args [ "agentId", box DefaultRouting.DefaultAgentId
+                           "hostId", box DefaultRouting.DefaultHostId
+                           "sessionId", box "verify-session-b"
+                           "sessionName", box "Verify Session B" ])
+            pp "CREATED SESSIONS" {| a = sessionA; b = sessionB |}
+            let routedArgs sid code =
+                args [ "agentId", box DefaultRouting.DefaultAgentId
+                       "hostId", box DefaultRouting.DefaultHostId
+                       "sessionId", box sid
+                       "code", box code
+                       "timeoutSeconds", box 30 ]
+            let evalArgs sid expr =
+                args [ "agentId", box DefaultRouting.DefaultAgentId
+                       "hostId", box DefaultRouting.DefaultHostId
+                       "sessionId", box sid
+                       "expression", box expr
+                       "timeoutSeconds", box 30 ]
+            let! _ = client.CallToolTextAsync("execute_f_sharp_code_routed", routedArgs "verify-session-a" "let sessionValue = 101")
+            let! _ = client.CallToolTextAsync("execute_f_sharp_code_routed", routedArgs "verify-session-b" "let sessionValue = 202")
+            let! valueA = client.CallToolTextAsync("evaluate_f_sharp_expression_routed", evalArgs "verify-session-a" "sessionValue")
+            let! valueB = client.CallToolTextAsync("evaluate_f_sharp_expression_routed", evalArgs "verify-session-b" "sessionValue")
+            let! stateA = client.ReadResourceJsonAsync<SessionRecord option>("fsi/hosts/default-host/sessions/verify-session-a")
+            let! stateB = client.ReadResourceJsonAsync<SessionRecord option>("fsi/hosts/default-host/sessions/verify-session-b")
+            pp "SESSION ISOLATION" {| valueA = valueA.Trim(); valueB = valueB.Trim(); stateA = stateA; stateB = stateB |}
+            let! asyncId =
+                client.CallToolTextAsync(
+                    "execute_f_sharp_code_async",
+                    args [ "code", box "let asyncVerify = 303"
+                           "timeoutSeconds", box 30 ])
+            let! asyncStatus = client.WaitForAsyncStatusAsync(asyncId.Trim(), maxAttempts = 80, pollIntervalMs = 100)
+            let! asyncResult = client.ReadResourceJsonAsync<FsiExecutionRecord option>($"fsi/results/{asyncStatus.ResultId.Value}")
+            pp "ASYNC ROUNDTRIP" {| asyncId = asyncId.Trim(); status = asyncStatus; result = asyncResult |}
+            let! sessionResults = client.ReadResourceJsonAsync<FsiExecutionRecord list>("fsi/hosts/default-host/sessions/verify-session-a/results")
+            let latestIds =
+                sessionResults
+                |> List.rev
+                |> List.truncate 2
+                |> List.rev
+                |> List.map (fun record -> record.ResultId)
+                |> String.concat ","
+            let! queryResponse =
+                client.CallToolJsonAsync<ResultQueryResponse>(
+                    "query_fsi_results",
+                    args [ "agentId", box DefaultRouting.DefaultAgentId
+                           "kind", box "exists"
+                           "language", box ""
+                           "materialization", box ""
+                           "primaryResultIds", box latestIds
+                           "secondaryResultIds", box ""
+                           "queryText", box "valueContains:101" ])
+            pp "RESULT QUERY" queryResponse
+            let! hostAttempt =
+                task {
+                    try
+                        let! host =
+                            client.CallToolJsonAsync<HostRecord>(
+                                "create_fsi_host",
+                                args [ "agentId", box "verify-agent"
+                                       "hostKind", box "net10"
+                                       "executablePath", box "dotnet"
+                                       "arguments", box "fsi-host.dll"
+                                       "workingDirectory", box "/tmp"
+                                       "hostId", box "verify-net10-host"
+                                       "probeMessage", box "PING"
+                                       "probeIntervalMs", box 1000 ])
+                        return Choice1Of2 host
+                    with ex ->
+                        return Choice2Of2 ex.Message
+                }
+            match hostAttempt with
+            | Choice1Of2 host -> pp "CREATE HOST ATTEMPT" {| ok = true; host = host |}
+            | Choice2Of2 err -> pp "CREATE HOST ATTEMPT" {| ok = false; error = err |}
+            pp "SUMMARY"
+                {| availability = true
+                   sessionsIsolated = (valueA.Trim() = "101" && valueB.Trim() = "202")
+                   asyncCompleted = asyncStatus.IsCompleted
+                   asyncResultSuccess = asyncStatus.Result |> Option.exists (fun result -> result.IsSuccess)
+                   querySuccess = queryResponse.IsSuccess
+                   outOfProcHostCreated = match hostAttempt with | Choice1Of2 _ -> true | _ -> false |}
+        finally
+            do! (client :> IAsyncDisposable).DisposeAsync().AsTask()
+    }
+    run.GetAwaiter().GetResult()
+    0
+EOF
+dotnet run --project /tmp/fsdevkit-verify/fsdevkit-verify.fsproj
+
+• Ran rm -rf /tmp/fsdevkit-verify && mkdir -p /tmp/fsdevkit-verify && cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │   <PropertyGroup>
+  │ … +159 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/tmp/fsdevkit-verify/fsdevkit-verify.fsproj]
+    … +50 lines
+    fsharp/src/FSharp.Core/async.fs:line 1514
+       at fsdevkit_verify.MicrosoftTestingPlatformEntryPoint.main(String[] args) in /tmp/fsdevkit-verify/obj/Debug/net10.0/MicrosoftTestingPlatformEntryPoint.fs:line 21
+
+• Explored
+  └ Search MicrosoftTestingPlatform|IsTestProject|Microsoft.NET.Test.Sdk|TestingPlatform in Directory.Build.*
+
+• Ran ls -1 | sed -n '1,40p' && printf '\n---\n' && sed -n '1,220p' Directory.Build.props 2>/dev/null && printf '\n---\n' && sed -n '1,220p' Directory.Build.targets 2>/dev/
+  │ null
+  └ DEMO.md
+    FSharp.MCP.DevKit.Async.sln
+    … +21 lines
+
+    ---
+
+• Waited for background terminal
+
+• Waited for background terminal · cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <IsTestProject>false</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <EnableTestingPlatform>false</EnableTestingPlatform>
+    <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
+    <GenerateTestingPlatformConfigurationFile>false</GenerateTestingPlatformConfigurationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+dotnet run --project /tmp/fsdevkit-verify/fsdevkit-verify.fsproj
+
+• Ran cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │   <PropertyGroup>
+  │ … +16 lines
+  └ /tmp/fsdevkit-verify/fsdevkit-verify.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3 requires FSharp.Core (>= 10.0.102 &&
+    < 10.1.0) but version FSharp.Core 10.1.201 was resolved.
+    … +48 lines
+    /tmp/fsdevkit-verify/obj/Debug/net10.0/.NETCoreApp,Version=v10.0.AssemblyAttributes.fs(3,22): warning FS0988: Main module of program is empty: nothing will happen when it
+    is run [/tmp/fsdevkit-verify/fsdevkit-verify.fsproj]
+
+─ Worked for 1m 18s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• temp verifier 這次只差 F# project 沒把 Program.fs 編進去。我補上 Compile Include 後直接跑最終驗證，不再繞。
+
+• Waited for background terminal · cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <IsTestProject>false</IsTestProject>
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <EnableTestingPlatform>false</EnableTestingPlatform>
+    <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
+    <GenerateTestingPlatformConfigurationFile>false</GenerateTestingPlatformConfigurationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+dotnet run --project /tmp/fsdevkit-verify/fsdevkit-verify.fsproj
+
+• Ran cat > /tmp/fsdevkit-verify/fsdevkit-verify.fsproj <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │   <PropertyGroup>
+  │ … +19 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/tmp/fsdevkit-verify/
+    … +43 lines
+
+    The build failed. Fix the build errors and run again.
+
+• Waited for background terminal · perl -0pi -e 's#do! \(client :> IAsyncDisposable\)\.DisposeAsync\(\)\.AsTask\(\)#(client :>
+IAsyncDisposable).DisposeAsync().AsTask().GetAwaiter().GetResult()#' /tmp/fsdevkit-verify/Program.fs && dotnet run --project /tmp/fsdevkit-verify/fsdevkit-verify.fsproj
+
+• Explored
+  └ Read Program.fs
+
+• Ran perl -0pi -e 's#do! \(client :> IAsyncDisposable\)\.DisposeAsync\(\)\.AsTask\(\)#(client :> IAsyncDisposable).DisposeAsync().AsTask().GetAwaiter().GetResult()#' /tmp/
+  │ fsdevkit-verify/Program.fs && dotnet run --project /tmp/fsdevkit-verify/fsdevkit-verify.fsproj
+  └ /tmp/fsdevkit-verify/fsdevkit-verify.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3 requires FSharp.Core (>= 10.0.102 &&
+    < 10.1.0) but version FSharp.Core 10.1.201 was resolved.
+    … +52 lines
+    === SUMMARY ===
+    {"asyncCompleted":true,"asyncResultSuccess":true,"availability":true,"outOfProcHostCreated":false,"querySuccess":true,"sessionsIsolated":true}
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 不同 session 的實際執行已驗到，現在我再補查一次 create_fsi_host 的失敗原因，確認是部署缺件還是 server bug。
+
+• Explored
+  └ Read McpFsiTools.fs, Program.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已驗證，而且我是用實際 HTTP MCP client 去打你部署中的 server，不是只看 /healthz。
+
+  目前結果：
+
+  - 可用性正常。/healthz 回 status=ok，/mcp/sse 也有 200 OK，MCP surface 可 discover。
+  - http://127.0.0.1:15000/mcp 上可列出 56 個 tools，關鍵的 execute_f_sharp_code、execute_f_sharp_code_async、ensure_fsi_route、create_fsi_session、query_fsi_results 都在，f
+    si/async/{asyncId}、fsi/hosts/{hostId}/sessions/{sessionId}、fsi/results/{resultId} 這些 resources/templates 也都在。
+  - 同一個 host 下不同 session 可正常建立並隔離執行。我建立了 default-host 底下的 verify-session-a、verify-session-b，分別執行 let sessionValue = 101 和 let sessionValue =
+    202，再讀回結果，兩邊互不污染，成功拿到 101 / 202。
+  - async 也正常。我送了 let asyncVerify = 303，拿到 asyncId，輪詢 fsi/async/{asyncId} 後完成，resultId 可再讀回成功結果。
+  - result query 也正常，對 session result 做 exists valueContains:101 回傳成功。
+
+  但「不同 host」這件事，這台目前部署的版本沒有通：
+
+  - 我實測 create_fsi_host 失敗。
+  - 原因不是 tool 不存在，而是這個部署目前只有 server 本體，沒有把 ProcSupervisor provisioning 那條線接起來。從 src/FSharp.MCP.DevKit.Server/Program.fs:108 看，現在只用 new
+    FsiMcpService(logger, enableRemoteClient = enableRemoteClient) 建 service；而 src/FSharp.MCP.DevKit.Server/McpFsiTools.fs:535 明確寫了，沒配置 ProcSupervisor client 時，
+    CreateHost 會直接失敗。
+  - 另外你這台 /healthz 也回了 remoteClient:"disabled"，所以目前驗到的是「default in-proc host + 多 session」這條路是好的，不是完整 out-of-proc host provisioning。
+
+  結論：這台目前是「可用」，而且 不同 session 已驗證成功；但 不同 host 在目前部署形態下還不能成立。若你要，我下一步可以直接幫你列一份最小部署差異清單，讓這台補到可成功
+  create_fsi_host(net10)。
+
+
+› 是說 dockerfile 有漏東西沒 pub / cp? 還是目前ProcSupervisor client沒有被使用?
+
+
+• 我先確認不是猜測，直接看 FsiMcpService 的建構路徑和 Docker image 目前到底帶了什麼，再回答你是哪一邊缺。
+
+• Explored
+  └ Search type FsiMcpService|new FsiMcpService\(|procSupervisorClient|fsiSupervisorClient|hostProvisioningService in FSharp.MCP.DevKit.Server
+    Read McpFsiTools.fs, Dockerfile, fsdevkit.service
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 比較像是「目前 ProcSupervisor client 根本沒被接進 server」，不是單純 Dockerfile 少 pub/cp。
+
+  我確認到的事：
+
+  - runtime wiring 目前只有這樣建 FsiMcpService：
+      - src/FSharp.MCP.DevKit.Server/Program.fs:108
+      - 實際是 new FsiMcpService(logger, enableRemoteClient = enableRemoteClient)
+      - 沒有把 IProcSupervisorClient / IFsiSupervisorClient 傳進去
+  - FsiMcpService.CreateHost 的邏輯是：
+      - src/FSharp.MCP.DevKit.Server/McpFsiTools.fs:535
+      - 如果 hostProvisioningService = None，就直接丟 ProcSupervisor client is not configured for this FsiMcpService instance.
+  - Docker/container 這邊又明確把 legacy remote client 關掉了：
+      - /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile:35
+      - /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service:15
+      - 都設了 FSI_ENABLE_REMOTE_CLIENT=false
+
+  所以結論是：
+
+  - 目前 image 對「server-only + in-proc default host + 多 session」是夠的，我剛剛驗到的功能也都能跑。
+  - 但對「create_fsi_host 建不同 host」這件事，缺的核心不是 publish/copy 某個 DLL，而是 server 啟動時根本沒有把 ProcSupervisor / FsiSupervisor client wiring 起來。
+  - 也就是說，現在不是 Dockerfile 漏一個檔案就會好，而是部署模型本身還停在 server-only。
+
+  如果你要讓這個 Docker 部署也支援 create_fsi_host(net10)，至少要補這幾件：
+
+  1. 在 server startup 注入 IProcSupervisorClient 與 IFsiSupervisorClient
+  2. 提供可連到的 ProcSupervisor / FsiSupervisor endpoint 與 config
+  3. 讓 create_fsi_host 用到的 executable path / working directory 在部署環境中真的存在
+
+  補充一個我順手看到的無關 bug：
+
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service:11 啟動容器名是 fsharp-mcp-devkit
+  - 但 ExecStop/ExecStopPost 用的是 fsharp-mcp-devkit-test
+  - 這個 service file 之後最好也一起修掉。

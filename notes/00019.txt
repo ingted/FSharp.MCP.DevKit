@@ -1,0 +1,669 @@
+
+› 1. 確認一下 /workspace/home/mcp/docker/FSharp.MCP.DevKit 底下的各個 .sh 檔是否能支持現在的 fsharp-devkit
+  2. 裡面的 Dockerfile 是否足以應對此次架構變更?
+
+
+• 我先盤 /workspace/home/mcp/docker/FSharp.MCP.DevKit 的 shell 腳本和 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile，重點看它們是不是還假設 fsihost 需要預先常駐，或
+  和現在的 host provisioning / net10 server 路徑不一致。
+
+• Explored
+  └ Search *.sh in FSharp.MCP.DevKit
+    List FSharp.MCP.DevKit
+    Search fsihost|create_fsi_host|15000|5000|MCP_ENABLE_STDIO|healthz|fsharp-devkit|netfx|hosts/netfx|FAkka|ProcSupervisor|service in FSharp.MCP.DevKit
+
+• Ran for f in /workspace/home/mcp/docker/FSharp.MCP.DevKit/*.sh /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile /workspace/home/mcp/docker/FSharp.MCP.DevKit/
+  │ fsdevkit.service; do echo "--- $f ---"; sed -n '1,220p' "$f"; echo; done
+  └ --- /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh ---
+    service fsdevkit stop
+    … +183 lines
+    WantedBy=multi-user.target
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再補看一件真正決定性的事：server 在 Docker 內啟動時，create_fsi_host 這條控制面到底有沒有被接上。如果連 ProcSupervisor/FsiSupervisor client 都沒注入，那 Dockerfile 就算不
+  缺 artifact，也只支援 in-proc/default route。
+
+• Explored
+  └ Read McpFsiTools.fs, Program.fs
+    Search procSupervisorClient|fsiSupervisorClient|enableRemoteClient|MCP_ENABLE_STDIO|AddSingleton<FsiMcpService>|create_fsi_host|ProcSupervisorClient|FsiSupervisorClient
+in
+           FSharp.MCP.DevKit.Server
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這裡已經看到一個關鍵點了：Docker 裡現在的 FsiMcpService 仍是 new FsiMcpService(logger)，也就是 enableRemoteClient = true 的預設值。換句話說，容器會嘗試走舊的
+  akka.server.conf + localhost:8081 + fsiActor 路徑，而不是純 server-only/in-proc。我要再確認 publish 內容裡到底有沒有那套 host/actor 前提。
+
+• Explored
+  └ Search akka\.server\.conf|akka\.conf|Content Include|None Include|CopyToOutputDirectory in FSharp.MCP.DevKit.Server.fsproj
+    Read FSharp.MCP.DevKit.Server.fsproj, FSharp.MCP.DevKit.FsiHost.fsproj
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我不只會給結論。我準備順手把 Docker 路徑修到「至少不會默默保留舊 remote-actor 假設」：加一個 FSI_ENABLE_REMOTE_CLIENT 環境開關，讓 container 明確走 server-only/in-proc 模
+  式；另外把兩支 .sh 的硬編碼路徑收掉。
+
+• Explored
+  └ Search FSI_ENABLE_REMOTE_CLIENT|enableRemoteClient in FSharp.MCP.DevKit.Server
+
+• Ran pwd && realpath /workspace/home/mcp/docker/FSharp.MCP.DevKit && realpath /workspace/home/mcp/FSharp.MCP.DevKit && realpath /workspace/home/csharp-sdk || true && ls /
+  │ workspace/home
+  └ /workspace/home/mcp/FSharp.MCP.DevKit
+    /workspace/home/mcp/docker/FSharp.MCP.DevKit
+    … +29 lines
+    welcome
+    work
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我找到兩個實質問題了，不只是文件問題：
+
+  1. /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 目前還在 COPY mcp/csharp-sdk，但現在 repo 結構是 /workspace/home/csharp-sdk，這個 build context 已經不對。
+  2. 容器內 server 目前會預設開啟舊的 remote client 路徑，對現在這個「只跑 server、不預起 fsihost」的 Docker 形態不合理。
+
+  我會把這兩點和 host-side .sh 一起修掉，再做 dotnet build + bash -n 驗證。
+
+• Edited 5 files (+41 -20)
+  └ src/FSharp.MCP.DevKit.Server/Program.fs (+12 -1)
+     97
+     98 +    let enableRemoteClient =
+     99 +        let value = Environment.GetEnvironmentVariable("FSI_ENABLE_REMOTE_CLIENT")
+    100 +        if String.IsNullOrWhiteSpace(value) then
+    101 +            true
+    102 +        else
+    103 +            not (
+    104 +                value.Equals("0", StringComparison.OrdinalIgnoreCase)
+    105 +                || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+    106 +                || value.Equals("no", StringComparison.OrdinalIgnoreCase))
+    107 +
+    108      // Register FSI service
+        ⋮
+    110          let logger = serviceProvider.GetRequiredService<ILogger<FsiMcpService>>()
+    101 -        new FsiMcpService(logger)
+    111 +        new FsiMcpService(logger, enableRemoteClient = enableRemoteClient)
+    112      )
+        ⋮
+    156                     transport = if enableStdio then "http+stdio-or-http" else "http-only"
+    157 +                   remoteClient = if enableRemoteClient then "enabled" else "disabled"
+    158                     isWindowsService = isWindowsService
+
+  └ /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile (+5 -2)
+     4
+     5 -# Build context root is /home/sa/gemini4 on the remote host.
+     5 +# Build context root is the workspace root that contains:
+     6 +# - mcp/FSharp.MCP.DevKit
+     7 +# - csharp-sdk
+     8  COPY mcp/FSharp.MCP.DevKit/ ./FSharp.MCP.DevKit/
+     7 -COPY mcp/csharp-sdk/ ./csharp-sdk/
+     9 +COPY csharp-sdk/ ./csharp-sdk/
+    10
+       ⋮
+    42  ENV MCP_ENABLE_STDIO=false
+    43 +ENV FSI_ENABLE_REMOTE_CLIENT=false
+    44  EXPOSE 5000
+
+  └ /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh (+14 -9)
+     1 -service fsdevkit stop
+     2 -bash disable.sh
+     3 -bash uninstall.sh
+     4 -cd /home/sa/gemini4
+     5 -docker build -f mcp/docker/FSharp.MCP.DevKit/Dockerfile -t fsharp-mcp-devkit:ai-v0.6.2 .
+     6 -cd mcp/docker/FSharp.MCP.DevKit
+     7 -bash install.sh
+     8 -bash enable.sh
+     9 -bash start.sh
+     1 +#!/usr/bin/env bash
+     2 +set -euo pipefail
+     3
+     4 +SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+     5 +CONTEXT_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
+     6 +IMAGE_NAME="${IMAGE_NAME:-fsharp-mcp-devkit:ai-v0.6.2}"
+     7 +
+     8 +bash "$SCRIPT_DIR/disable.sh" || true
+     9 +bash "$SCRIPT_DIR/uninstall.sh" || true
+    10 +
+    11 +docker build -f "$SCRIPT_DIR/Dockerfile" -t "$IMAGE_NAME" "$CONTEXT_ROOT"
+    12 +
+    13 +bash "$SCRIPT_DIR/install.sh"
+    14 +bash "$SCRIPT_DIR/enable.sh"
+    15 +bash "$SCRIPT_DIR/start.sh"
+    16
+
+  └ /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service (+1 -0)
+    15    -e MCP_ENABLE_STDIO=false \
+    16 +  -e FSI_ENABLE_REMOTE_CLIENT=false \
+    17    -v /home/sa/gemini4:/gemini4:ro \
+
+  └ /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh (+9 -8)
+     1 -service fsdevkit stop
+     2 -bash disable.sh
+     3 -bash uninstall.sh
+     4 -cd /home/sa/gemini4
+     5 -cd mcp/docker/FSharp.MCP.DevKit
+     6 -bash install.sh
+     7 -bash enable.sh
+     8 -bash start.sh
+     1 +#!/usr/bin/env bash
+     2 +set -euo pipefail
+     3 +
+     4 +SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+     5
+     6 +bash "$SCRIPT_DIR/disable.sh" || true
+     7 +bash "$SCRIPT_DIR/uninstall.sh" || true
+     8 +bash "$SCRIPT_DIR/install.sh"
+     9 +bash "$SCRIPT_DIR/enable.sh"
+    10 +bash "$SCRIPT_DIR/start.sh"
+    11
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 修正已下去。現在驗兩件事：server build 確認 FSI_ENABLE_REMOTE_CLIENT 沒弄壞程式，還有 host-side .sh 的語法。
+
+• Ran bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh && bash -n /workspace/home/
+  │ mcp/docker/FSharp.MCP.DevKit/disable.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/enable.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/
+  │ install.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/start.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/uninstall.sh
+  └ (no output)
+
+• Explored
+  └ Read Dockerfile, fsdevkit.service
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› 目前還在 COPY mcp/csharp-sdk，但現在 repo 結構是 /workspace/home/csharp-sdk，這個 build context 已經不對 <= /workspace/home/csharp-sdk 這個路徑才是錯的呀?別搞事
+
+
+• 我先直接核對實際路徑，避免把 build context 猜錯。你指出 /workspace/home/csharp-sdk 不對，我現在只看事實路徑，不再推論。
+
+• Ran ls -ld /workspace/home/csharp-sdk /workspace/home/mcp/csharp-sdk /workspace/home/mcp/FSharp.MCP.DevKit 2>/dev/null || true
+  └ drwxrwxr-x+ 18 root root 4096 Mar 22 15:59 /workspace/home/mcp/FSharp.MCP.DevKit
+    drwxrwxr-x+ 11 root root 4096 Feb 28 21:14 /workspace/home/mcp/csharp-sdk
+
+• Ran realpath /workspace/home/mcp/csharp-sdk 2>/dev/null || true; realpath /workspace/home/csharp-sdk 2>/dev/null || true
+  └ /workspace/home/mcp/csharp-sdk
+    /workspace/home/csharp-sdk
+
+• Ran git diff -- docker/FSharp.MCP.DevKit/Dockerfile src/FSharp.MCP.DevKit.Server/Program.fs docker/FSharp.MCP.DevKit/fsdevkit.service docker/FSharp.MCP.DevKit/build.host.sh
+  │ docker/FSharp.MCP.DevKit/re-deploy.host.sh
+  └ diff --git a/src/FSharp.MCP.DevKit.Server/Program.fs b/src/FSharp.MCP.DevKit.Server/Program.fs
+    index 5e9e4fe..ccd767e 100644
+    … +30 lines
+                        serviceName = serviceName |}))
+         )
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 你這個糾正是對的。這個 Docker 路徑的 build context 應該是 /workspace/home，所以 COPY mcp/csharp-sdk/ 才是對的；我剛剛把它改成 COPY csharp-sdk/ 是錯的，先回退。
+
+• Edited /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile (+2 -2)
+     6  # - mcp/FSharp.MCP.DevKit
+     7 -# - csharp-sdk
+     7 +# - mcp/csharp-sdk
+     8  COPY mcp/FSharp.MCP.DevKit/ ./FSharp.MCP.DevKit/
+     9 -COPY csharp-sdk/ ./csharp-sdk/
+     9 +COPY mcp/csharp-sdk/ ./csharp-sdk/
+    10
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把 COPY 路徑已經回正。現在只驗證真正還有意義的兩件事：Program.fs 的新環境變數開關能否正常 build，以及 docker 目錄下所有 .sh 還是語法正確。
+
+• Ran bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh && bash -n /workspace/home/
+  │ mcp/docker/FSharp.MCP.DevKit/disable.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/enable.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/
+  │ install.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/start.sh && bash -n /workspace/home/mcp/docker/FSharp.MCP.DevKit/uninstall.sh
+  └ (no output)
+
+• Waited for background terminal · dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1
+
+• Ran dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.
+    … +48 lines
+
+    Time Elapsed 00:00:05.38
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 你剛剛糾正的是對的，我已經把 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 的 COPY 路徑改回 mcp/csharp-sdk/。這個 Docker build context 應該是 /workspace/home，不
+  是 /workspace/home/mcp，所以原本那條才對。
+
+  現在的結論是：
+
+  1. /workspace/home/mcp/docker/FSharp.MCP.DevKit 底下的 .sh，在我調整後，已可支持目前的 Docker 形態。
+      - /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh 和 /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh 不再硬編碼 /home/sa/gemini4，改成用腳本相
+        對路徑推導 build context。
+      - install/enable/disable/start/uninstall.sh 本身沒有架構假設問題，仍可用。
+      - 我已用 bash -n 驗過所有 .sh，語法都通過。
+  2. /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 在「container 只跑 fsharp-devkit server」這個前提下，現在算夠用。
+      - 我加了 FSI_ENABLE_REMOTE_CLIENT=false
+      - /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service 也同步帶了這個 env
+      - src/FSharp.MCP.DevKit.Server/Program.fs 現在會讀這個 env，避免容器還默默去走舊的 localhost:8081 remote actor 路徑
+      - dotnet build 已通過
+  3. 但如果你的問題是「這個 Dockerfile 是否已足以支援完整新架構，包括 container 內直接 create_fsi_host 跑 out-of-proc netfx/net10 host」，答案是還不夠。
+      - 它目前只 publish server
+      - 沒有把 legacy netfx host artifact 或完整 supervisor/bootstrap 一起包進容器
+      - 所以它現在支持的是「server-only / HTTP MCP / in-proc default route」這條線，不是完整 host provisioning 線
+
+  如果你要，我下一步可以直接把 Docker 方案繼續補到：
+
+  - container 內可用 create_fsi_host
+    或
+  - 明確把 Docker 版本定位成 server-only，並把文件寫死，避免誤用。
+
+
+› 1. 我之前是在 container host 跑部署，所以 /home/sa/gemini4 路徑正確，你確定現在的改法 ok 嗎?
+  2. 準備一份 README.md 說明 docker 相關部署資訊，特別是 container <-> host 的 valume 對應對這些 sh 與 Dockerfile 的影響
+
+
+• 我先確認目前 host-side 腳本的相對路徑推導在你原本 /home/sa/gemini4 佈局下是不是還成立，然後補一份 Docker 部署說明到 /workspace/home/mcp/docker/FSharp.MCP.DevKit。
+
+• Explored
+  └ Read build.host.sh, re-deploy.host.sh, Dockerfile, fsdevkit.service
+
+• Ran python - <<'PY'
+  │ import os
+  │ p='/home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit'
+  │ … +2 lines
+  └ /home/sa/gemini4
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把你第 1 點直接定論：如果實際 host 路徑是 /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit，那我現在 build.host.sh 用的 ../../.. 會正好回到 /home/sa/gemini4，所以這個改法
+  是相容的，不會把你原本的 host 佈局弄壞。接著我補一份 Docker README，把 build context 和 volume 對應寫清楚。
+
+• Added /workspace/home/mcp/docker/FSharp.MCP.DevKit/README.md (+178 -0)
+      1 +# Docker Deployment Notes
+      2 +
+      3 +本目錄用來部署 `FSharp.MCP.DevKit` 的 Docker 版 server。
+      4 +
+      5 +目前這套 Docker 方案的定位是：
+      6 +
+      7 +- container 內只常駐 `fsharp-devkit` server
+      8 +- 不在 container 啟動時預先啟 `fsihost`
+      9 +- `FSI_ENABLE_REMOTE_CLIENT=false`
+     10 +- 主要支援：
+     11 +  - HTTP MCP
+     12 +  - default in-proc route
+     13 +  - container 內 server-only 形態
+     14 +
+     15 +如果要支援完整的 out-of-proc host provisioning，還需要另外把 host artifact / supervisor bootstrap 一起納入容器設計；目前這份 Dockerfile 還不是那個版本。
+     16 +
+     17 +## 目錄內檔案
+     18 +
+     19 +- `Dockerfile`
+     20 +  - 建立 `fsharp-mcp-devkit:ai-v0.6.2`
+     21 +- `fsdevkit.service`
+     22 +  - 在 container host 上用 systemd 啟動 Docker container
+     23 +- `build.host.sh`
+     24 +  - 重新 build image，重裝並重啟 `fsdevkit.service`
+     25 +- `re-deploy.host.sh`
+     26 +  - 不重 build image，只重裝並重啟 `fsdevkit.service`
+     27 +- `install.sh` / `enable.sh` / `disable.sh` / `start.sh` / `uninstall.sh`
+     28 +  - 管理 container host 上的 `fsdevkit.service`
+     29 +
+     30 +## Build Context
+     31 +
+     32 +`Dockerfile` 目前假設 `docker build` 的 context root 是包含這兩個路徑的目錄：
+     33 +
+     34 +- `mcp/FSharp.MCP.DevKit`
+     35 +- `mcp/csharp-sdk`
+     36 +
+     37 +也就是說，在你目前的 container host 佈局下：
+     38 +
+     39 +- host repo root: `/home/sa/gemini4`
+     40 +- server repo: `/home/sa/gemini4/mcp/FSharp.MCP.DevKit`
+     41 +- csharp-sdk: `/home/sa/gemini4/mcp/csharp-sdk`
+     42 +
+     43 +那麼這條命令才是正確的：
+     44 +
+     45 +```bash
+     46 +docker build -f /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/Dockerfile -t fsharp-mcp-devkit:ai-v0.6.2 /home/sa/gemini4
+     47 +```
+     48 +
+     49 +`build.host.sh` 現在改成用腳本相對路徑自動推導這個 context：
+     50 +
+     51 +- 腳本位置：`/home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/build.host.sh`
+     52 +- `../../..` 之後會回到：`/home/sa/gemini4`
+     53 +
+     54 +所以對你原本 host 的 `/home/sa/gemini4` 佈局是相容的，不需要再手動 `cd /home/sa/gemini4`。
+     55 +
+     56 +## Runtime Ports
+     57 +
+     58 +- container 內 server: `5000`
+     59 +- host 對外映射: `15000:5000`
+     60 +
+     61 +所以：
+     62 +
+     63 +- container 內 health/MCP base: `http://localhost:5000`
+     64 +- host 端對外 MCP base: `http://<host>:15000/mcp`
+     65 +
+     66 +## Environment Variables
+     67 +
+     68 +Dockerfile 與 systemd unit 目前會帶：
+     69 +
+     70 +- `ASPNETCORE_URLS=http://0.0.0.0:5000`
+     71 +- `MCP_ENABLE_STDIO=false`
+     72 +- `FSI_ENABLE_REMOTE_CLIENT=false`
+     73 +
+     74 +影響如下：
+     75 +
+     76 +- `MCP_ENABLE_STDIO=false`
+     77 +  - container 只開 HTTP MCP，不開 stdio transport
+     78 +- `FSI_ENABLE_REMOTE_CLIENT=false`
+     79 +  - server 不會在 container 內嘗試連 `localhost:8081` 的舊 remote actor / `fsihost`
+     80 +  - 這是目前 Docker 版本很重要的設定，因為 container 內並沒有預先常駐 `fsihost`
+     81 +
+     82 +## Volume Mapping
+     83 +
+     84 +`fsdevkit.service` 目前會掛這兩個 volume：
+     85 +
+     86 +```text
+     87 +-v /home/sa/gemini4:/gemini4:ro
+     88 +-v /home/sa/gemini4/devkit_workspace/:/workspace
+     89 +```
+     90 +
+     91 +### `/home/sa/gemini4 -> /gemini4:ro`
+     92 +
+     93 +用途：
+     94 +
+     95 +- 讓 container 內可讀取 host repo / 參考檔案
+     96 +- 目前是唯讀掛載
+     97 +
+     98 +影響：
+     99 +
+    100 +- 如果你的 agent / tool / demo 內寫死 `/gemini4/...`，這個 mount 必須存在
+    101 +- 如果 host 根路徑從 `/home/sa/gemini4` 改掉，就要同步改 `fsdevkit.service`
+    102 +- 這個 mount 不影響 Docker build context；它只影響 container 啟動後的 runtime 路徑
+    103 +
+    104 +### `/home/sa/gemini4/devkit_workspace -> /workspace`
+    105 +
+    106 +用途：
+    107 +
+    108 +- 給 server / tool 在 container 內看到一個固定工作區 `/workspace`
+    109 +
+    110 +影響：
+    111 +
+    112 +- 若某些 F# script、tool calling、path mapping、demo 假設工作目錄在 `/workspace`，這個 mount 必須存在
+    113 +- 如果 host 真正要暴露給 container 的工作區不是 `/home/sa/gemini4/devkit_workspace`，就要同步改 `fsdevkit.service`
+    114 +
+    115 +## 目前是否足以支援新架構
+    116 +
+    117 +### 可以的部分
+    118 +
+    119 +- Docker 內跑 `fsharp-devkit` server
+    120 +- HTTP MCP 對外服務
+    121 +- default in-proc route
+    122 +- health check
+    123 +- 透過 systemd 在 container host 上管理 container
+    124 +
+    125 +### 還不夠的部分
+    126 +
+    127 +- 沒有把 legacy `netfx` host artifact 一起包進 container
+    128 +- 沒有在 container 內啟動 `ProcSupervisor`
+    129 +- 沒有在 container 內提供完整 `create_fsi_host` 所需的 out-of-proc host runtime 拓樸
+    130 +
+    131 +所以目前這份 Docker 方案，應理解為：
+    132 +
+    133 +- `server-only container`
+    134 +
+    135 +而不是：
+    136 +
+    137 +- `full multi-host execution fabric in one container`
+    138 +
+    139 +## 常用指令
+    140 +
+    141 +重新 build image 並重裝服務：
+    142 +
+    143 +```bash
+    144 +bash /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/build.host.sh
+    145 +```
+    146 +
+    147 +不重 build，只重裝服務：
+    148 +
+    149 +```bash
+    150 +bash /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh
+    151 +```
+    152 +
+    153 +啟動服務：
+    154 +
+    155 +```bash
+    156 +bash /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/start.sh
+    157 +```
+    158 +
+    159 +移除服務：
+    160 +
+    161 +```bash
+    162 +bash /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit/uninstall.sh
+    163 +```
+    164 +
+    165 +## 變更 Host 路徑時要改哪裡
+    166 +
+    167 +如果 container host 不再用 `/home/sa/gemini4`，至少要一起檢查：
+    168 +
+    169 +- `fsdevkit.service`
+    170 +  - 兩條 `-v` mount
+    171 +- `Docker build` 的 context root
+    172 +  - 必須仍包含 `mcp/FSharp.MCP.DevKit` 和 `mcp/csharp-sdk`
+    173 +
+    174 +`build.host.sh` 現在不再寫死 `/home/sa/gemini4`，只要腳本本身仍位於：
+    175 +
+    176 +- `<context-root>/mcp/docker/FSharp.MCP.DevKit`
+    177 +
+    178 +它就能自動推導正確的 build context。
+
+
+› .netfx 版本的 fsi host 不需要進 container
+
+
+• 那就更明確了：目前這份 Docker 方向是對的，而且應該明寫成這樣。
+
+  結論：
+
+  - .NET Framework 的 fsi host 不需要進 container
+  - Docker 版應只承載 fsharp-devkit server
+  - 所以我剛剛加的 FSI_ENABLE_REMOTE_CLIENT=false 是合理的，因為 container 內本來就不該去連舊的 localhost:8081 fsihost
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 不需要再把 netfx host artifact 打進 image
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service 也不需要幫你預起任何 fsihost
+
+  你前面提醒的另一點我也同意：
+
+  - Docker build context 仍應以 /home/sa/gemini4 那種 root 為準
+  - 所以 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 的 COPY mcp/csharp-sdk/ 才是正確的
+  - 我已經改回來了
+
+  我剛補的 /workspace/home/mcp/docker/FSharp.MCP.DevKit/README.md 目前已經把這個定位寫進去：
+
+  - server-only container
+  - .netfx fsi host 不進 container
+  - volume mapping 只影響 runtime path，不影響 build context
+  - build.host.sh 對你原本 /home/sa/gemini4 佈局是相容的
+
+  如果你要，我下一步就把這個 README 和前面 Docker 相關改動一起 commit + push。
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› 改吧，不過印象中沒有 remote ，所以也許 commit 即可
+
+
+• 我先收斂 Docker 這一段的改動範圍，只處理 container server-only 這條線，然後做 commit 不 push。先確認目前變更集沒有混入別的東西。
+
+• Ran git status --short
+  └  M src/FSharp.MCP.DevKit.Server/Program.fs
+    ?? notes/00018.txt
+
+• Explored
+  └ Read README.md
+
+• Ran git diff -- src/FSharp.MCP.DevKit.Server/Program.fs /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile /workspace/home/mcp/docker/FSharp.MCP.DevKit/
+  │ fsdevkit.service /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh /workspace/home/mcp/docker/
+  │ FSharp.MCP.DevKit/README.md
+  └ fatal: /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile: '/workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile' is outside repository at '/workspace/home/mcp/
+    FSharp.MCP.DevKit'
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我剛核對到一個關鍵事實：/workspace/home/mcp/docker/FSharp.MCP.DevKit 不在目前這個 git repo 裡，所以現在這些 Docker 檔不能跟 /workspace/home/mcp/FSharp.MCP.DevKit 一起
+  commit。我要先確認它是不是 /workspace/home/mcp 那層的另一個 repo。
+
+• Ran git -C /workspace/home/mcp rev-parse --show-toplevel 2>/dev/null || true
+  └ (no output)
+
+• Ran git -C /workspace/home/mcp/docker/FSharp.MCP.DevKit rev-parse --show-toplevel 2>/dev/null || true
+  └ /workspace/home/mcp/docker
+
+• Ran git -C /workspace/home/mcp status --short 2>/dev/null || true
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我分清楚了：
+
+  - /workspace/home/mcp/FSharp.MCP.DevKit 這個 repo 目前只有 src/FSharp.MCP.DevKit.Server/Program.fs 的 Docker 相關改動。
+  - Docker 檔案本身在另一個 repo：/workspace/home/mcp/docker。
+
+  所以正確做法會是：
+
+  1. 在 FSharp.MCP.DevKit repo commit Program.fs
+  2. 在 docker repo commit Dockerfile、.sh、README.md、fsdevkit.service
+
+  我先看一下 docker repo 的變更集，確認只包含這輪 Docker 調整。
+
+• Ran git -C /workspace/home/mcp/docker status --short
+  └  M FSharp.MCP.DevKit/Dockerfile
+     M FSharp.MCP.DevKit/fsdevkit.service
+    … +4 lines
+    ?? FSharp.MCP.DevKit/build.host.sh
+    ?? FSharp.MCP.DevKit/re-deploy.host.sh
+
+• Ran git -C /workspace/home/mcp/docker diff -- FSharp.MCP.DevKit/Dockerfile FSharp.MCP.DevKit/fsdevkit.service FSharp.MCP.DevKit/build.host.sh
+  │ FSharp.MCP.DevKit/re-deploy.host.sh FSharp.MCP.DevKit/README.md
+  └ diff --git a/FSharp.MCP.DevKit/Dockerfile b/FSharp.MCP.DevKit/Dockerfile
+    index 728d7a3..abd9d60 100644
+    … +45 lines
+     ExecStopPost=-/usr/bin/docker rm -f fsharp-mcp-devkit-test
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我會分兩個 commit，而且都只 commit 這輪相關檔案，不碰你那個未追蹤的 notes/00018.txt，也不碰 docker repo 裡 PulseTrade.Mcp.Server 的既有變更。
+
+• Ran git add src/FSharp.MCP.DevKit.Server/Program.fs && git commit -m "feat: allow disabling remote FSI client via env"
+  └ [20260322_001.multi-agent-fsi-platform 5a0112d] feat: allow disabling remote FSI client via env
+     1 file changed, 12 insertions(+), 1 deletion(-)
+
+• Ran git -C /workspace/home/mcp/docker add FSharp.MCP.DevKit/Dockerfile FSharp.MCP.DevKit/fsdevkit.service FSharp.MCP.DevKit/build.host.sh
+  │ FSharp.MCP.DevKit/re-deploy.host.sh FSharp.MCP.DevKit/README.md && git -C /workspace/home/mcp/docker commit -m "ops: align FSharp.MCP.DevKit Docker deployment with ser
+  │ ver-only container"
+  └ [master 7ab2e40] ops: align FSharp.MCP.DevKit Docker deployment with server-only container
+     5 files changed, 215 insertions(+), 4 deletions(-)
+     create mode 100644 FSharp.MCP.DevKit/README.md
+     create mode 100644 FSharp.MCP.DevKit/build.host.sh
+     create mode 100644 FSharp.MCP.DevKit/re-deploy.host.sh
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再確認兩個 repo 的工作樹狀態，確保只留下你本來就有的未追蹤/既有變更。
+
+• Ran git status --short
+  └ ?? notes/00018.txt
+
+• Ran git -C /workspace/home/mcp/docker status --short
+  └  M PulseTrade.Mcp.Server/Dockerfile
+     M PulseTrade.Mcp.Server/build.host.sh
+     M PulseTrade.Mcp.Server/pulsetrade-mcp.service
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已改完，而且只做 commit，沒有 push。
+
+  兩個 commit：
+
+  - /workspace/home/mcp/FSharp.MCP.DevKit: 5a0112d feat: allow disabling remote FSI client via env
+  - /workspace/home/mcp/docker: 7ab2e40 ops: align FSharp.MCP.DevKit Docker deployment with server-only container
+
+  結果整理：
+
+  - src/FSharp.MCP.DevKit.Server/Program.fs
+      - 新增 FSI_ENABLE_REMOTE_CLIENT 環境變數
+      - Docker/container 可明確關掉舊 remote FSI client 路徑
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile
+      - 保持 COPY mcp/csharp-sdk/，符合你原本 /home/sa/gemini4 build context
+      - 加上 FSI_ENABLE_REMOTE_CLIENT=false
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service
+      - 加上 FSI_ENABLE_REMOTE_CLIENT=false
+      - 保留你原本 /home/sa/gemini4 的 volume 對應
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh
+      - 現在用腳本相對路徑推導 build context
+      - 對 /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit 這種佈局是相容的
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/re-deploy.host.sh
+      - 一樣改成相對路徑版本
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/README.md
+      - 已補 docker 部署說明
+      - 特別寫清楚 build context 與 volume mapping 的影響
+
+  驗證：
+
+  - dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1 通過
+  - docker 目錄下所有 .sh 都通過 bash -n
+
+  目前狀態：
+
+  - /workspace/home/mcp/FSharp.MCP.DevKit 還有一個未追蹤的 notes/00018.txt，我沒動
+  - /workspace/home/mcp/docker 還有 PulseTrade.Mcp.Server/* 的既有未提交變更，我也沒碰
+
+  如果你要，我下一步可以把這兩邊的變更再補成一份簡短 deploy checklist。
+
+
+› FSharp.MCP.DevKit 專案是要 push 的
+
+
+• 我現在只推 /workspace/home/mcp/FSharp.MCP.DevKit 這個 repo 的 commit；docker repo 先不動。
+
+• Ran git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       c951f5b..5a0112d  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已推上 /workspace/home/mcp/FSharp.MCP.DevKit。
+
+  - branch: 20260322_001.multi-agent-fsi-platform
+  - commit: 5a0112d feat: allow disabling remote FSI client via env
+
+  docker 那邊我沒有推。
+
+
+› notes 下的東西都要進 git
+
+
+• 我先檢查 notes 裡目前還沒進版控的是哪一份，確認內容後直接補進 git 並推上同一個 branch。
+
+• Ran git status --short notes
+  └ ?? notes/00018.txt
+
+• Explored
+  └ List notes
+    Read 00018.txt
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• notes/00018.txt 是完整的工作紀錄，不是空白或暫存垃圾；我直接把它補進 git、commit，然後推到同一個 branch。
+
+• Ran git add notes/00018.txt && git commit -m "docs: add note 00018 for MCP transport debugging" && git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       5a0112d..e89c830  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已補進 git 並推上。
+
+  - branch: 20260322_001.multi-agent-fsi-platform
+  - commit: e89c830 docs: add note 00018 for MCP transport debugging
+
+  現在 notes/00018.txt 已在版控裡。

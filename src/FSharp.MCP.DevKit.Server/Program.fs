@@ -1,5 +1,7 @@
 module FSharp.MCP.DevKit.Server.Program
 
+open Akka.Actor
+open Akka.Configuration
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Http
@@ -12,6 +14,7 @@ open Microsoft.Extensions.Logging
 open Microsoft.Extensions.Hosting.WindowsServices
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
+open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Core
 
 [<McpServerResourceType>]
@@ -79,6 +82,29 @@ let getServerUrls (argv: string array) =
     |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
     |> Option.defaultValue "http://0.0.0.0:5000"
 
+let getProcSupervisorPath (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("FSI_PROC_SUPERVISOR_PATH")
+    let argValue = tryGetCommandLineValue "--proc-supervisor-path" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
+    |> List.choose id
+    |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
+    |> Option.defaultValue "akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor"
+
+let getAkkaClientConfig () =
+    let configPath = IO.Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+    let configContent = IO.File.ReadAllText(configPath)
+    ConfigurationFactory.ParseString(configContent)
+
+let getEnableProcSupervisor () =
+    let value = Environment.GetEnvironmentVariable("FSI_ENABLE_PROC_SUPERVISOR")
+    if String.IsNullOrWhiteSpace(value) then
+        true
+    else
+        not (
+            value.Equals("0", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("no", StringComparison.OrdinalIgnoreCase))
 
 [<EntryPoint>]
 let main argv =
@@ -105,10 +131,47 @@ let main argv =
                 || value.Equals("false", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("no", StringComparison.OrdinalIgnoreCase))
 
+    let enableProcSupervisor = getEnableProcSupervisor ()
+    let procSupervisorPath = getProcSupervisorPath argv
+
+    if enableRemoteClient || enableProcSupervisor then
+        builder.Services.AddSingleton<ActorSystem>(fun _ ->
+            let akkaConfig = getAkkaClientConfig ()
+            ActorSystem.Create("McpClientSystem", akkaConfig))
+        |> ignore
+
+    if enableProcSupervisor then
+        builder.Services.AddSingleton<IProcSupervisorClient>(fun serviceProvider ->
+            let actorSystem = serviceProvider.GetRequiredService<ActorSystem>()
+            ProcSupervisorClient(actorSystem, procSupervisorPath) :> IProcSupervisorClient)
+        |> ignore
+
+        builder.Services.AddSingleton<IFsiSupervisorClient>(fun serviceProvider ->
+            let actorSystem = serviceProvider.GetRequiredService<ActorSystem>()
+            FsiSupervisorClient(actorSystem) :> IFsiSupervisorClient)
+        |> ignore
+
     // Register FSI service
     builder.Services.AddSingleton<FsiMcpService>(fun serviceProvider ->
         let logger = serviceProvider.GetRequiredService<ILogger<FsiMcpService>>()
-        new FsiMcpService(logger, enableRemoteClient = enableRemoteClient)
+        let procSupervisorClient =
+            if enableProcSupervisor then
+                Some(serviceProvider.GetRequiredService<IProcSupervisorClient>())
+            else
+                None
+
+        let fsiSupervisorClient =
+            if enableProcSupervisor then
+                Some(serviceProvider.GetRequiredService<IFsiSupervisorClient>())
+            else
+                None
+
+        new FsiMcpService(
+            logger,
+            enableRemoteClient = enableRemoteClient,
+            ?procSupervisorClient = procSupervisorClient,
+            ?fsiSupervisorClient = fsiSupervisorClient
+        )
     )
     |> ignore
 
@@ -155,10 +218,17 @@ let main argv =
                 {| status = "ok"
                    transport = if enableStdio then "http+stdio-or-http" else "http-only"
                    remoteClient = if enableRemoteClient then "enabled" else "disabled"
+                   procSupervisor = if enableProcSupervisor then "enabled" else "disabled"
+                   procSupervisorPath = procSupervisorPath
                    isWindowsService = isWindowsService
                    serviceName = serviceName |}))
     )
     |> ignore
+
+    if enableRemoteClient || enableProcSupervisor then
+        let actorSystem = host.Services.GetRequiredService<ActorSystem>()
+        host.Lifetime.ApplicationStopping.Register(fun () -> actorSystem.Terminate() |> ignore)
+        |> ignore
 
     // Run the host
     host.RunAsync().GetAwaiter().GetResult()

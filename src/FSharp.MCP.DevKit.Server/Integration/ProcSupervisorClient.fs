@@ -65,10 +65,23 @@ module private ProcSupervisorAdapters =
           Spec = snapshot.spec |> Option.map ofContractSpec
           LastError = snapshot.lastError }
 
-type ProcSupervisorClient(supervisor: IActorRef, ?defaultTimeout: TimeSpan) =
+type ProcSupervisorClient(supervisorResolver: unit -> Task<IActorRef>, ?defaultTimeout: TimeSpan) =
     let timeout = defaultArg defaultTimeout (TimeSpan.FromSeconds 5.0)
 
-    let askSnapshot message = supervisor.Ask<ProcSnapshot>(message, timeout)
+    new (supervisor: IActorRef, ?defaultTimeout: TimeSpan) =
+        ProcSupervisorClient((fun () -> Task.FromResult(supervisor)), ?defaultTimeout = defaultTimeout)
+
+    new (actorSystem: ActorSystem, supervisorPath: string, ?defaultTimeout: TimeSpan) =
+        let timeout = defaultArg defaultTimeout (TimeSpan.FromSeconds 5.0)
+
+        ProcSupervisorClient(
+            (fun () ->
+                task {
+                    let selection = actorSystem.ActorSelection(supervisorPath)
+                    return! selection.ResolveOne(timeout)
+                }),
+            ?defaultTimeout = defaultTimeout
+        )
 
     interface IProcSupervisorClient with
         member _.StartProc(procId: string, spec: ProcHostSpec) =
@@ -77,19 +90,22 @@ type ProcSupervisorClient(supervisor: IActorRef, ?defaultTimeout: TimeSpan) =
                     { procId = procId
                       spec = ProcSupervisorAdapters.toContractSpec procId spec }
 
-                let! snapshot = askSnapshot startMessage
+                let! supervisor = supervisorResolver ()
+                let! snapshot = supervisor.Ask<ProcSnapshot>(startMessage, timeout)
                 return ProcSupervisorAdapters.ofSnapshot snapshot
             }
 
         member _.StopProc(procId: string, force: bool) =
             task {
-                let! snapshot = askSnapshot { procId = procId; force = force }
+                let! supervisor = supervisorResolver ()
+                let! snapshot = supervisor.Ask<ProcSnapshot>({ procId = procId; force = force }, timeout)
                 return ProcSupervisorAdapters.ofSnapshot snapshot
             }
 
         member _.GetProcInfo(procId: string) =
             task {
-                let! snapshot = askSnapshot { procId = procId }
+                let! supervisor = supervisorResolver ()
+                let! snapshot = supervisor.Ask<ProcSnapshot>({ procId = procId }, timeout)
 
                 if String.IsNullOrWhiteSpace snapshot.procId then
                     return None
@@ -99,6 +115,7 @@ type ProcSupervisorClient(supervisor: IActorRef, ?defaultTimeout: TimeSpan) =
 
         member _.ListProcInfo() =
             task {
+                let! supervisor = supervisorResolver ()
                 let! snapshots = supervisor.Ask<ProcSnapshot[]>(GetAllProcInfo, timeout)
                 return snapshots |> Array.toList |> List.map ProcSupervisorAdapters.ofSnapshot
             }
