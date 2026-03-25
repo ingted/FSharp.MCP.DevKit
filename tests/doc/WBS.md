@@ -199,3 +199,4 @@
 | TT43 | 新增 `McpClientSmokeTests.fs` / `McpClientE2ETests.fs` | client-based smoke 與總體 runner | FSI persistence/reset/async/isolation/result query 可回歸 | done |
 | TT44 | 補 `FSharpCode` result query 測試 | tool/service/client 三層測試 | `records1/records2` query 可回歸 | done |
 | TT45 | 重新執行 `dotnet test -f net10.0` | 測試結果 | client/E2E/T41 補齊後仍全數通過 | done |
+| TT46 | 補真 out-of-proc net10 multi-host 隔離測試 | 會啟動本地 `Akka.Proc.Supervisor` 與兩個 `procnode` host 的 integration test | 兩個 host 下同名 session 執行不同 F# code 並可各自讀回正確值 | done |

@@ -325,11 +325,11 @@ WP01-WP09 -> WP10
 
 | ID | 優化項 | 原因 | 建議產出 | 建議優先度 | 狀態 |
 | --- | --- | --- | --- | --- |
-| O1 | `.NET 10` session reset 正式化 | 已完成：`Net10HostBackend.ResetSession` 不再是 stub，且 reset contract 已落到上游 `FAkka` packages | `FAkka.Fsi.Contracts 10.0.103`、`FAkka.FSI.Supervisor 1.562.100.201-dgx.3`、本 repo unit/regression 測試 | P0 | done |
+| O1 | `.NET 10` session reset 正式化 | 已完成：`Net10HostBackend.ResetSession` 不再是 stub，且 reset contract 已落到上游 `FAkka` packages | `FAkka.Fsi.Contracts 10.1.201`、`FAkka.FSI.Supervisor 1.562.101.201-dgx.5`、本 repo unit/regression 測試 | P0 | done |
 | O2 | `McpClientHarness` repo 外重用體驗 | 已完成第一段：補上 `examples/FSharp.MCP.DevKit.DemoClient`，讓外部 consumer 不必從裸 `.fsx` + 手補 DLL 開始 | demo client project、demo-client smoke tests、`DEMO.md` 使用說明 | P1 | done |
 | O3 | routed execution onboarding | 已完成第一段：新增 `ensure_fsi_route`，並補 tool description、client helper、demo flow | `ensure_fsi_route`、client harness helper、`DEMO.md` onboarding flow、MCP client smoke tests | P1 | done |
 | O4 | `FSharpCode` result query 序列化策略 | 現在對不可直接序列化物件採 fallback，足夠可用但還不夠穩 | 補 richer serializer policy 與更多 result-shape regression tests | P1 | todo |
-| O5 | 真 out-of-proc net10 E2E | 目前 `.NET 10` backend 主要靠 fake supervisor/client 測試；真正跨 proc 仍值得補 | 增加可啟動 `FAkka.FSI.Supervisor` 的 integration/e2e suite | P2 | todo |
+| O5 | 真 out-of-proc net10 E2E | 已完成：補上會真起 `Akka.Proc.Supervisor` 並透過 `create_fsi_host` 啟兩個 `net10` procnode host 的 integration test | real proc supervisor / multi-host isolation integration test、`dotnet test -f net10.0` 驗證 | P2 | done |
 | O6 | MCP F# façade 參數規約化 | 本輪已證實真 MCP client 對 F# optional 參數與 F# DU/option JSON 很敏感；目前只修了高流量 control/result tools | audit 全部 MCP tools/resources，將高風險 optional/DU surface 收斂到 transport-safe contract | P1 | todo |
 4. out-of-proc host 建立流程一律經 `ProcSupervisor`
 5. host/session health 可查

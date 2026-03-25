@@ -1,0 +1,241 @@
+› - FAkka.FSI.Supervisor 1.562.100.201-dgx.5
+    - FAkka.Proc.Supervisor 1.562.100.201-dgx.4
+  有用到且大量依賴 akka.net 所以 1.562 是對應 akka 的 1.5.62 正確，後面的 100.201 應該要改 101.201
+
+
+• Context compacted
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先核對 PulseTrade.fs 目前三個 package 的版本與參考關係，然後按你新的 versioning 規則把它們重新對齊，再重 build / 測 / push NuGet。
+
+• Ran git status --short
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +393 lines
+    ?? Libs/Akka.FSI.Supervisor/README.md
+    ?? Libs/Akka.Proc.Supervisor/README.md
+
+• Explored
+  └ Read Akka.FSI.Supervisor.fsproj, FAkka.Fsi.Contracts.fsproj, Akka.Proc.Supervisor.fsproj
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要先把三個 package 的版本號重新對齊成你剛指定的 scheme，然後重 build、重跑 bootstrap 驗證，最後再推 NuGet，避免 ProcSupervisor 吃到不一致的 contracts/supervisor 版號。
+
+• Edited 2 files (+4 -4)
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj (+1 -1)
+     9      <WarningsAsErrors>true</WarningsAsErrors>
+    10 -        <Version>1.562.100.201-dgx.4</Version>
+    10 +        <Version>1.562.101.201-dgx.5</Version>
+    11          <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj (+3 -3)
+    16      <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    17 -        <Version>1.562.100.201-dgx.3</Version>
+    17 +        <Version>1.562.101.201-dgx.4</Version>
+    18          <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+       ⋮
+    42      <PackageReference Include="Argu" Version="6.2.5" />
+    43 -    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.100.201-dgx.4" Condition="'$(Configuration)' == 'Release'" />
+    43 +    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.5" Condition="'$(Configuration)' == 'Release'" />
+    44      <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+       ⋮
+    48      <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    49 -    <PackageReference Include="FAkka.Fsi.Contracts" Version="10.0.103.1" />
+    49 +    <PackageReference Include="FAkka.Fsi.Contracts" Version="10.1.201" />
+    50      <PackageReference Include="MimeKit" Version="4.15.1" />
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• build 已經開始跑，我接著收斂 release/debug 結果，然後先用 verify_bootstrap_procnode.fsx 重驗一遍，確保不是只版本號改對而已。
+
+• Ran dotnet build Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj -c Release -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (in 174 ms).
+    … +19 lines
+
+    Time Elapsed 00:00:05.66
+
+• Ran dotnet build Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj -c Release -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (in 157 ms).
+    … +20 lines
+
+    Time Elapsed 00:00:06.40
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+• Waited for background terminal · dotnet build Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Debug -m:1
+
+• Ran dotnet build Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Debug -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3 requires FSharp.Core
+    … +30 lines
+
+    Time Elapsed 00:00:08.72
+
+• Ran dotnet fsi Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx
+  └ PASS
+    clusterInfo={"systemName":"proc-system-8696d40f","address":"akka.tcp://proc-system-8696d40f@127.0.0.1:41221","roles":[]}
+    … +46 lines
+    stdout>        probeIntervalMs = None }
+    stdout>   lastError = None }
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• bootstrap 腳本正在跑。我先看它是否能把預設 proc node 起來，再決定要不要直接進 Release 的 ProcSupervisor build/push。
+
+• Ran dotnet build Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3 requires FSharp.Core
+    … +20 lines
+
+    Time Elapsed 00:00:00.76
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• ProcSupervisor 的 release restore 現在卡的是 NuGet index propagation，不是程式本體。Debug 已經證明 role/bootstrap 修正有效，我接著用本地 package source 把 Release 打出來並推送，避免卡在 nuget.org 還沒
+  同步看到新版本。
+
+• Waited for background terminal · cat > /tmp/pulsetrade-nuget.config <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="contracts-local" value="/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Release" />
+    <add key="fsi-supervisor-local" value="/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Release" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+EOF
+dotnet build Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release -m:1 --configfile /tmp/pulsetrade-nuget.config
+
+• Ran cat > /tmp/pulsetrade-nuget.config <<'EOF'
+  │ <?xml version="1.0" encoding="utf-8"?>
+  │ <configuration>
+  │ … +10 lines
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3 requires FSharp.Core
+    … +30 lines
+
+    Time Elapsed 00:00:09.50
+
+• Ran curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.contracts/index.json
+  └ {
+      "versions": [
+    … +5 lines
+      ]
+    }
+
+• Ran curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.supervisor/index.json
+  └ {
+      "versions": [
+    … +10 lines
+      ]
+    }
+
+• Ran curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.proc.supervisor/index.json
+  └ {
+      "versions": [
+    … +7 lines
+      ]
+    }
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• NuGet push 已經成功回 Created，我再補查一次 package URL 直接是否可取，然後把這次版本修正 commit/push 到 patch branch。
+
+• Ran curl -I -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.contracts/10.1.201/fakka.fsi.contracts.10.1.201.nupkg
+  └ HTTP/1.1 404 Not Found
+    x-ms-request-id: c34c786b-c01e-001d-0338-bcb04b000000
+    … +11 lines
+
+    curl: (22) The requested URL returned error: 404
+
+• Ran curl -I -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.supervisor/1.562.101.201-dgx.5/fakka.fsi.supervisor.1.562.101.201-dgx.5.nupkg
+  └ curl: (22) The requested URL returned erroHTTP/1.1 404 Not Found
+    x-ms-request-id: b3c4a896-101e-0031-3138-bc5ce4000000
+    … +11 lines
+
+    r: 404
+
+• Ran curl -I -fsSL https://api.nuget.org/v3-flatcontainer/fakka.proc.supervisor/1.562.101.201-dgx.4/fakka.proc.supervisor.1.562.101.201-dgx.4.nupkg
+  └ HTTP/1.1 404 Not Found
+    x-ms-request-id: 3ef478f3-501e-0042-2e38-bc0477000000
+    … +11 lines
+
+    curl: (22) The requested URL returned error: 404
+
+• Ran git diff -- Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj
+  └ diff --git a/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj b/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj
+    index a24b922..2b73754 100644
+    … +56 lines
+       </PropertyGroup>
+       <PropertyGroup>
+
+• Ran git branch --show-current
+  └ 20260325_001.fix-proc-supervisor-bootstrap-role
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 版本對齊與 packaging 修正已經都驗過了，我現在只把三個 .fsproj 精準 commit 上 patch branch，不碰那些大量 bin/obj 髒檔。
+
+• Ran git add Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj && git commit -m "build: align
+  │ fsi package versions with akka 1.5.62 and fsharp core 10.1.201" && git push
+  └ To github.com:ingted/PulseTrade.fs.git
+       88f1515..a7f5f76  20260325_001.fix-proc-supervisor-bootstrap-role -> 20260325_001.fix-proc-supervisor-bootstrap-role
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已處理完並推上 PulseTrade.fs 的 patch branch。
+
+  結果：
+
+  - FAkka.Fsi.Contracts 10.1.201
+  - FAkka.FSI.Supervisor 1.562.101.201-dgx.5
+  - FAkka.Proc.Supervisor 1.562.101.201-dgx.4
+
+  已改檔：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj
+
+  已推送：
+
+  - branch: 20260325_001.fix-proc-supervisor-bootstrap-role
+  - latest commit: a7f5f76
+  - 先前 bootstrap/role 修正 commit: 88f1515
+
+  為什麼之前會缺 FAkka.Fsi.Contracts：
+
+  - Akka.Proc.Supervisor 的 debug 輸出資料夾裡帶的是舊版 FAkka.Fsi.Contracts
+  - 但它 spawn 的 Akka.FSI.Supervisor 期望的是較新版 contracts
+  - 結果 child proc 啟動時就因 assembly version mismatch 爆掉
+
+  這次修法：
+
+  - contracts 版號正式對齊到 FSharp.Core 10.1.201
+  - Akka.Proc.Supervisor 的 release package references 也改成吃新版本
+  - Akka.Proc.Supervisor 的 debug 組態加了直接 ProjectReference 到 FAkka.Fsi.Contracts，避免再把舊 DLL 殘留在輸出資料夾
+
+  驗證：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx 實跑 PASS
+  - FAkka.Fsi.Contracts release build/push 成功
+  - FAkka.FSI.Supervisor release build/push 成功
+  - FAkka.Proc.Supervisor release build/push 成功
+  - Akka.Proc.Supervisor debug bootstrap 測試成功，/api/proc/nodes 不再是空的
+
+  補充：
+
+  - NuGet flatcontainer index 目前還有 propagation lag，短時間內查版本列表可能還看不到新版本，但 push 已經成功回 Created
+
+  下一步就可以回 /workspace/home/mcp/FSharp.MCP.DevKit 把 package 參考升到這三個新版本。

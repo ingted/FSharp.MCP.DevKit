@@ -1,0 +1,6 @@
+計畫步驟=1. 升級 FSharp.MCP.DevKit 對 FAkka.FSI.Supervisor / FAkka.Proc.Supervisor 的 NuGet 參考到 1.562.101.201 系列 2. 補真實 out-of-proc net10 multi-host 隔離 integration test 3. 用本地 package source restore/build/test 驗證 4. 更新 WBS/README/SD/DevLog
+執行摘要=已升級 Server.fsproj 套件版本，新增 RealNet10HostIsolationTests，實際啟動 Akka.Proc.Supervisor 與兩個 procnode host 驗證 host 隔離。
+變更清單=src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj; tests/RealNet10HostIsolationTests.fs; tests/FSharp.MCP.DevKit.Tests.fsproj; tests/README.md; tests/doc/WBS.md; doc/WBS.md; doc/SD.md; doc/DevLog.md
+驗證指令=dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-local-packages.config; dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests" --no-restore -m:1; dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1; dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1; dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit
+結果=build 通過；整包 net10 test 通過；真實 out-of-proc net10 multi-host 隔離測試通過；check.fsx PASS=16 WARN=1 FAIL=0。
+關聯文件/工單/PR=doc/WBS.md O5; tests/doc/WBS.md TT46; /workspace/home/work/PulseTrade.fs branch 20260325_001.fix-proc-supervisor-bootstrap-role

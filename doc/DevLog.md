@@ -225,7 +225,7 @@
   - 在上游 `FAkka.Fsi.Contracts` 新增 `ResetSession / ResetSessionResult`
   - 在上游 `FAkka.FSI.Supervisor` 實作 per-session reset，透過 supervisor 移除 session actor 並回覆 reset result
   - 修正新增 reset contract 帶來的 record literal 型別歧義，將 `GetSessionInfo/ListSessions/Checkpoint/Fork` 相關 request 顯式標註
-  - 發布 `FAkka.Fsi.Contracts 10.0.103` 與 `FAkka.FSI.Supervisor 1.562.100.201-dgx.3`
+  - 發布 `FAkka.Fsi.Contracts 10.1.201` 與 `FAkka.FSI.Supervisor 1.562.101.201-dgx.5`
   - 在本 repo 更新 `IFsiSupervisorClient`、`FsiSupervisorClient`、`Net10HostBackend.ResetSession`
   - 補 `Net10HostBackendTests` 與 `SmokeRegressionTests` 的 reset coverage
 - 結果：
