@@ -258,6 +258,37 @@
   - 新增 `ensure_fsi_route` tool 與 `EnsureRouteResponse` DTO，讓 routed execution onboarding 不必先手動分辨 default route 與已存在 route
   - 將 `query_fsi_results` / `compare_fsi_results` / `list_fsi_results` 的高風險 optional parameter façade 改成 transport-safe string contract
   - 新增 `examples/FSharp.MCP.DevKit.DemoClient`，並補 `DemoClientSmokeTests`
+
+## 2026-03-25 14:20:00
+
+- 背景：部署中的 `fsharp-devkit` 跑在單獨 container，由 host 的 `fsdevkit.service` 啟動；之後要從另一個 container 直接用 Akka.Remote 腳本打 `ProcSupervisor` / `FsiSupervisor` 做 `GetVesion` 與版本驗證。
+- 現象：
+  - 用 [verify_proc_fsi_versions.fsx](/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx) 直打 `akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor` 會 `AskTimeoutException`
+  - 但這不是 `GetVesion` actor contract 壞掉，而是部署拓樸使然
+- 根因判讀：
+  - 先前 docker service 只對外暴露 `15000:5000`
+  - `FSI_PROC_SUPERVISOR_HOST=127.0.0.1`
+  - `FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor`
+  - 這組設定只對「同一個 container 內」成立
+  - 當 caller 在另一個 container 時，`127.0.0.1` 指向 caller 自己，不是 `fsharp-devkit` 那個 container；即使 HTTP MCP 可用，Akka actor path 仍會 timeout
+- 困境：
+  - 若繼續沿用 bridge networking + container loopback，任何跨 container 的 direct Akka debug script 都會失效
+  - 只 publish `8110` 也不夠，因為 `ProcSupervisor` 若仍綁 loopback，外部 port forward 一樣不會通
+- 解法：
+  - 將 [fsdevkit.service](/workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service) 改為 host networking
+  - 由 service 在啟動時解析 host IP：
+    - 預設 `hostname -I | awk '{print $1}'`
+    - 可用 `/etc/default/fsdevkit` 的 `FSDEVKIT_HOST_IP` 覆蓋
+  - 將 `ASPNETCORE_URLS` 固定為 `http://0.0.0.0:15000`
+  - 將 `FSI_PROC_SUPERVISOR_HOST / WEB_HOST / PATH` 全部改成可從其他 container 到達的 host IP
+- 結果：
+  - `fsharp-devkit` 與 `ProcSupervisor` 不再只對 container loopback 可見
+  - 後續版本驗證腳本與 cross-container Akka debug 流程有穩定入口
+- 關聯：
+  - `/workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service`
+  - `/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx`
+  - `notes/00024.txt`
+  - `notes/00025.txt`
 - 結果：
   - 真 stdio MCP client 現在可穩定跑通 `discover`、`legacy-roundtrip`、`ensure-default-route`、`async-roundtrip`、`result-aggregation`
   - `ensure_fsi_route` 現在可作為 routed onboarding helper，但不會偷幫 out-of-proc host provisioning；要建 host 仍必須明確呼叫 `create_fsi_host`

@@ -677,3 +677,867 @@
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 • 測試已全綠，現在就進 release 線：把 GetVesion 和既有 fail 修正一起 commit/push 到 PulseTrade.fs，然後升版發 NuGet，再回到 fsharp-devkit 更新參考並重新驗證。
+
+
+
+• Explored
+  └ Search <Version>|PackageVersion|FAkka.FSI.Supervisor|FAkka.Proc.Supervisor|FAkka.Fsi.Contracts in *.fsproj
+    Read FAkka.Fsi.Contracts.fsproj, Akka.Proc.Supervisor.fsproj, Akka.FSI.Supervisor.fsproj
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 版本我會只做必要遞增，不碰 assembly version 主幹：Contracts -> 10.1.201.2，FSI.Supervisor -> dgx.7，Proc.Supervisor -> dgx.6。這樣 fsharp-devkit 只需要更新 package
+  version，不需要改既有 assembly-version 相關邏輯或測試判斷。
+
+• Explored
+  └ Read PostBuildEvent.ps1
+
+• Edited 3 files (+5 -5)
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj (+1 -1)
+     9      <WarningsAsErrors>true</WarningsAsErrors>
+    10 -        <Version>1.562.101.201-dgx.6</Version>
+    10 +        <Version>1.562.101.201-dgx.7</Version>
+    11          <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+
+  └ /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj (+3 -3)
+    16      <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    17 -        <Version>1.562.101.201-dgx.5</Version>
+    17 +        <Version>1.562.101.201-dgx.6</Version>
+    18          <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+       ⋮
+    42      <PackageReference Include="Argu" Version="6.2.5" />
+    43 -    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.6" Condition="'$(Configuration)' == 'Release'" />
+    43 +    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.7" Condition="'$(Configuration)' == 'Release'" />
+    44      <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+       ⋮
+    48      <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    49 -    <PackageReference Include="FAkka.Fsi.Contracts" Version="10.1.201.1" />
+    49 +    <PackageReference Include="FAkka.Fsi.Contracts" Version="10.1.201.2" />
+    50      <PackageReference Include="MimeKit" Version="4.15.1" />
+
+  └ /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (+1 -1)
+    15      <RepositoryType>git</RepositoryType>
+    16 -    <Version>10.1.201.1</Version>
+    16 +    <Version>10.1.201.2</Version>
+    17      <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• source 變更已經收斂到少數幾個檔案，我會只 commit 明確的 source/fsproj/test 檔，不把這個 repo 一堆 bin/obj 噪音一起帶進去。
+
+• Ran git add Libs/FAkka.Fsi.Contracts/Contracts.fs Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj Libs/Akka.FSI.Supervisor/Supervisor.fs Libs/Akka.FSI.Supervisor/
+  │ Akka.FSI.Supervisor.fsproj Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs Libs/Akka.Proc.Supervisor/ProcSupervisor.fs Libs/Akka.Proc.Supervisor/ProcHost.fs Libs/
+  │ Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+  └ (no output)
+
+• Ran git status --short Libs/FAkka.Fsi.Contracts/Contracts.fs Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj Libs/Akka.FSI.Supervisor/Supervisor.fs Libs/
+  │ Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs Libs/Akka.Proc.Supervisor/ProcSupervisor.fs Libs/Akka.Proc.Supervisor/
+  │ ProcHost.fs Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+  └ M  Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs
+    M  Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj
+    … +4 lines
+    M  Libs/FAkka.Fsi.Contracts/Contracts.fs
+    M  Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj
+
+• Ran git commit -m "feat: add supervisor version ops and fix proc tests"
+  └ [20260325_001.fix-proc-supervisor-bootstrap-role 608ff36] feat: add supervisor version ops and fix proc tests
+     8 files changed, 143 insertions(+), 21 deletions(-)
+
+• Ran git push origin 20260325_001.fix-proc-supervisor-bootstrap-role
+  └ To github.com:ingted/PulseTrade.fs.git
+       fd87b04..608ff36  20260325_001.fix-proc-supervisor-bootstrap-role -> 20260325_001.fix-proc-supervisor-bootstrap-role
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• package 發布這段我會保守一點：先 contracts，再 fsi supervisor，再 proc supervisor。最後一個會吃前兩個新版本，所以我要先確認 local package source/restore 路徑，不然會被
+  nuget index propagation 卡住。
+
+• Explored
+  └ Search lib-packs.txt in ..
+    Read apikey.txt
+
+• Ran pwd && git rev-parse --abbrev-ref HEAD
+  └ /workspace/home/work/PulseTrade.fs
+    20260325_001.fix-proc-supervisor-bootstrap-role
+
+• Ran mkdir -p /tmp/pulse-nupkgs && cat > /tmp/pulse-local.config <<'EOF'
+  │ <?xml version="1.0" encoding="utf-8"?>
+  │ <configuration>
+  │ … +7 lines
+  └ (no output)
+
+• Waited for background terminal · dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (in 212 ms).
+    … +12 lines
+
+    Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 8 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal · dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Waited for background terminal
+
+• Waited for background terminal · dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+
+• Ran dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +28 lines
+
+    Passed!  - Failed:     0, Passed:     8, Skipped:     0, Total:     8, Duration: 26 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+─ Worked for 1m 19s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• release pack 先把 contracts 和 fsi supervisor 拉出來；proc supervisor 最後跑，因為它要解析到前兩個剛出的新版本。
+
+• Ran dotnet pack Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj -c Release --configfile /tmp/pulse-local.config -o /tmp/pulse-nupkgs -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (in 203 ms).
+    … +11 lines
+           |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+           | Cannot find drive. A drive with the name 'C' does not exist.
+
+• Ran dotnet pack Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj -c Release --configfile /tmp/pulse-local.config -o /tmp/pulse-nupkgs -m:1
+  └   Determining projects to restore...
+      Restored /workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/FAkka.Fsi.Contracts.fsproj (in 201 ms).
+    … +10 lines
+      Package '/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Release/FAkka.FSI.Supervisor.1.562.101.201-dgx.5.nupkg' already exists at feed
+    'https://www.nuget.org/api/v2/package'.
+
+• Waited for background terminal
+
+• Ran dotnet pack Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release --configfile /tmp/pulse-local.config -o /tmp/pulse-nupkgs -m:1
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +14 lines
+      Package '/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/FAkka.Proc.Supervisor.1.562.101.201-dgx.4.nupkg' already exists at feed
+    'https://www.nuget.org/api/v2/package'.
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• release pack 已經出對的新 nupkg，但這三個 PostBuildEvent.ps1 都還有一個舊問題：它們在 bin/Release 內挑 package 的方式會抓到舊版，所以上傳時推到舊檔名。這不影響新 nupkg 已產
+  出，我會直接用 /tmp/pulse-nupkgs 裡的新檔手動推。
+
+• Explored
+  └ List pulse-nupkgs
+
+• Ran API_KEY=$(cat /Nuget/apikey.txt | tr -d '\r\n'); dotnet nuget push /tmp/pulse-nupkgs/FAkka.Fsi.Contracts.10.1.201.2.nupkg --api-key "$API_KEY" --source
+  │ https://api.nuget.org/v3/index.json --skip-duplicate
+  └ Pushing FAkka.Fsi.Contracts.10.1.201.2.nupkg to 'https://www.nuget.org/api/v2/package'...
+      PUT https://www.nuget.org/api/v2/package/
+      Created https://www.nuget.org/api/v2/package/ 1270ms
+    Your package was pushed.
+
+• Ran API_KEY=$(cat /Nuget/apikey.txt | tr -d '\r\n'); dotnet nuget push /tmp/pulse-nupkgs/FAkka.Proc.Supervisor.1.562.101.201-dgx.6.nupkg --api-key "$API_KEY" --source
+  │ https://api.nuget.org/v3/index.json --skip-duplicate
+  └ Pushing FAkka.Proc.Supervisor.1.562.101.201-dgx.6.nupkg to 'https://www.nuget.org/api/v2/package'...
+      PUT https://www.nuget.org/api/v2/package/
+    … +2 lines
+      Created https://www.nuget.org/api/v2/package/ 1494ms
+    Your package was pushed.
+
+• Ran API_KEY=$(cat /Nuget/apikey.txt | tr -d '\r\n'); dotnet nuget push /tmp/pulse-nupkgs/FAkka.FSI.Supervisor.1.562.101.201-dgx.7.nupkg --api-key "$API_KEY" --source
+  │ https://api.nuget.org/v3/index.json --skip-duplicate
+  └ Pushing FAkka.FSI.Supervisor.1.562.101.201-dgx.7.nupkg to 'https://www.nuget.org/api/v2/package'...
+      PUT https://www.nuget.org/api/v2/package/
+    … +2 lines
+      Created https://www.nuget.org/api/v2/package/ 1433ms
+    Your package was pushed.
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 新版 package 已經上 nuget。現在切回 fsharp-devkit 只做一件事：把 server 參考升到這三個新版本，跑完整 restore/build/test/check，確認沒有因 package 更新引入 regression。
+
+• Ran git status --short
+  └ ?? notes/00024.txt
+    ?? notes/00025.txt
+
+• Explored
+  └ Read FSharp.MCP.DevKit.Server.fsproj
+    Search FAkka\.FSI\.Supervisor|FAkka\.Proc\.Supervisor|FAkka\.Fsi\.Contracts in src
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fsharp-devkit 這邊目前只有 package reference 要升，外加兩個新 note 還沒進版控；我先把 package 升掉，再看 note 內容決定要不要一併收。
+
+• Explored
+  └ Read 00024.txt, 00025.txt
+
+• Edited src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj (+2 -2)
+    80      <PackageReference Include="Akka.Remote" Version="1.5.62" />
+    81 -    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.6" />
+    82 -    <PackageReference Include="FAkka.Proc.Supervisor" Version="1.562.101.201-dgx.5" />
+    81 +    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.7" />
+    82 +    <PackageReference Include="FAkka.Proc.Supervisor" Version="1.562.101.201-dgx.6" />
+    83      <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fsharp-devkit 已升到新 package 版號。接著我跑完整驗證：restore、build、全量 tests、check.fsx。如果這裡有 regression，就不用等到部署端才踩到。
+
+• Ran dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +29 lines
+      Failed to restore /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj (in 677 ms).
+      10 of 12 projects are up-to-date for restore.
+
+• Ran CODEX_THREAD_ID=fsharp-devkit-fakka-getversion-20260325 dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log
+  │ --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/
+  │ home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md
+  └ SessionId   : fsharp-devkit-fakka-getversion-20260325
+    State file  : /workspace/home/codex/fsharp-devkit-fakka-getversion-20260325.state.json
+    … +19 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+• Waited for background terminal · dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1
+
+• Waited for background terminal · dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    requires FSharp.Core (>= 10.0.102 && < 10.1.0) but version FSharp.Core 10.1.201 was resolved.
+    … +41 lines
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : error NU1102:   - Versions from /root/.dotnet/sdk/10.0.201/FSharp/
+    library-packs were not considered
+
+• Ran dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary.
+    … +48 lines
+
+    Time Elapsed 00:00:27.95
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• NuGet index 目前還沒完全看到 FAkka.Proc.Supervisor dgx.6，所以這邊的 restore 先用本地剛 pack 出來的 /tmp/pulse-nupkgs 當 package source 驗證；專案本身仍然指向正式 NuGet 版
+  本，不會改成吃本地檔。
+
+• Ran cat > /tmp/fsharp-devkit-fakka-local.config <<'EOF'
+  │ <?xml version="1.0" encoding="utf-8"?>
+  │ <configuration>
+  │ … +7 lines
+  └ (no output)
+
+• Ran dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-fakka-local.config -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    … +32 lines
+      Restored /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj (in 438 ms).
+      Restored /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj (in 438 ms).
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• dotnet test --no-restore 這裡還在拿舊的 restore graph，所以我改成帶同一份 local-source config 直接跑完整 test。build 已經證明編譯沒問題，現在只差 test graph 重新解到新
+  package。
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --configfile /tmp/fsharp-devkit-fakka-local.config -m:1
+  └ MSBUILD : error MSB1001: Unknown switch.
+        Full command line: '/root/.dotnet/sdk/10.0.201/MSBuild.dll -maxcpucount --verbosity:m -tlp:default=auto --property:EnableDefaultCompileItems=false
+    … +7 lines
+
+    For switch syntax, type "MSBuild -help"
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests" --configfile /tmp/fsharp-devkit-fakka-local.config
+  │ -m:1
+  └ MSBUILD : error MSB1001: Unknown switch.
+        Full command line: '/root/.dotnet/sdk/10.0.201/MSBuild.dll -maxcpucount --verbosity:m -tlp:default=auto --property:EnableDefaultCompileItems=false
+    … +8 lines
+
+    For switch syntax, type "MSBuild -help"
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• dotnet test 不吃 --configfile 這個 CLI 參數，我改用 -p:RestoreConfigFile=... 讓內部 restore 階段讀本地 package source。
+
+• Waited for background terminal · dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 -p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1
+
+• Waited for background terminal · dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests"
+-p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests" -p:RestoreConfigFile=/tmp/
+  │ fsharp-devkit-fakka-local.config -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +41 lines
+    ModelContextProtocol.Core/Debug/net10.0/ModelContextProtocol.Core.dll' because it is being used by another process. [/workspace/home/mcp/csharp-sdk/src/
+    ModelContextProtocol.AspNetCore/ModelContextProtocol.AspNetCore.csproj::TargetFramework=net10.0]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 剛剛那個失敗不是功能 regression，是我自己把兩個 dotnet test 平行跑，讓 csharp-sdk 的 build output 互鎖了。現在改回單一路徑串行驗證。
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 -p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +51 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+• Waited for background terminal · dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 -p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1
+
+• Ran dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 -p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj : warning NU1608: Detected package version outside of dependency constraint: Suave 3.2.3
+    … +52 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fsharp-devkit 這邊只剩 commit/push 和把 port 定義位置講清楚。port 這件事我會分三層說：ProcHost CLI/config、fsharp-devkit create_fsi_host 組參數、FAkka.FSI.Supervisor 本身其
+  實不定 port。
+
+• Explored
+  └ Search Libs/Akka.Proc.Supervisor/ProcHost.fs in FSharp.MCP.DevKit.Server
+    Read McpControlPlaneTools.fs, ProvisioningServices.fs
+    Search /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor in FSharp.MCP.DevKit.Server
+    Search /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor in FSharp.MCP.DevKit.Server
+    Search getFreePort|remote.dot-netty.tcp.port|WebPort of int|Port of int|Host of string|ProcNodeRole of string list in Akka.Proc.Supervisor
+    Read ProcRest.fs, ProcHost.fs
+
+• Ran git status --short
+  └  M src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+    ?? notes/00024.txt
+    ?? notes/00025.txt
+
+• Ran git status --short
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +388 lines
+     M Libs/Akka.FSI.Supervisor/obj/project.assets.json
+     M Libs/Akka.FSI.Supervisor/obj/project.nuget.cache
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fsharp-devkit 這邊只收三個東西進 git：新的 package refs，加上兩份剛剛實機 debug 的 note。這樣工作樹會回乾淨，check.fsx 的唯一 warning 也會消掉。
+
+• Ran git add src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj notes/00024.txt notes/00025.txt && git commit -m "build: upgrade fakka supervisor packages to
+  │ getversion releases"
+  └ [20260322_001.multi-agent-fsi-platform 4ff6800] build: upgrade fakka supervisor packages to getversion releases
+     3 files changed, 2516 insertions(+), 2 deletions(-)
+     create mode 100644 notes/00024.txt
+     create mode 100644 notes/00025.txt
+
+• Ran git push origin 20260322_001.multi-agent-fsi-platform
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       7fc8970..4ff6800  20260322_001.multi-agent-fsi-platform -> 20260322_001.multi-agent-fsi-platform
+
+• Ran git status --short
+  └ (no output)
+
+• Ran CODEX_THREAD_ID=fsharp-devkit-fakka-getversion-postcommit-20260325 dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/
+  │ log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /
+  │ workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md
+  └ SessionId   : fsharp-devkit-fakka-getversion-postcommit-20260325
+    State file  : /workspace/home/codex/fsharp-devkit-fakka-getversion-postcommit-20260325.state.json
+    … +19 lines
+    [PASS] git_clean - repo 工作樹乾淨
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已完成。
+
+  PulseTrade.fs：
+
+  - branch: 20260325_001.fix-proc-supervisor-bootstrap-role
+  - commit: 608ff36
+  - push: 已完成
+
+  這次修了兩件事：
+
+  - FAkka.Fsi.Contracts 新增 OpCmd = | GetVesion / OpResult
+  - Akka.FSI.Supervisor 與 Akka.Proc.Supervisor 的 supervisor actor 都能直接 Ask<GetVesion>
+  - 修掉 Akka.Proc.Supervisor.Tests 既有 3 個 failure
+      - 原因主要是測試把 powershell/cmd.exe 寫死，Linux 上是假 fail
+      - 現在改成跨平台 shell helper，restart case 也補了初始 PID 等待
+
+  測試結果：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj: 2 passed, 0 failed
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj: 8 passed, 0 failed
+
+  新版 NuGet 已發布：
+
+  - FAkka.Fsi.Contracts 10.1.201.2
+  - FAkka.FSI.Supervisor 1.562.101.201-dgx.7
+  - FAkka.Proc.Supervisor 1.562.101.201-dgx.6
+
+  FSharp.MCP.DevKit：
+
+  - branch: 20260322_001.multi-agent-fsi-platform
+  - commit: 4ff6800
+  - push: 已完成
+
+  已更新：
+
+  - src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+      - FAkka.FSI.Supervisor -> 1.562.101.201-dgx.7
+      - FAkka.Proc.Supervisor -> 1.562.101.201-dgx.6
+
+  驗證結果：
+
+  - dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1 通過
+  - dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 -p:RestoreConfigFile=/tmp/fsharp-devkit-fakka-local.config -m:1 通過
+  - check.fsx 通過：PASS=19 WARN=0 FAIL=0
+
+  補充：
+
+  - 因為 nuget index propagation 還沒完全追上，我這邊驗證 fsharp-devkit 測試時用的是本地 package source /tmp/pulse-nupkgs
+  - 專案本身仍然是正式指向 NuGet 版本，沒有改成吃本地檔
+
+  Akka node port 定義位置：
+
+  1. FAkka.FSI.Supervisor 本身不定 port
+     它只是 actor/supervisor，實際 port 取決於承載它的 ActorSystem。
+  2. FAkka.Proc.Supervisor 的 cluster/akka remote port 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+
+  - CLI args:
+      - Host of string
+      - Port of int
+      - WebHost of string
+      - WebPort of int
+  - loadConfig 會把：
+      - --host -> akka.remote.dot-netty.tcp.hostname
+      - --port -> akka.remote.dot-netty.tcp.port
+
+  3. ProcSupervisor 自動 spawn 的 procnode port
+
+  - 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs:323 用 getFreePort() 產生 --port
+  - REST start-default 這條也在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcRest.fs:104 用 getFreePort()
+
+  4. fsharp-devkit create_fsi_host
+
+  - 不會自己替你決定 port
+  - 它只把你傳進來的 arguments 拆成 argv，位置在 src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs
+  - 所以 net10/netfx host 的 akka node port，實際上是你在 create_fsi_host 的 arguments 裡給的 --host/--port
+
+  如果你要，我下一步可以直接用最新版部署再重驗一次 host/session 隔離。
+
+
+
+
+› FAkka.FSI.Supervisor 啟動 actorsystem 的 port 怎麼指定的
+
+
+• 我先直接查 FAkka.FSI.Supervisor 哪裡建立 ActorSystem，把「library 模式」和「可執行 host 模式」分開講，避免把外部承載和它自己內建 bootstrap 混在一起。
+
+• Explored
+  └ Read Api.fs, WorkerHost.fs
+    Search ActorSystem.Create|EnsureSupervisor|remote.dot-netty.tcp|dot-netty.tcp|hostname|port|ConfigurationFactory.ParseString|workerhost|main in Akka.FSI.Supervisor
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 要分兩種情況看。
+
+  如果你是把 FAkka.FSI.Supervisor 當 library 用：
+
+  - 它自己不決定 port。
+  - 你先建立 ActorSystem，再呼叫 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Api.fs 的 EnsureSupervisor(system)。
+  - 所以 port 取決於你建立 ActorSystem 時餵的 Akka config，不是 FAkka.FSI.Supervisor 自己指定。
+
+  如果你是跑它內建的 host executable：
+
+  - 定義在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/WorkerHost.fs
+  - 目前預設 HOCON 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/WorkerHost.fs 裡是：
+      - remote.dot-netty.tcp.hostname = "127.0.0.1"
+      - remote.dot-netty.tcp.port = 0
+  - port = 0 的意思是讓 Akka/.NET 自己拿一個動態埠。
+  - 而且這個 WorkerHost 目前只 parse --seed，沒有 parse --host/--port。
+
+  在你現在這套實際架構裡，FAkka.FSI.Supervisor 多半不是獨立決定 port，而是被 FAkka.Proc.Supervisor 的 procnode 承載：
+
+  - 真正的 Akka node port 是在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs 用 --host/--port 決定的。
+  - 如果是自動 spawn，port 來源是 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs 的 getFreePort()。
+  - fsi supervisor 只是掛在那個已經有 port 的 actor system 裡面。
+
+  所以一句話總結：
+
+  - FAkka.FSI.Supervisor 本身沒有獨立「指定 port」的邏輯，除非你跑它的 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/WorkerHost.fs，而那份目前預設是 port = 0 動
+    態埠。
+  - 在 ProcSupervisor 承載模式下，port 是由 ProcSupervisor 那邊定的，不是 FAkka.FSI.Supervisor。
+
+
+› 如果我重新布署，你不知道 port 怎麼測 GetVersion?
+
+
+• 知道，因為不需要先知道 fsi supervisor 的 port。
+
+  最穩的測法是先打 ProcSupervisor，再讓它告訴我 fsiSupervisorPath。
+
+  流程是：
+
+  1. 先連已知的 ProcSupervisor 位址
+     這個通常是部署固定的，例如：
+
+  - akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor
+
+  2. 直接 Ask<GetVesion> 給 proc-supervisor
+     這可以先確認 FAkka.Proc.Supervisor 版本。
+  3. 再用它的 REST 或 actor 查 proc snapshot
+     因為 snapshot 裡有：
+
+  - nodeAddress
+  - fsiSupervisorPath
+
+  4. 拿到 fsiSupervisorPath 之後，再直接 ActorSelection(fsiSupervisorPath).Ask<GetVesion>
+     這樣就能確認 FAkka.FSI.Supervisor 版本。
+
+  也就是說，我不需要事先猜：
+
+  - fsi supervisor 用哪個 port
+  - child proc 用哪個動態埠
+
+  因為這些資訊本來就會透過：
+
+  - ProcNodeReady
+  - ProcSnapshot
+  - /api/proc/nodes
+    回報出來。
+
+  如果連 ProcSupervisor 的固定入口也不知道，那才會卡。
+  但你現在這套部署裡，至少 ProcSupervisor 的入口通常是固定的；真正動態的是 child procnode / fsiSupervisorPath，而那個可以查出來。
+
+
+
+
+
+
+
+  › 你上面說的 1~4 ，弄個 FSX 腳本給我，放在 /workspace/home/work/PulseTrade.fs/Libs/TestScripts
+
+
+• 我先補一支最小可跑的 fsx，按你剛剛的 1~4 流程做：先問 proc-supervisor 版本，再查 proc snapshot 拿 fsiSupervisorPath，最後再直接 ask fsi supervisor 的 GetVesion。補完後我會
+  順手跑一次語法/參數檢查。
+
+• Explored
+  └ List Libs
+    List TestScripts
+    Search ProcSnapshot|GetAllProcInfo|GetProcInfo|proc-supervisor|GetVesion|OpResult in Libs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我直接補一支可獨立跑的 fsx 到 Libs/TestScripts。它會：
+
+  1. 連固定 proc-supervisor actor path
+  2. Ask<GetVesion>
+  3. Ask<GetAllProcInfo>
+  4. 找出指定或第一個有 fsiSupervisorPath 的 proc
+  5. 再直接 Ask<GetVesion> 給那個 fsi supervisor actor
+
+  我也會讓它支援 --proc-supervisor-path / --proc-id / --timeout-ms，這樣重部署後不用改腳本本體。
+
+• Added /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx (+149 -0)
+      1 +#r "nuget: Akka, 1.5.62"
+      2 +#r "nuget: Akka.Remote, 1.5.62"
+      3 +
+      4 +open System
+      5 +open System.IO
+      6 +open Akka.Actor
+      7 +open Akka.Configuration
+      8 +open Akka.FSI.Contracts
+      9 +open Akka.Proc.Supervisor
+     10 +
+     11 +let repoRoot =
+     12 +    Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
+     13 +
+     14 +let contractsOutDir =
+     15 +    Path.Combine(repoRoot, "Libs", "FAkka.Fsi.Contracts", "bin", "Debug", "net10.0")
+     16 +
+     17 +let procOutDir =
+     18 +    Path.Combine(repoRoot, "Libs", "Akka.Proc.Supervisor", "bin", "Debug", "net10.0")
+     19 +
+     20 +#r contractsOutDir + "/FAkka.Fsi.Contracts.dll"
+     21 +#r procOutDir + "/Akka.Proc.Supervisor.dll"
+     22 +
+     23 +type CliArgs =
+     24 +    { ProcSupervisorPath: string
+     25 +      ProcId: string option
+     26 +      TimeoutMs: int }
+     27 +
+     28 +let defaultProcSupervisorPath = "akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor"
+     29 +
+     30 +let rec private parseArgs (state: CliArgs) (args: string list) =
+     31 +    match args with
+     32 +    | [] -> state
+     33 +    | "--proc-supervisor-path" :: value :: rest ->
+     34 +        parseArgs { state with ProcSupervisorPath = value } rest
+     35 +    | "--proc-id" :: value :: rest ->
+     36 +        parseArgs { state with ProcId = Some value } rest
+     37 +    | "--timeout-ms" :: value :: rest ->
+     38 +        match Int32.TryParse value with
+     39 +        | true, parsed when parsed > 0 -> parseArgs { state with TimeoutMs = parsed } rest
+     40 +        | _ -> failwithf "Invalid --timeout-ms value: %s" value
+     41 +    | "--help" :: _
+     42 +    | "-h" :: _ ->
+     43 +        printfn "Usage:"
+     44 +        printfn "  dotnet fsi verify_proc_fsi_versions.fsx -- [--proc-supervisor-path <akka-path>] [--proc-id <id>] [--timeout-ms <ms>]"
+     45 +        printfn ""
+     46 +        printfn "Defaults:"
+     47 +        printfn "  --proc-supervisor-path %s" defaultProcSupervisorPath
+     48 +        printfn "  --timeout-ms 5000"
+     49 +        Environment.Exit 0
+     50 +        state
+     51 +    | unknown :: _ ->
+     52 +        failwithf "Unknown argument: %s" unknown
+     53 +
+     54 +let argv =
+     55 +    fsi.CommandLineArgs
+     56 +    |> Array.skip 1
+     57 +    |> Array.toList
+     58 +    |> function
+     59 +        | "--" :: rest -> rest
+     60 +        | rest -> rest
+     61 +
+     62 +let cli =
+     63 +    parseArgs
+     64 +        { ProcSupervisorPath = defaultProcSupervisorPath
+     65 +          ProcId = None
+     66 +          TimeoutMs = 5000 }
+     67 +        argv
+     68 +
+     69 +let config =
+     70 +    ConfigurationFactory.ParseString(
+     71 +        """
+     72 +        akka {
+     73 +          loglevel = "ERROR"
+     74 +          stdout-loglevel = "ERROR"
+     75 +          actor.provider = remote
+     76 +          remote.dot-netty.tcp {
+     77 +            hostname = "127.0.0.1"
+     78 +            port = 0
+     79 +          }
+     80 +        }
+     81 +        """
+     82 +    )
+     83 +
+     84 +let timeout = TimeSpan.FromMilliseconds(float cli.TimeoutMs)
+     85 +
+     86 +let ask<'T> (selection: ActorSelection) (message: obj) =
+     87 +    selection.Ask<'T>(message, timeout) |> Async.AwaitTask
+     88 +
+     89 +let pickSnapshot (snapshots: ProcSnapshot array) =
+     90 +    match cli.ProcId with
+     91 +    | Some requested ->
+     92 +        snapshots
+     93 +        |> Array.tryFind (fun snapshot -> String.Equals(snapshot.procId, requested, StringComparison.OrdinalIgnoreCase))
+     94 +        |> Option.defaultWith (fun () -> failwithf "No proc snapshot found for procId '%s'." requested)
+     95 +    | None ->
+     96 +        snapshots
+     97 +        |> Array.tryFind (fun snapshot -> snapshot.fsiSupervisorPath.IsSome)
+     98 +        |> Option.orElse (
+     99 +            snapshots
+    100 +            |> Array.tryFind (fun snapshot -> String.Equals(snapshot.status, "running", StringComparison.OrdinalIgnoreCase))
+    101 +        )
+    102 +        |> Option.defaultWith (fun () -> failwith "No proc snapshot with fsiSupervisorPath was found.")
+    103 +
+    104 +use system = ActorSystem.Create("version-probe", config)
+    105 +
+    106 +let run () =
+    107 +    async {
+    108 +        let procSupervisor = system.ActorSelection(cli.ProcSupervisorPath)
+    109 +
+    110 +        let! procVersion = ask<OpResult> procSupervisor GetVesion
+    111 +        let! snapshots = ask<ProcSnapshot[]> procSupervisor GetAllProcInfo
+    112 +        let snapshot = pickSnapshot snapshots
+    113 +
+    114 +        let fsiPath =
+    115 +            snapshot.fsiSupervisorPath
+    116 +            |> Option.defaultWith (fun () ->
+    117 +                failwithf "Proc '%s' does not expose fsiSupervisorPath. Snapshot status=%s" snapshot.procId snapshot.status)
+    118 +
+    119 +        let fsiSupervisor = system.ActorSelection(fsiPath)
+    120 +        let! fsiVersion = ask<OpResult> fsiSupervisor GetVesion
+    121 +
+    122 +        printfn "ProcSupervisor"
+    123 +        printfn "  actorPath: %s" cli.ProcSupervisorPath
+    124 +        printfn "  assemblyName: %s" procVersion.assemblyName
+    125 +        printfn "  assemblyVersion: %A" procVersion.assemblyVersion
+    126 +        printfn "  fileVersion: %A" procVersion.fileVersion
+    127 +        printfn "  informationalVersion: %A" procVersion.informationalVersion
+    128 +        printfn ""
+    129 +        printfn "ProcNode"
+    130 +        printfn "  procId: %s" snapshot.procId
+    131 +        printfn "  status: %s" snapshot.status
+    132 +        printfn "  nodeAddress: %A" snapshot.nodeAddress
+    133 +        printfn "  fsiSupervisorPath: %s" fsiPath
+    134 +        printfn ""
+    135 +        printfn "FsiSupervisor"
+    136 +        printfn "  assemblyName: %s" fsiVersion.assemblyName
+    137 +        printfn "  assemblyVersion: %A" fsiVersion.assemblyVersion
+    138 +        printfn "  fileVersion: %A" fsiVersion.fileVersion
+    139 +        printfn "  informationalVersion: %A" fsiVersion.informationalVersion
+    140 +    }
+    141 +
+    142 +try
+    143 +    run () |> Async.RunSynchronously
+    144 +with ex ->
+    145 +    eprintfn "verify_proc_fsi_versions failed: %s" ex.Message
+    146 +    reraise ()
+    147 +finally
+    148 +    system.Terminate() |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+    149 +    system.WhenTerminated |> Async.AwaitTask |> Async.RunSynchronously
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --help
+  └
+
+    /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx(20,20): error FS0010: Unexpected infix operator in interaction. Expected ';', ';;' or
+    other token.
+
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fsx 先卡在 FSI directive 規則，不是邏輯問題：#r 不能吃執行期變數。我把它改成直接用 NuGet package reference，這樣腳本本身就能獨立跑，不依賴本機 build output 路徑。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx (+2 -13)
+     2  #r "nuget: Akka.Remote, 1.5.62"
+     3 +#r "nuget: FAkka.Fsi.Contracts, 10.1.201.2"
+     4 +#r "nuget: FAkka.Proc.Supervisor, 1.562.101.201-dgx.6"
+     5
+     6  open System
+     5 -open System.IO
+     7  open Akka.Actor
+       ⋮
+    10  open Akka.Proc.Supervisor
+    10 -
+    11 -let repoRoot =
+    12 -    Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", ".."))
+    13 -
+    14 -let contractsOutDir =
+    15 -    Path.Combine(repoRoot, "Libs", "FAkka.Fsi.Contracts", "bin", "Debug", "net10.0")
+    16 -
+    17 -let procOutDir =
+    18 -    Path.Combine(repoRoot, "Libs", "Akka.Proc.Supervisor", "bin", "Debug", "net10.0")
+    19 -
+    20 -#r contractsOutDir + "/FAkka.Fsi.Contracts.dll"
+    21 -#r procOutDir + "/Akka.Proc.Supervisor.dll"
+    11
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --help
+  └
+
+    … +6 lines
+    other token.
+
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx (+15 -9)
+     92
+     93 -use system = ActorSystem.Create("version-probe", config)
+     93 +let system = ActorSystem.Create("version-probe", config)
+     94
+        ⋮
+    130
+    131 -try
+    132 -    run () |> Async.RunSynchronously
+    133 -with ex ->
+    134 -    eprintfn "verify_proc_fsi_versions failed: %s" ex.Message
+    135 -    reraise ()
+    136 -finally
+    137 -    system.Terminate() |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+    138 -    system.WhenTerminated |> Async.AwaitTask |> Async.RunSynchronously
+    131 +let outcome =
+    132 +    try
+    133 +        run () |> Async.RunSynchronously
+    134 +        Choice1Of2 ()
+    135 +    with ex ->
+    136 +        eprintfn "verify_proc_fsi_versions failed: %s" ex.Message
+    137 +        Choice2Of2 ex
+    138 +
+    139 +system.Terminate() |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+    140 +system.WhenTerminated |> Async.AwaitTask |> Async.RunSynchronously
+    141 +
+    142 +match outcome with
+    143 +| Choice1Of2 () -> ()
+    144 +| Choice2Of2 ex -> raise ex
+
+• Waited for background terminal · dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --help
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --help
+  └ /root/.packagemanagement/nuget/Projects/662613--08956627-6e0f-4d23-8047-ea7fddf15c1f/Project.fsproj : warning NU1608: Detected package version outside of dependency
+    constraint: Suave 3.2.3 requires FSharp.Core (>= 10.0.102 && < 10.1.0) but version FSharp.Core 10.1.201 was resolved.
+    … +6 lines
+       Result
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• NuGet 還沒完全對 FSI 的 package cache生效，現在腳本編到 OpResult 時拿到的還不是你剛發的新 contracts。這不是腳本設計問題，而是 package propagation/cache timing。最穩的處理是
+  讓腳本直接走本機 repo 的已編譯 DLL，而不是等 NuGet cache。
+
+• Explored
+  └ Read verify_proc_fsi_versions.fsx
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx (+2 -2)
+    2  #r "nuget: Akka.Remote, 1.5.62"
+    3 -#r "nuget: FAkka.Fsi.Contracts, 10.1.201.2"
+    4 -#r "nuget: FAkka.Proc.Supervisor, 1.562.101.201-dgx.6"
+    3 +#r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+    4 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+    5
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --help
+  └ Usage:
+      dotnet fsi verify_proc_fsi_versions.fsx -- [--proc-supervisor-path <akka-path>] [--proc-id <id>] [--timeout-ms <ms>]
+    … +2 lines
+      --proc-supervisor-path akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor
+      --timeout-ms 5000
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已補好，檔案在：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx
+
+  這支腳本會照你要的 1~4 做：
+
+  1. 直接 Ask<GetVesion> 給 proc-supervisor
+  2. Ask<GetAllProcInfo> 拿 ProcSnapshot[]
+  3. 找出指定或第一個有 fsiSupervisorPath 的 proc
+  4. 再直接 Ask<GetVesion> 給那個 fsi supervisor
+
+  支援參數：
+
+  dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- \
+    --proc-supervisor-path akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor \
+    --proc-id your-proc-id \
+    --timeout-ms 5000
+
+  如果不帶 --proc-id，它會自動挑第一個有 fsiSupervisorPath 的 proc。
+
+  我也已經驗過 --help 可正常執行。
