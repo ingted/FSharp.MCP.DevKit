@@ -1,0 +1,3 @@
+1. Updated server package references to latest FsPickler-enabled FAkka packages.
+2. Updated SD and DevLog with remoting serializer decision and versions.
+3. Planned restore/build/test through temporary local package source to avoid nuget propagation lag.

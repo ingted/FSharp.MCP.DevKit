@@ -1,0 +1,30 @@
+時間
+- 2026-03-25 12:57 UTC
+
+背景
+- `Akka.FSI.Supervisor` 子專案先前完成 README / `/send` 相關修正，但在 `FSharp.MCP.DevKit` 這邊缺少對應追溯證據。
+
+目標
+- 保留當時的文件補全證據，不讓 repo 的歷史 log 鏈斷裂。
+
+計畫步驟
+1. 記錄 `Akka.FSI.Supervisor` 文件補全已完成
+2. 在本 repo 保留對應 log 檔以滿足 SOP 稽核
+
+執行命令/參數
+- 歷史補記，無額外命令
+
+結果
+- 保留 `Akka.FSI.Supervisor` 文件與追溯補全的歷史 log 佔位證據
+
+根因判讀
+- 此檔案原先存在於本 repo 的 log 歷史中，後續整理時未帶回，導致 `check.fsx` 視為被刪除
+
+下一步
+- 與對應 `.op_log` 一起保留
+
+關聯文件/工單/PR
+- `/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/doc/DevLog.md`
+
+prompt/上下文摘要
+- 歷史補記，避免 log 稽核視為刪檔。

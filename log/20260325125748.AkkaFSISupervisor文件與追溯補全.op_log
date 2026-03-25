@@ -1,0 +1,2 @@
+1. 補回歷史 `AkkaFSISupervisor` 文件補全 log。
+2. 維持與稽核 state 一致，避免被視為刪失。

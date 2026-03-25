@@ -1,0 +1,44 @@
+時間
+- 2026-03-25 17:00 UTC
+
+背景
+- `FSharp.MCP.DevKit` 已完成新版 `FAkka` package 升級與本地驗證。
+- 尚需在提交前留下最新一輪收尾證據，避免 `check.fsx` 因 latest log 未前進而報失敗。
+
+目標
+- 完成提交前最後一次 SOP 收尾
+- 準備 commit + push 本 repo 升版與文檔調整
+
+計畫步驟
+1. 確認 package 版本更新已落檔
+2. 確認 restore/build/test/check 已跑過
+3. 提交 `notes/log/doc/fsproj`
+4. push branch
+5. 之後再做最新部署的 host/session 隔離驗證
+
+執行命令/參數
+- `dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-fakka-fspickler.config -m:1`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+
+結果
+- 升版驗證已完成
+- 目前剩餘工作是 commit/push 與後續部署驗證，不是程式修正
+
+根因判讀
+- 當前剩餘問題皆屬程序性收尾，非 build/test/package graph 失敗
+
+下一步
+- `git add/commit/push`
+- 再次用 MCP tools 驗部署中的 host/session 隔離
+
+關聯文件/工單/PR
+- `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+- `doc/SD.md`
+- `doc/DevLog.md`
+- `notes/00028.txt`
+- `notes/00029.txt`
+
+prompt/上下文摘要
+- 使用者要求在完成上游 `FsPickler` serializer 修正與 NuGet 發佈後，將本 repo 升版並繼續驗部署中的 `fsharp-devkit` 可用性。

@@ -1,0 +1,16 @@
+2026-03-25 16:40 UTC
+
+Scope
+- FSharp.MCP.DevKit package upgrade
+- DevLog / notes / verification
+
+Summary
+- Upgraded FSharp.MCP.DevKit to:
+  - FAkka.Fsi.Contracts 10.1.201.3
+  - FAkka.FSI.Supervisor 1.562.101.201-dgx.8
+  - FAkka.Proc.Supervisor 1.562.101.201-dgx.7
+- Recorded the FsPickler remoting contract decision and verification trail.
+
+Verification plan
+- restore/build/test using temporary local package source
+- run check.fsx after package update verification

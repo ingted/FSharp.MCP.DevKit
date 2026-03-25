@@ -268,6 +268,32 @@
 - 根因判讀：
   - 先前 docker service 只對外暴露 `15000:5000`
   - `FSI_PROC_SUPERVISOR_HOST=127.0.0.1`
+
+## 2026-03-25 16:40:00
+
+- 背景：`ProcSupervisor` / `FSI Supervisor` 的 `GetVesion` local actor test 可過，但 `Akka.Remote` direct ask 先是掉成 `JObject`，後續改動態 serializer 後又出現 `Cannot find serializer with id [199]`。
+- 先前錯誤判讀：
+  - 一度往 parser / probe / MCP surface 上層追
+  - 但最小重現後確認真正缺口在 remoting serializer/binding，不是上層 tool
+- 動作：
+  - 在上游 `FAkka.Fsi.Contracts` 新增 shared `FsPickler`-based `ContractSerializer`
+  - 把 `ProcSupervisor` 跨 wire contract 收斂到 `IMessage` binding 範圍
+  - `ProcHost` / `WorkerHost` 改在 startup HOCON 注入 serializer 與 binding，而不是只靠 runtime `AddSerializer`
+  - `ContractSerializer.FromBinary` 改以 `obj` 還原 root payload，對齊 FsPickler 這條 wire format 的 `System.Object` 外層
+  - 補 `Akka.Proc.Supervisor.Tests` 的 remote `GetVesion/GetAllProcInfo`
+  - 補 `Akka.FSI.Supervisor.Tests` 的 remote `GetVesion`
+  - 發布：
+    - `FAkka.Fsi.Contracts 10.1.201.3`
+    - `FAkka.FSI.Supervisor 1.562.101.201-dgx.8`
+    - `FAkka.Proc.Supervisor 1.562.101.201-dgx.7`
+  - 本 repo 升級到這組新 package
+- 結果：
+  - `ProcSupervisor` 的 direct remote ask 已不再是 `JObject` / serializer-id failure
+  - 上游 `Proc/FSI Supervisor` 測試綠燈
+  - `FSharp.MCP.DevKit` 現在吃的是帶 shared remoting serializer 的 package 線
+- 判讀：
+  - 這次真正修掉的是底層 remoting contract，不是再往 `/send` 或 parser 疊 workaround
+  - 之後若部署端仍有 host/session 問題，優先看 deployment/runtime wiring，而不是再懷疑 `GetVesion` typed actor message 本身
   - `FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor`
   - 這組設定只對「同一個 container 內」成立
   - 當 caller 在另一個 container 時，`127.0.0.1` 指向 caller 自己，不是 `fsharp-devkit` 那個 container；即使 HTTP MCP 可用，Akka actor path 仍會 timeout

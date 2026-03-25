@@ -1,0 +1,51 @@
+時間
+- 2026-03-25 16:50 UTC
+
+背景
+- 上游 `FAkka.Fsi.Contracts / FAkka.FSI.Supervisor / FAkka.Proc.Supervisor` 已完成 `FsPickler` remoting contract 修正並發布新版 NuGet。
+- 本 repo 需要升級到新 package，驗證 server/test graph 是否仍成立，並把這輪 serializer 決策回寫到本專案文件。
+
+目標
+- 升級 `FSharp.MCP.DevKit` 到新版 `FAkka` packages
+- 用臨時 local package source 避開 nuget.org propagation lag，驗證 restore/build/test
+- 補齊 DevLog / notes / log 證據鏈
+
+計畫步驟
+1. 更新 `FSharp.MCP.DevKit.Server.fsproj` 的 `FAkka` package 版本
+2. 補 `SD.md`、`DevLog.md`、`notes`
+3. 用 local package source restore
+4. 執行 `dotnet build`
+5. 執行 `dotnet test`
+6. 執行 `check.fsx`
+
+執行命令/參數
+- `dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-fakka-fspickler.config -m:1`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1`
+- `dotnet fsi --exec check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit`
+
+結果
+- package 版本已升到：
+  - `FAkka.Fsi.Contracts 10.1.201.3`
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.8`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.7`
+- restore / build / test 成功
+- `check.fsx` 成功找出並協助補齊文件治理缺口
+
+根因判讀
+- 程式與 package graph 本身沒有壞
+- 這一輪真正需要補的是 SOP 文件治理，不是 build/test regression
+
+下一步
+- commit + push 本 repo package upgrade、notes 與 log
+- 之後回頭驗部署中的 `fsharp-devkit` host/session 隔離
+
+關聯文件/工單/PR
+- `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+- `doc/SD.md`
+- `doc/DevLog.md`
+- `notes/00028.txt`
+- `notes/00029.txt`
+
+prompt/上下文摘要
+- 使用者要求先在 `PulseTrade.fs` 修 `FsPickler` remoting contract，再發布新版 NuGet，最後把 `FSharp.MCP.DevKit` 升到這組新 package 並繼續驗證。

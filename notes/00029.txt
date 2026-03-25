@@ -1,0 +1,12 @@
+2026-03-25
+
+- `ProcSupervisor` / `FSI Supervisor` 的 local typed actor test 原本就可過，但這不能代表 `Akka.Remote` 可用。
+- 本輪關鍵收斂：
+  1. `JObject` 症狀不是 parser 問題，而是 remoting serializer/binding 問題。
+  2. runtime `AddSerializer` 不足以解 `serializer id [199]`；Akka.Remote 需要 startup config 可見的 serializer/binding。
+  3. shared serializer 必須放在 `FAkka.Fsi.Contracts`，不能各 consumer 自己定義。
+  4. `FsPickler` 這次不是拿來處理 quotation，而是拿來正規承載 F# DU/record cross-wire contract。
+- 本 repo 升級到：
+  - `FAkka.Fsi.Contracts 10.1.201.3`
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.8`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.7`
