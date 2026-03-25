@@ -1,0 +1,5 @@
+step=validate_local_proc_getversion result=pass script=/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+step=restore_tests result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+step=build_server result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+step=test_suite result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+step=record_devlog result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit

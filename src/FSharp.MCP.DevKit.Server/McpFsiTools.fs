@@ -10,6 +10,8 @@ open System.Collections.Generic
 open Microsoft.Extensions.Logging
 open Akka.Actor
 open Akka.Configuration
+open Akka.FSI.Contracts
+open Akka.Proc.Supervisor
 open FSharp.MCP.DevKit.Communication.IPC
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Backends
@@ -35,6 +37,14 @@ open Fantomas.Core
 /// - Updated line splitting to preserve empty lines (StringSplitOptions.None)
 /// - Enhanced error handling to prevent malformed code injection
 module McpFsiTools =
+
+    let private getAkkaClientConfig () =
+        let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
+        let configContent = File.ReadAllText(configPath)
+        let contractConfig =
+            ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]
+
+        contractConfig.WithFallback(ConfigurationFactory.ParseString(configContent))
 
     type AsyncFsiExecutionRequest =
         { AsyncId: string
@@ -269,9 +279,7 @@ module McpFsiTools =
 
         let system, remoteClient =
             if enableRemoteClient then
-                let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
-                let configContent = File.ReadAllText(configPath)
-                let akkaConfig = ConfigurationFactory.ParseString(configContent)
+                let akkaConfig = getAkkaClientConfig ()
                 let actorSystem = ActorSystem.Create("McpClientSystem", akkaConfig)
                 let remoteActorPath = "akka.tcp://FsiExecutionSystem@localhost:8081/user/fsiActor"
                 let remoteActor = actorSystem.ActorSelection(remoteActorPath)

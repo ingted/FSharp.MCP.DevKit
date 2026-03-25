@@ -2,6 +2,8 @@ module FSharp.MCP.DevKit.Server.Program
 
 open Akka.Actor
 open Akka.Configuration
+open Akka.FSI.Contracts
+open Akka.Proc.Supervisor
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
 open Microsoft.AspNetCore.Http
@@ -94,7 +96,10 @@ let getProcSupervisorPath (argv: string array) =
 let getAkkaClientConfig () =
     let configPath = IO.Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
     let configContent = IO.File.ReadAllText(configPath)
-    ConfigurationFactory.ParseString(configContent)
+    let contractConfig =
+        ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]
+
+    contractConfig.WithFallback(ConfigurationFactory.ParseString(configContent))
 
 let getEnableProcSupervisor () =
     let value = Environment.GetEnvironmentVariable("FSI_ENABLE_PROC_SUPERVISOR")

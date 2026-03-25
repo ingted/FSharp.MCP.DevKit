@@ -218,6 +218,31 @@
   - 新增 `samples/` 或獨立 demo client app
   - 在 `DEMO.md` 明確寫出 repo 外 consumer 的依賴前提
 
+## 2026-03-25 23:40:00
+
+- 背景：部署中的 `fsharp-devkit` container 雖然 `/healthz` 與 `ProcSupervisor /health` 都正常，但 `GetVesion`、`create_fsi_host`、host/session 隔離仍失敗，必須先把最低層 remoting 與 bootstrap 路徑驗死。
+- 動作：
+  - 在 `PulseTrade.fs` 新增 `Libs/TestScripts/verify_proc_supervisor_getversion.fsx`，用與部署相近的方式背景啟 `ProcSupervisor`，再以另一個 client `ActorSystem` 直接 `Ask<GetVesion>` / `Ask<GetAllProcInfo>`
+  - 用反射比對 client 與 proc-like `ActorSystem` 的 `serialization-identifiers`、`_serializersById`、`FindSerializerForType`
+  - 確認 shared `FsPickler` contract serializer 對 `OpCmd`、`OpResult`、`GetAllProcInfo`、`ProcSnapshot` 已正確綁到 `id=199`
+  - 針對 `ProcSupervisor` 的 default/bootstrap procnode 啟動邏輯改為 `dotnet exec --runtimeconfig --depsfile ... Akka.Proc.Supervisor.dll --mode procnode ...`
+  - 將 `FSharp.MCP.DevKit` 自己的 Akka client config 改為合併 `ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]`，避免 server/client 兩端 serializer registry 不一致
+- 結果：
+  - 最低層 `Akka.Remote Ask<GetVesion>` 已在本機背景 `ProcSupervisor` 上驗證成功
+  - `ProcSupervisor` 的 default procnode spec 現在會顯式帶 `exec/runtimeconfig/depsfile`
+  - `FSharp.MCP.DevKit` server build 與 tests 在升到 `FAkka.Proc.Supervisor 1.562.101.201-dgx.8` 後通過
+- 判讀：
+  - 先前 `Cannot find serializer with id [199]` 的核心不是 parser，而是 remoting 兩端沒有共享同一份 contract serializer config
+  - 先前 container 內 `bootstrap-net10-host` 一直 `stopped` 的核心不是 `fsdevkit.service` 語法，而是 `ProcSupervisor` 內部 default spawn 仍使用 `dotnet /app/Akka.Proc.Supervisor.dll ...`
+- 已知殘留：
+  - docker repo 的 `fsdevkit.service` 與部署 image 仍需重建，才能真正吃到 `FAkka.Proc.Supervisor dgx.8`
+  - 真正部署後的 `proc/fsi supervisor GetVesion` 與 host/session 隔離仍需在新 image 上再驗一次
+- 關聯：
+  - `src/FSharp.MCP.DevKit.Server/Program.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpFsiTools.fs`
+  - `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+  - `notes/00031.txt`
+
 ## 2026-03-22 22:35:00
 
 - 背景：`.NET 10` 路徑的 `Net10HostBackend.ResetSession` 一直是 stub，代表多 host / 多 session 架構在 net10 host 上缺一個真正可用的 session lifecycle primitive。

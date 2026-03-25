@@ -1,0 +1,19 @@
+2026-03-25 23:40:00 UTC
+
+Summary
+- Fixed two low-level blockers before retrying deployed MCP host/session validation.
+- Aligned FSharp.MCP.DevKit client-side Akka config with shared FAkka contract serialization.
+- Recorded that deployed docker image must be rebuilt to pick up FAkka.Proc.Supervisor dgx.8 bootstrap fix.
+
+Evidence
+- Local direct Akka.Remote ask to ProcSupervisor GetVesion succeeds via verify_proc_supervisor_getversion.fsx.
+- ProcSupervisor default procnode spec now uses dotnet exec with runtimeconfig and depsfile.
+- FSharp.MCP.DevKit server build succeeded.
+- FSharp.MCP.DevKit tests succeeded.
+
+Touched
+- src/FSharp.MCP.DevKit.Server/Program.fs
+- src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+- src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+- doc/DevLog.md
+- notes/00031.txt
