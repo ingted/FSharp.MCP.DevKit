@@ -1,0 +1,9 @@
+2026-03-25T13:07:21Z curl -I https://api.nuget.org/v3-flatcontainer/fakka.fsi.supervisor/1.562.101.201-dgx.6/fakka.fsi.supervisor.1.562.101.201-dgx.6.nupkg -> 200 OK
+2026-03-25T13:07:21Z curl -I https://api.nuget.org/v3-flatcontainer/fakka.proc.supervisor/1.562.101.201-dgx.5/fakka.proc.supervisor.1.562.101.201-dgx.5.nupkg -> 200 OK
+2026-03-25T13:07:30Z dotnet nuget locals all --clear -> success
+2026-03-25T13:07:38Z dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj -m:1 -> success
+2026-03-25T13:08:19Z dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1 -> success
+2026-03-25T13:08:26Z dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests" --no-restore -m:1 -> success
+2026-03-25T13:08:31Z dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1 -> success
+2026-03-25T13:09:34Z dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa ... --sd ... --wbs ... --devlog ... -> PASS=17 WARN=6 FAIL=3
+2026-03-25T13:10:30Z add new rollover log/op_log to avoid readonly modification of previous .log and prepare final clean check

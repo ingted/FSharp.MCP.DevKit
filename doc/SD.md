@@ -83,8 +83,8 @@
 
 正式納入：
 
-- `FAkka.FSI.Supervisor 1.562.101.201-dgx.5`
-- `FAkka.Proc.Supervisor 1.562.101.201-dgx.4`
+- `FAkka.FSI.Supervisor 1.562.101.201-dgx.6`
+- `FAkka.Proc.Supervisor 1.562.101.201-dgx.5`
 
 角色：
 

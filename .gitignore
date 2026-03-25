@@ -11,6 +11,7 @@ fsi_status.txt
 # FSharp.MCP.DevKit specific temporary files
 /results/
 test-results/
+/pcsl/
 knowledge-base.json
 test_knowledge_base.json
 *.generated.fsx

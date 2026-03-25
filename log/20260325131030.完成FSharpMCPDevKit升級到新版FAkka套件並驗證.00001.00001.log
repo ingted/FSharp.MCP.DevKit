@@ -1,0 +1,49 @@
+背景
+- `FAkka.Fsi.Contracts 10.1.201.1`、`FAkka.FSI.Supervisor 1.562.101.201-dgx.6`、`FAkka.Proc.Supervisor 1.562.101.201-dgx.5` 已發布到 nuget.org。
+- 本 repo 已先將 package 參考升版，但初次 restore 遇到 nuget.org propagation 與本機 NuGet cache 延遲。
+
+目標
+- 讓 `FSharp.MCP.DevKit` 正式吃到新版 `FAkka.*` 套件。
+- 重新完成 restore/build/test 與 `RealNet10HostIsolationTests` 驗證。
+- 補齊本輪文件與操作紀錄，準備 commit/push。
+
+計畫步驟
+1. 確認 nuget.org flatcontainer 是否已可見新版本。
+2. 清除 NuGet locals 後重跑 restore。
+3. 執行 server build、host isolation 測試與全套 net10 測試。
+4. 跑 `check.fsx` 稽核並收尾。
+
+關聯文件/工單/PR
+- 上游 branch: `PulseTrade.fs/20260325_001.fix-proc-supervisor-bootstrap-role`
+- 上游 packages: `FAkka.Fsi.Contracts 10.1.201.1`、`FAkka.FSI.Supervisor 1.562.101.201-dgx.6`、`FAkka.Proc.Supervisor 1.562.101.201-dgx.5`
+- 本 repo 變更：`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`、`doc/SD.md`、`doc/DevLog.md`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要求在補齊 `Akka.FSI.Supervisor` 的 SOP 文件與 log 後，發布新版 NuGet，並把 `FSharp.MCP.DevKit` 升到這組新 package。
+
+執行命令/參數
+- `curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.fsi.supervisor/index.json`
+- `curl -fsSL https://api.nuget.org/v3-flatcontainer/fakka.proc.supervisor/index.json`
+- `dotnet nuget locals all --clear`
+- `dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj -m:1`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~RealNet10HostIsolationTests" --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1`
+- `dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sa /workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md`
+
+結果
+- nuget.org flatcontainer 已可見 `FAkka.FSI.Supervisor 1.562.101.201-dgx.6` 與 `FAkka.Proc.Supervisor 1.562.101.201-dgx.5`。
+- 清除 NuGet locals 後，`dotnet restore` 成功。
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --no-restore -m:1` 成功。
+- `dotnet test ... RealNet10HostIsolationTests ...` 成功，確認真實 `net10` 多 host 隔離未退化。
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1` 成功。
+- `check.fsx` 最終應只剩未提交變更相關 warning，無流程性 FAIL。
+
+根因判讀
+- 初次失敗的根因不是 package push 失敗，而是 nuget.org 索引 propagation 尚未完成，加上本機 NuGet HTTP/global cache 仍持有舊狀態。
+- 一旦 flatcontainer 可見新版本並清除 locals，標準 `nuget.org` restore 即可成功，不需要修改 repo 的 `nuget.config`。
+- 既有 warning 主要仍是 `Suave -> FSharp.Core` 約束與 `NuGet.*` 對 `.NETStandard 2.0` 的 `NU1701`，不是本輪升版新引入回歸。
+
+下一步
+- 將本輪 `fsproj`、`SD.md`、`DevLog.md`、`notes/00023.txt` 與新 `log/op_log` 一併 commit/push。
+- 之後再回到部署端驗證最新 container/service 是否已吃到新 package，並重新實測 MCP tool 的 host/session 隔離。

@@ -1,0 +1,21 @@
+背景
+- 上游已發布 FAkka.Fsi.Contracts 10.1.201.1、FAkka.FSI.Supervisor 1.562.101.201-dgx.6、FAkka.Proc.Supervisor 1.562.101.201-dgx.5。
+- 本 repo 仍停留在 dgx.5 / dgx.4 組合，尚未吃到最新 /send 序列化與 parser 修正。
+
+目標
+- 將 FSharp.MCP.DevKit 升級到最新上游 package。
+- 執行 build、目標測試、host/session 隔離回歸。
+- 更新必要文件與收尾 commit/push。
+
+計畫步驟
+1. 更新 Server fsproj 套件版本與相關文件文字。
+2. restore/build/test 並跑真實 host isolation 測試。
+3. 補 log/DevLog/SD 追溯。
+4. commit + push。
+
+關聯文件/工單/PR
+- 上游 branch: PulseTrade.fs 20260325_001.fix-proc-supervisor-bootstrap-role
+- 上游 commits: ede00d4, fd87b04
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要求在完成 PulseTrade 文件與 commit/push 後，發布新版 NuGet，並把 FSharp.MCP.DevKit 升到這組新 package。
