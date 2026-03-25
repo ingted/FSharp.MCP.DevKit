@@ -52,9 +52,12 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
 [<Fact>]
 let ``McpControlPlaneTools register host session and health flow works`` () =
     task {
+        let mutable capturedSpec : ProcHostSpec option = None
+
         let procClient =
             FakeProcSupervisorClient(
                 (fun (procId, spec) ->
+                    capturedSpec <- Some spec
                     { ProcId = procId
                       Status = "running"
                       ProcessId = Some 9100
@@ -131,6 +134,7 @@ let ``McpControlPlaneTools register host session and health flow works`` () =
         Assert.Equal(Net10Host, host.HostKind)
         Assert.Equal("session-cp", session.SessionId)
         Assert.Equal("Session Control", session.SessionName)
+        Assert.Equal(None, capturedSpec |> Option.bind (fun spec -> spec.Role))
         Assert.Contains(hosts, fun value -> value.HostId = "host-cp")
         Assert.Contains(sessions, fun value -> value.SessionId = "session-cp")
         Assert.True(health.IsAvailable)
@@ -310,7 +314,7 @@ let ``FsiMcpService EnsureRoute creates missing host and session when spec is pr
                     { ExecutablePath = "dotnet"
                       Arguments = [ "--dll"; "fsi-host.dll" ]
                       WorkingDirectory = Some "/srv/fsi"
-                      Role = Some "net10"
+                      Role = None
                       ProbeMessage = Some "PING"
                       ProbeCron = None
                       ProbeIntervalMs = Some 1000 }
