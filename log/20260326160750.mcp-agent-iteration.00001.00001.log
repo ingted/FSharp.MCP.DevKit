@@ -59,3 +59,6 @@ Next:
 [執行計畫] 1. ProvisioningServices/CreateHost 改為 GetProcInfo timeout 時 fallback ListProcInfo。 2. Net10HostBackend.HealthCheck 改為同樣 fallback。 3. McpExecutionTools 將 routed timeout 相關參數改為 CLR optional/default-value。 4. 補/修測試。 5. 本地 targeted test。 6. 更新 DevLog/log。 7. ssh 到 host 執行 build.host.sh。 8. live MCP fresh host/session 驗證。
 [2026-03-26T17:43:00Z] local targeted tests passed
 [結論] ProvisioningServices GetProcInfo->ListProcInfo fallback、Net10HostBackend health fallback、McpExecutionTools routed CLR optional timeout 均已通過 targeted tests。下一步重部署並驗 live MCP fresh host/session。
+[2026-03-26T18:05:00Z] live MCP verification complete
+[結論] 已使用 McpClientHarness HTTP client 直接打 live MCP endpoint，create_fsi_host/create_fsi_session/routed execute/evaluate 在省略 probeMessage/probeIntervalMs/timeoutSeconds 的情況下成功；同 host 多 session 隔離驗證為 session-a=111, session-b=222。get_fsi_host_health 不再拋 generic timeout，而是回正常 health payload。
+[附註] host 上 build.host.sh 的 docker build 成功，但 service reinstall 仍需互動式 sudo；本輪為了驗證使用與 service 相同參數手動替換 container。

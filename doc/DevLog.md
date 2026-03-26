@@ -569,3 +569,21 @@
     all passed after the fallback and binder changes.
 - Operational conclusion:
   - once runtime/procnode execution had been proven healthy, the remaining `create_fsi_host` / `get_fsi_host_health` failures were orchestration-level timeout handling defects, not remote FSI capability defects.
+
+## 2026-03-26 18:05 UTC Live MCP Verification After Timeout-Recovery Fix
+
+- Deployed the updated server image onto the host by rebuilding the docker image from `/home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit`.
+  - `build.host.sh` successfully rebuilt the image but still required interactive `sudo` for service reinstall.
+  - For immediate validation, the running `fsharp-mcp-devkit` container was replaced manually with the same `docker run` arguments as the service definition.
+- Live MCP verification was performed through `McpClientHarness.createHttpClientAsync` against:
+  - `http://10.28.112.140:15000/mcp`
+- Verified behaviors:
+  - `create_fsi_host` now succeeds even when `probeMessage` / `probeIntervalMs` are omitted.
+  - `create_fsi_session` succeeds on the new remote host.
+  - routed execution/evaluation also succeeds when `timeoutSeconds` is omitted from the MCP arguments.
+  - same-host, multi-session isolation is working through the actual MCP tool path:
+    - `session-a -> 111`
+    - `session-b -> 222`
+  - `get_fsi_host_health` no longer throws a generic timeout error; it returns a normal health payload (`starting` while the host is still converging).
+- Product conclusion:
+  - remote host creation, remote session creation, and routed remote execution are now functioning end-to-end through the deployed MCP HTTP surface.
