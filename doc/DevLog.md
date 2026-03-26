@@ -415,3 +415,19 @@
 - 行動準則更新：
   - 之後若有類似 operational finding，先寫 `log/.op_log`，收斂後 append 到 `DevLog.md`。
   - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。
+
+## 2026-03-26 12:45:00 Correction
+
+- 背景：
+  - 在前一輪 correction 收尾時，誤把新的 `push/check` 輸出 append 到既有 `log/20260326115000...op_log`。
+  - `check.fsx` 因此指出：
+    - `log_readonly_modify`
+    - `latest_log_not_advanced`
+- 根因：
+  - 我把 `.op_log` 當成可持續追加的作業筆記使用，違反了本 repo 對 `log/` 的唯讀規範。
+  - 收尾第二輪應建立新的 `.log/.op_log`，而不是續寫上一筆。
+- 補正：
+  - 新增：
+    - `log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log`
+    - `log/20260326124500.修正續寫既有oplog並補新任務log.op_log`
+  - 後續若要補記 `push/check` 或二次收尾，固定開新 log，不再改既有 log 檔。

@@ -1,0 +1,41 @@
+[context] correct append-only log mistake and advance latest log
+[head] 1239123
+[prev-check-summary] PASS=19 WARN=3 FAIL=2
+[root-cause] appended existing op_log and did not create a newer .log
+[devlog-tail-after-correction2]
+- 補正：
+  - 將 `notes/00033.txt` 的核心內容正式回填到：
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    - 本段 `DevLog Correction`
+  - 既有 `notes/00033.txt` 保留不動，視為當時的暫存摘錄；後續不再把 deployment / diagnosis 類內容單獨留在 `notes/`。
+- 判讀：
+  - `notes/` 適合閱讀摘錄與探索片段。
+  - deployment / diagnosis / root-cause / command evidence 應固定落在：
+    - `log/`：任務級證據
+    - `DevLog.md`：長期知識沉澱
+- 行動準則更新：
+  - 之後若有類似 operational finding，先寫 `log/.op_log`，收斂後 append 到 `DevLog.md`。
+  - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。
+
+## 2026-03-26 12:45:00 Correction
+
+- 背景：
+  - 在前一輪 correction 收尾時，誤把新的 `push/check` 輸出 append 到既有 `log/20260326115000...op_log`。
+  - `check.fsx` 因此指出：
+    - `log_readonly_modify`
+    - `latest_log_not_advanced`
+- 根因：
+  - 我把 `.op_log` 當成可持續追加的作業筆記使用，違反了本 repo 對 `log/` 的唯讀規範。
+  - 收尾第二輪應建立新的 `.log/.op_log`，而不是續寫上一筆。
+- 補正：
+  - 新增：
+    - `log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log`
+    - `log/20260326124500.修正續寫既有oplog並補新任務log.op_log`
+  - 後續若要補記 `push/check` 或二次收尾，固定開新 log，不再改既有 log 檔。
+
+[git-status-before-commit]
+ M doc/DevLog.md
+ M "log/20260326115000.\344\277\256\346\255\243\345\260\207\351\203\250\347\275\262\350\250\272\346\226\267\345\276\236notes\347\247\273\345\233\236DevLog\350\210\207log.op_log"
+?? "log/20260326124500.\344\277\256\346\255\243\347\272\214\345\257\253\346\227\242\346\234\211oplog\344\270\246\350\243\234\346\226\260\344\273\273\345\213\231log.00001.00001.log"
+?? "log/20260326124500.\344\277\256\346\255\243\347\272\214\345\257\253\346\227\242\346\234\211oplog\344\270\246\350\243\234\346\226\260\344\273\273\345\213\231log.op_log"

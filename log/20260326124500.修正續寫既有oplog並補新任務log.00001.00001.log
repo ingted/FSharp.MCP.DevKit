@@ -1,0 +1,38 @@
+背景
+- 上一輪為了收尾 `notes/00033.txt` 的 correction，誤將既有 `.op_log` 續寫，觸發 `check.fsx` 的 `log_readonly_modify`。
+- 同時因為沒有建立新的 `.log`，也觸發 `latest_log_not_advanced`。
+
+目標
+- 補一筆新的 `.log/.op_log`，作為這次 correction 的正式追溯起點。
+- 不再修改任何既有 `log/` 檔案，恢復 append-only/唯讀規範。
+- 在 `DevLog.md` 補記這次 SOP 失誤與修正方式。
+
+計畫步驟
+1. 新增一筆全新 `.log` 與 `.op_log`。
+2. 在 `DevLog.md` 追加 Correction，說明誤續寫既有 `.op_log` 的根因與後續約束。
+3. `git add/commit/push`。
+4. 再跑一次 `check.fsx`，確認 `latest_log` 前進且不再修改既有 log。
+
+執行命令/參數
+- `dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md --notes-dir /workspace/home/mcp/FSharp.MCP.DevKit/notes`
+
+結果
+- 已建立新的 `.log/.op_log`，不再續寫既有 `log` 檔。
+- 已補 `DevLog Correction`，記錄這次 append-only 規範失誤。
+
+根因判讀
+- 收尾時把新的 `push/check` 輸出直接 append 到既有 `.op_log`，違反了 `log/` 的唯讀規範。
+- 這是操作習慣問題，不是功能問題。
+
+下一步
+1. 後續每次補記 `push/check` 或第二輪收尾，都必須建立新的 `.log/.op_log`，不可續寫既有檔。
+2. 若 `check.fsx` 指出 `latest_log_not_advanced`，優先新增新 log，不可再重用上一筆。
+
+關聯文件/工單/PR
+- `doc/DevLog.md`
+- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者要求將 `notes/00033.txt` 類內容移回 `DevLog/op_log`。
+- 在第一次 correction 後，`check.fsx` 額外指出我續寫了既有 `.op_log`，因此本筆用新 `.log/.op_log` 再補一次正式 correction。
