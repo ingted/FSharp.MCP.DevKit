@@ -758,3 +758,661 @@ dotnet fsi /tmp/probe_deployed_versions.fsx
   - `proc-supervisor GetVesion`
   - `fsi-supervisor GetVesion`
   - host/session isolation
+
+
+
+
+
+
+• 我把這輪關鍵決策補進 DevLog/notes，另外也補一筆 log/op_log，避免又只留在聊天紀錄裡。補完就 commit。
+
+• Edited 2 files (+24 -0)
+  └ log/20260325234000.修正ProcSupervisorBootstrap與AkkaClientSerializer對齊.00001.00001.log (+19 -0)
+     1 +2026-03-25 23:40:00 UTC
+     2 +
+     3 +Summary
+     4 +- Fixed two low-level blockers before retrying deployed MCP host/session validation.
+     5 +- Aligned FSharp.MCP.DevKit client-side Akka config with shared FAkka contract serialization.
+     6 +- Recorded that deployed docker image must be rebuilt to pick up FAkka.Proc.Supervisor dgx.8 bootstrap fix.
+     7 +
+     8 +Evidence
+     9 +- Local direct Akka.Remote ask to ProcSupervisor GetVesion succeeds via verify_proc_supervisor_getversion.fsx.
+    10 +- ProcSupervisor default procnode spec now uses dotnet exec with runtimeconfig and depsfile.
+    11 +- FSharp.MCP.DevKit server build succeeded.
+    12 +- FSharp.MCP.DevKit tests succeeded.
+    13 +
+    14 +Touched
+    15 +- src/FSharp.MCP.DevKit.Server/Program.fs
+    16 +- src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+    17 +- src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+    18 +- doc/DevLog.md
+    19 +- notes/00031.txt
+
+  └ log/20260325234000.修正ProcSupervisorBootstrap與AkkaClientSerializer對齊.op_log (+5 -0)
+    1 +step=validate_local_proc_getversion result=pass script=/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+    2 +step=restore_tests result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+    3 +step=build_server result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+    4 +step=test_suite result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+    5 +step=record_devlog result=pass repo=/workspace/home/mcp/FSharp.MCP.DevKit
+
+• Ran git status --short -- Libs/Akka.Proc.Supervisor/ProcContracts.fs Libs/Akka.Proc.Supervisor/ProcHost.fs Libs/Akka.Proc.Supervisor/ProcRest.fs Libs/Akka.Proc.Supervisor/
+  │ Akka.Proc.Supervisor.fsproj Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+  └  M Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+     M Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj
+     M Libs/Akka.Proc.Supervisor/ProcContracts.fs
+     M Libs/Akka.Proc.Supervisor/ProcHost.fs
+     M Libs/Akka.Proc.Supervisor/ProcRest.fs
+
+• Ran git status --short -- src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj src/FSharp.MCP.DevKit.Server/Program.fs src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+  │ doc/DevLog.md notes/00031.txt log/20260325234000.修正ProcSupervisorBootstrap與AkkaClientSerializer對齊.00001.00001.log log/20260325234000.修正ProcSupervisorBootstrap與
+  │ AkkaClientSerializer對齊.op_log
+  └  M doc/DevLog.md
+     M src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+    … +3 lines
+    ?? "log/20260325234000.\344\277\256\346\255\243ProcSupervisorBootstrap\350\210\207AkkaClientSerializer\345\260\215\351\275\212.op_log"
+    ?? notes/00031.txt
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• source 變更已收斂，現在兩邊各自只用 pathspec commit，不把 build artifacts 帶進去。commit 完就 push。
+
+• Ran git add Libs/Akka.Proc.Supervisor/ProcContracts.fs Libs/Akka.Proc.Supervisor/ProcHost.fs Libs/Akka.Proc.Supervisor/ProcRest.fs Libs/Akka.Proc.Supervisor/
+  │ Akka.Proc.Supervisor.fsproj Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs && git commit -m "fix: launch default procnode via dotnet exec"
+  └ [20260325_002.fspickler-remoting-contracts 0637ba9] fix: launch default procnode via dotnet exec
+     5 files changed, 133 insertions(+), 56 deletions(-)
+
+• Ran git add src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj src/FSharp.MCP.DevKit.Server/Program.fs src/FSharp.MCP.DevKit.Server/McpFsiTools.fs doc/DevLog.md
+  │ notes/00031.txt 'log/20260325234000.修正ProcSupervisorBootstrap與AkkaClientSerializer對齊.00001.00001.log' 'log/20260325234000.修正ProcSupervisorBootstrap與
+  │ AkkaClientSerializer對齊.op_log' && git commit -m "fix: align Akka client serializer config"
+  └ [20260325_002.fspickler-remoting-contracts 907b6fa] fix: align Akka client serializer config
+     7 files changed, 827 insertions(+), 5 deletions(-)
+     create mode 100644 "log/20260325234000.\344\277\256\346\255\243ProcSupervisorBootstrap\350\210\207AkkaClientSerializer\345\260\215\351\275\212.00001.00001.log"
+     create mode 100644 "log/20260325234000.\344\277\256\346\255\243ProcSupervisorBootstrap\350\210\207AkkaClientSerializer\345\260\215\351\275\212.op_log"
+     create mode 100644 notes/00031.txt
+
+• Ran git push origin 20260325_002.fspickler-remoting-contracts
+  └ To github.com:ingted/PulseTrade.fs.git
+       dea4308..0637ba9  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Ran git push origin 20260325_002.fspickler-remoting-contracts
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       049ff1a..907b6fa  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 兩邊 commit 已完成，現在等 push 收尾。收完我就回你這次真正修了什麼、哪些還要你重部署後再驗。
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+• 兩邊都已修、測、commit + push。
+
+  PulseTrade.fs：
+
+  - branch: 20260325_002.fspickler-remoting-contracts
+  - commit: 0637ba9
+  - 重點：
+      - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcContracts.fs
+      - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+      - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcRest.fs
+      - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj
+      - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+
+  這刀修的是 bootstrap/default procnode 啟動方式。現在 ProcSupervisor 不再組出 dotnet /app/Akka.Proc.Supervisor.dll ...，而是 dotnet exec --runtimeconfig --depsfile ...
+  Akka.Proc.Supervisor.dll ...。
+
+  FSharp.MCP.DevKit：
+
+  - branch: 20260325_002.fspickler-remoting-contracts
+  - commit: 907b6fa
+  - 重點：
+      - src/FSharp.MCP.DevKit.Server/Program.fs
+      - src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+      - src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+      - doc/DevLog.md
+      - notes/00031.txt
+      - log/20260325234000.修正ProcSupervisorBootstrap與AkkaClientSerializer對齊.00001.00001.log
+
+  這刀修的是 fsharp-devkit 自己的 Akka client config。現在 client side 也會合併 ContractSerialization.configForAssemblies(...)，不再只讀 src/FSharp.MCP.DevKit.Server/
+  akka.server.conf。
+
+  驗證已過：
+
+  - PulseTrade：
+      - dotnet fsi [verify_proc_supervisor_getversion.fsx](/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx) -- --timeout-ms 10000
+      - dotnet test [Akka.Proc.Supervisor.Tests.fsproj](/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj) --filter
+        "...GetVesion...|...dotnet exec..."
+  - FSharp.MCP.DevKit：
+      - dotnet build [FSharp.MCP.DevKit.Server.fsproj](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj) -c Release -m:1
+      - dotnet test [FSharp.MCP.DevKit.Tests.fsproj](/workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj) -f net10.0 --no-restore -m:1
+
+  現在你要做的是重建部署 image。這次重建後，才有資格重新驗：
+
+  1. proc-supervisor GetVesion
+  2. fsi-supervisor GetVesion
+  3. host/session isolation
+
+  補一句：你前面抓的 docker rm -f fsharp-mcp-devkit 噪音，我已經在 /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service 改成「存在才刪」。如果你要，我下一步就直接接
+  著測你重部署後的 GetVesion。
+
+
+
+
+  › 重新佈署了，測吧
+
+
+• 我先照最低層順序測：proc-supervisor GetVesion、再透過它找 fsi-supervisor GetVesion，都通了才往上看 fsharp-devkit 的 MCP。
+
+• Ran curl -fsS http://127.0.0.1:15000/healthz
+  └ {"isWindowsService":false,"procSupervisor":"enabled","procSupervisorPath":"akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","remoteClient":"enabled","serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+
+• Ran docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | grep fsharp-mcp-devkit || true
+  └ fsharp-mcp-devkit    fsharp-mcp-devkit:ai-v0.6.2    Up About a minute
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx -- --proc-supervisor-path akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor --timeout-
+  │ ms 10000
+  └ System.Exception: Unknown argument: --proc-supervisor-path
+       at Microsoft.FSharp.Core.PrintfModule.PrintFormatToStringThenFail@1447.Invoke(String message)
+    … +2 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• /healthz 正常，container 也在。現在等兩支最低層腳本回來；如果 127.0.0.1:8110 不通，我會直接改用 /healthz 回報的實際 actor path 10.28.112.140:8110 重跑。
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx -- --proc-supervisor-path akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor --timeout-ms 10000
+  └ verify_proc_fsi_versions failed: One or more errors occurred. (Timeout after 10.00 seconds)
+    System.AggregateException: One or more errors occurred. (Timeout after 10.00 seconds)
+    … +4 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• verify_proc_supervisor_getversion.fsx 沒做 --proc-supervisor-path 參數，這是腳本介面不一致。我先直接看它支援的參數，然後用正確路徑重跑兩支腳本。
+
+• Explored
+  └ Read verify_proc_supervisor_getversion.fsx, verify_proc_fsi_versions.fsx
+
+• Ran docker logs fsharp-mcp-devkit --tail 120
+  └ [INFO][03/25/2026 23:35:19.075Z][Thread 0007][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/26/bootstrap-net10-host] Starting process [bootstrap-net10-host]: dotnet /app/Akka.
+    Proc.Supervisor.dll --mode procnode --procid bootstrap-net10-host --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --systemname proc-system --host 10.28.112.140 --port 36
+    … +128 lines
+    [WARNING][03/25/2026 23:35:21.558Z][Thread 0007][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/26/bootstrap-net10-host] Proc bootstrap-net10-host stderr:   - If this should be
+    a framework-dependent app, add the '/app/Akka.Proc.Supervisor.runtimeconfig.json' file and specify the appropriate framework.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 現在部署 image 本身還明顯是舊的 bootstrap 行為，我先不往上猜。直接在 fsharp-mcp-devkit container 裡做最小 direct ask：先問 proc-supervisor GetVesion，再看 fsi-supervisor。
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'curl -fsS http://127.0.0.1:6001/health && echo && curl -fsS http://127.0.0.1:6001/api/proc/nodes'
+  └ curl: (7) Failed to connect to 127.0.0.1 port 6001 after 0 ms: Couldn't connect to server
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'ls /app | sed -n "1,80p"'
+  └ Aether.dll
+    Akka.Cluster.Hosting.dll
+    … +76 lines
+    FSharp.MCP.DevKit.Documentation.dll
+    FSharp.MCP.DevKit.Documentation.pdb
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'dotnet --info | head -n 20'
+  └ .NET SDK:
+     Version:           10.0.201
+    … +16 lines
+    Host:
+      Version:      10.0.5
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+■ Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.
+
+
+› sa@gx10-f325:~/gemini4/mcp/docker/FSharp.MCP.DevKit$ cat /etc/systemd/system/fsdevkit.service
+  [Unit]
+  Description=FSharp MCP DevKit Docker Service
+  After=network-online.target docker.service
+  Wants=network-online.target
+  Requires=docker.service
+
+  [Service]
+  Type=simple
+  Restart=always
+  RestartSec=5
+  EnvironmentFile=-/etc/default/fsdevkit
+  Ver=0.0.1
+
+  ExecStartPre=/usr/bin/bash -lc '\
+    if /usr/bin/docker ps -aq --filter name=^fsharp-mcp-devkit$$ | grep -q .; then \
+      exec /usr/bin/docker rm -f fsharp-mcp-devkit; \
+    fi'
+  ExecStart=/usr/bin/bash -lc '\
+    set -- $$(hostname -I); \
+    HOST_IP="$${FSDEVKIT_HOST_IP:-$$1}"; \
+    if [ -z "$$HOST_IP" ]; then \
+      echo "fsdevkit.service: unable to determine FSDEVKIT_HOST_IP" >&2; \
+      exit 1; \
+    fi; \
+    exec /usr/bin/docker run --name fsharp-mcp-devkit \
+      --network host \
+      -e ASPNETCORE_URLS=http://0.0.0.0:15000 \
+      -e MCP_ENABLE_STDIO=false \
+      -e FSI_ENABLE_REMOTE_CLIENT=true \
+      -e FSI_ENABLE_PROC_SUPERVISOR=true \
+      -e FSI_PROC_SUPERVISOR_HOST=$$HOST_IP \
+      -e FSI_PROC_SUPERVISOR_PORT=8110 \
+      -e FSI_PROC_SUPERVISOR_WEB_HOST=$$HOST_IP \
+      -e FSI_PROC_SUPERVISOR_WEB_PORT=6001 \
+      -e FSI_PROC_SUPERVISOR_SYSTEM_NAME=proc-system \
+      -e FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@$$HOST_IP:8110/user/proc-supervisor \
+      -v /home/sa/gemini4:/gemini4:ro \
+      -v /home/sa/gemini4/devkit_workspace/:/workspace \
+      fsharp-mcp-devkit:ai-v0.6.2'
+  ExecStop=/usr/bin/docker stop -t 10 fsharp-mcp-devkit
+  ExecStopPost=/usr/bin/bash -lc '\
+    if /usr/bin/docker ps -aq --filter name=^fsharp-mcp-devkit$$ | grep -q .; then \
+      exec /usr/bin/docker rm -f fsharp-mcp-devkit; \
+    fi'
+
+  [Install]
+  WantedBy=multi-user.target
+
+  這是舊的?
+
+
+• 我先核對 repo 內的 fsdevkit.service 與目前安裝的內容是不是一致，再對照 entrypoint.sh 看 ProcSupervisor 到底有沒有被真正啟動。
+
+• Explored
+  └ Read fsdevkit.service, entrypoint.sh
+
+• Ran docker logs fsharp-mcp-devkit --tail 200
+  └ [INFO][03/25/2026 23:36:31.745Z][Thread 0007][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/26/bootstrap-net10-host] Starting process [bootstrap-net10-host]: dotnet /app/Akka.
+    Proc.Supervisor.dll --mode procnode --procid bootstrap-net10-host --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --systemname proc-system --host 10.28.112.140 --port 36
+    … +208 lines
+    [WARNING][03/25/2026 23:36:34.466Z][Thread 0018][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/26/bootstrap-net10-host] Proc bootstrap-net10-host stderr:   - If this should be
+    a framework-dependent app, add the '/app/Akka.Proc.Supervisor.runtimeconfig.json' file and specify the appropriate framework.
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'curl -fsS http://127.0.0.1:15000/healthz || wget -qO- http://127.0.0.1:15000/healthz'
+  └ {"isWindowsService":false,"procSupervisor":"enabled","procSupervisorPath":"akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","remoteClient":"enabled","serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 不是舊的 fsdevkit.service。你貼的 /etc/systemd/system/fsdevkit.service 跟目前 repo 內的 /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service 是一致的，這份已經是我改過的版本：
+
+  - --network host
+  - FSI_PROC_SUPERVISOR_* 都用 HOST_IP
+  - docker rm -f 也改成「存在才刪」
+
+  所以 service 檔本身不是現在的主因。
+
+  真正的問題是：你這次部署出去的 image 還是舊的 ProcSupervisor 邏輯。證據很硬：
+
+  1. 你那次 build.host.sh 的輸出裡：
+
+  - [build 7/8] dotnet restore ... 是 CACHED
+  - [build 8/8] dotnet publish ... 也是 CACHED
+
+  2. 現在容器 log 仍然在刷：
+
+  Starting process [bootstrap-net10-host]: dotnet /app/Akka.Proc.Supervisor.dll --mode procnode ...
+  ...
+  /app/Akka.Proc.Supervisor.runtimeconfig.json was not found
+
+  而我這次修好的 FAkka.Proc.Supervisor dgx.8 不會再這樣組命令，它應該改成 dotnet exec --runtimeconfig --depsfile ...。
+
+  所以現在最準確的結論是：
+
+  - fsdevkit.service：不是舊的
+  - entrypoint.sh：也不是現在的主因
+  - 部署出去的 image / restore graph 還沒吃到新的 FAkka.Proc.Supervisor 1.562.101.201-dgx.8
+  - 也可能是你 host 上的 FSharp.MCP.DevKit repo 還沒更新到我剛 push 的：
+      - 907b6fa on 20260325_002.fspickler-remoting-contracts
+
+  另外補一個剛驗到的點：
+
+  - 在 container 內 curl 127.0.0.1:6001/health 失敗，不代表 ProcSupervisor 沒起
+  - 因為你現在是用 --host 10.28.112.140 --webhost 10.28.112.140
+  - 它不是 bind 在 127.0.0.1
+  - 所以 container 內要打：
+      - http://10.28.112.140:6001/health
+        才合理
+
+  你現在該做的是兩步：
+
+  1. 確認 host 上的 repo 真的是新版本
+     在 host 跑：
+
+  cd /workspace/sa/gemini4/mcp/FSharp.MCP.DevKit
+  git rev-parse HEAD
+  git log -1 --oneline
+  grep 'FAkka.Proc.Supervisor' src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+
+  你應該看到：
+
+  - branch: 20260325_002.fspickler-remoting-contracts
+  - commit: 907b6fa
+  - package: 1.562.101.201-dgx.8
+
+  2. 強制重建 image，不要吃 cache
+
+  cd /workspace/sa/gemini4/mcp/docker/FSharp.MCP.DevKit
+  sudo docker build --no-cache -t fsharp-mcp-devkit:ai-v0.6.2 -f Dockerfile /home/sa/gemini4
+  bash build.host.sh
+
+  如果你要更快確認是不是 package 還沒吃到，我也可以下一步直接教你在 container 內看：
+
+  - /app/FSharp.MCP.DevKit.deps.json
+  - 它到底引用的是 FAkka.Proc.Supervisor dgx.7 還是 dgx.8
+
+
+
+
+  › 我複製到這邊 /workspace/home/mcp/docker/FSharp.MCP.DevKit/FSharp.MCP.DevKit.deps.json 看你是要自己讀還是 grep，這檔超長
+
+
+• 我先直接在這份 deps.json 裡查 FAkka.Proc.Supervisor、FAkka.FSI.Supervisor 和 FAkka.Fsi.Contracts 的實際版本，先判定是不是 image 根本沒吃到新 package。
+
+• Explored
+  └ Search FAkka\.(Proc\.Supervisor|FSI\.Supervisor|Fsi\.Contracts) in FSharp.MCP.DevKit.deps.json
+    Search 1\.562\.101\.201-dgx\.(7|8)|10\.1\.201\.(2|3) in FSharp.MCP.DevKit.deps.json
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• deps.json 已經證明 image 吃到的是新 package，不是舊版 restore graph。現在要查的是：dgx.8 的 package 內部到底哪條 code path 還在組舊的 procnode 啟動命令。
+
+• Explored
+  └ Search SpawnDefault|start-default|buildManagedProcNodeSpec|dotnet /app/Akka.Proc.Supervisor.dll|procnode in ProcHost.fs
+    Read ProcHost.fs, ProcRest.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 不是舊的 fsdevkit.service。
+
+  你貼的 /etc/systemd/system/fsdevkit.service 跟 repo 內的 /workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service 一致，這份已經是我改過的版本，包含：
+
+  - --network host
+  - FSI_PROC_SUPERVISOR_* 用 host IP
+  - docker rm -f 改成「存在才刪」
+
+  所以現在的問題不在 service 檔。
+
+  我剛核對到的事實是：
+
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/FSharp.MCP.DevKit.deps.json 已經是新版本：
+      - FAkka.Proc.Supervisor 1.562.101.201-dgx.8
+      - FAkka.FSI.Supervisor 1.562.101.201-dgx.8
+      - FAkka.Fsi.Contracts 10.1.201.3
+  - 但目前 container log 仍然顯示 bootstrap procnode 在跑：
+      - dotnet /app/Akka.Proc.Supervisor.dll --mode procnode ...
+      - 然後炸：
+          - /app/Akka.Proc.Supervisor.runtimeconfig.json was not found
+
+  這代表兩種可能只剩下這兩個：
+
+  1. dgx.8 package 內容本身仍然帶舊的 bootstrap 邏輯
+  2. 你現在看到的是 bootstrap 舊 log，而不是這次重啟後的新行為
+
+  就目前 docker logs fsharp-mcp-devkit --tail 200 來看，第二種機率比較低，因為它持續在刷，不像舊殘留。
+
+  所以最準確的結論是：
+
+  - service 不是舊的
+  - deps.json 也不是舊的
+  - 現在最可疑的是：我發出去的 FAkka.Proc.Supervisor dgx.8 package 內容，實際上沒有把 bootstrap default spawn 修進去
+
+  另外再補一個你前面沒問但很重要的點：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx 不是拿來打既有部署的，它是「自己起一個本地 ProcSupervisor 再 ask」
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx 雖然能打既有部署，但它現在 client config 沒有合併 contract serializer config，所以它現在不能拿來判 deployed
+    GetVesion，這支我得先修
+
+  下一步我建議只做兩件事：
+
+  1. 修 /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx，讓它真的能打 deployed proc/fsi supervisor
+  2. 直接檢查 FAkka.Proc.Supervisor dgx.8 nupkg 裡的 ProcHost 行為是否真的還是舊的
+
+  如果你要，我現在就先修腳本，不再碰別的層。
+
+
+› 你不一定要用現有腳本阿，你現在當場重寫新的，起一個 actorsystem 然後直接ask 你認為現在 fsharp-devkit 裡面的 proc supervisor OpCmd.GetVersion
+
+
+• 我現在不走舊腳本，直接當場起一個最小 client ActorSystem，對你部署中的 proc-supervisor 直接 Ask<GetVesion>。先只驗這一條。
+
+• Ran cat <<'FSX' >/tmp/ask_proc_getversion.fsx
+  │ #r "nuget: Akka, 1.5.62"
+  │ #r "nuget: Akka.Remote, 1.5.62"
+  │ … +41 lines
+  └
+
+    … +7 lines
+    fileVersion=Some "1.562.101.201"
+    informationalVersion=Some "1.562.101.201-dgx.8+dea4308a155434df1c577ffb12aa57b482ecad24"
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• client 已經起來了，現在等 direct ask 的結果；如果 timeout，就是這台部署裡的 proc-supervisor 最低層仍不可用。
+
+• Waited for background terminal
+
+• proc-supervisor GetVesion 已通，而且版本正確是 dgx.8。現在我接著用同一個 client 直接查 GetAllProcInfo，看目前有沒有活著的 fsiSupervisorPath 可再 ask。
+
+• Ran cat <<'FSX' >/tmp/ask_proc_and_fsi_versions.fsx
+  │ #r "nuget: Akka, 1.5.62"
+  │ #r "nuget: Akka.Remote, 1.5.62"
+  │ … +48 lines
+  └
+
+    … +6 lines
+    PROC bootstrap-net10-host status=stopped fsi=None node=Some "akka.tcp://proc-system@10.28.112.140:44327" err=None
+    FSI_NONE
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 現在看 ProcSnapshot[]。如果這裡只有 bootstrap-net10-host stopped，那就能直接證明 proc 本身沒問題，壞的是 bootstrap child proc。
+
+• Waited for background terminal
+
+• 測完了，結果很清楚。
+
+  1. proc-supervisor GetVesion 已經正常
+     我直接當場重寫 client script，對部署中的：
+
+  - akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor
+
+  做 Ask<OpResult>(GetVesion)，結果成功，回的是：
+
+  - Akka.Proc.Supervisor
+  - 1.562.101.201-dgx.8+dea4308...
+
+  所以現在可以確定：
+
+  - Akka.Remote 到 proc-supervisor 是通的
+  - DU/FsPickler 這條最低層也是通的
+  - proc-supervisor 本體版本是對的
+
+  2. fsi-supervisor GetVesion 目前不可能成功
+     我接著直接 Ask<GetAllProcInfo>，結果是：
+
+  - 只有一個 proc：bootstrap-net10-host
+  - status=stopped
+  - fsiSupervisorPath=None
+
+  也就是說：
+
+  - 現在根本沒有活著的 fsi-supervisor actor
+  - 所以第二步沒得 ask，不是我不測，是 target 不存在
+
+  3. 真正壞點已經收斂了
+     container log 仍然在刷：
+
+  - dotnet /app/Akka.Proc.Supervisor.dll --mode procnode ...
+  - 然後：
+      - /app/Akka.Proc.Supervisor.runtimeconfig.json was not found
+
+  所以現在的根因不是：
+
+  - service 檔
+  - remoting
+  - parser
+  - serializer
+
+  而是：
+
+  - bootstrap-net10-host 這個 child proc 仍然被組成錯的啟動命令
+  - 所以 procnode 起不來
+  - 因此也沒有 fsi-supervisor
+
+  4. 關鍵判讀
+     最重要的是：這次不是舊版 image，因為 proc-supervisor GetVesion 已經證明你跑的是 dgx.8。
+
+  所以現在更精準的 root cause 是：
+
+  - dgx.8 雖然已經部署
+  - 但 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcContracts.fs 在部署情境裡仍然沒拿到可用的 runtimeconfig/depsfile
+  - 所以最後還是退化成：
+      - dotnet /app/Akka.Proc.Supervisor.dll ...
+
+  這一點從現象上看非常像：
+
+  - supervisor process 自己是靠 dotnet exec --runtimeconfig /app/FSharp.MCP.DevKit.runtimeconfig.json --depsfile /app/FSharp.MCP.DevKit.deps.json /app/Akka.Proc.Supervisor.dll ... 被起來的
+  - 但它在程式內部組 child proc spec 時，沒辦法反推出那兩個 host-level sidecar 路徑
+
+  所以目前的結論是：
+
+  - proc-supervisor: 正常
+  - fsi-supervisor: 尚未存在，因為 bootstrap procnode 起不來
+  - 下一刀應該修 FAkka.Proc.Supervisor 的 buildManagedProcNodeSpec，讓它在這種 hosted/container 發佈情境下，也能正確找到可用的 runtimeconfig/depsfile
+
+  如果你要，我下一步就直接修這一刀。
+
+
+› 1. Akka.Proc.Supervisor 應該要起一個 process (一樣是 proc supervisor 的 dll) 但裡面是跑 fsi supervisor
+  2. 當初這是在 windows 世界開發的，是不是當初直接拿 dll 當執行檔?
+
+
+• 我先對照目前 Akka.Proc.Supervisor / Akka.FSI.Supervisor 的 host 程式碼，再直接回答你這兩點，不先動手改。
+
+• Explored
+  └ Read ProcHost.fs, WorkerHost.fs, Api.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 對，現在的設計本來就是這樣。
+
+  1. Akka.Proc.Supervisor 先起一個 child process，而那個 child process 仍然是 Akka.Proc.Supervisor.dll
+  2. 但它是用 --mode procnode 啟動
+  3. procnode 啟來後，不是再去啟另一支 fsi supervisor exe，而是在同一個 process 內直接呼叫 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Api.fs 把 FSI supervisor actor 掛進那個 ActorSystem
+
+  對應程式碼在：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+      - HostMode = Supervisor | ProcNode
+      - startSupervisor
+      - startProcNode
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Api.fs
+      - AkkaFsiBootstrap.EnsureSupervisor
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/WorkerHost.fs
+      - 這是另一種獨立 host 入口，但你現在這套 ProcSupervisor 路徑不是靠它
+
+  所以你的第 1 點理解是對的：
+
+  - child proc 是 proc supervisor dll
+  - 但裡面跑的是 fsi supervisor actor
+
+  你的第 2 點，我判斷也很可能是對的：
+
+  - 當初在 Windows 世界，這條路徑很可能是直接有可執行 entrypoint，或至少 runtime sidecar/host context 是完整的
+  - 所以「拿 dll 當執行目標」沒有立刻暴露問題
+  - 但在現在這個 Linux container 裡，child proc 被組成：
+      - dotnet /app/Akka.Proc.Supervisor.dll ...
+  - 如果旁邊沒有對應的 Akka.Proc.Supervisor.runtimeconfig.json / deps.json
+  - 就會炸你現在看到的：
+      - libhostpolicy.so
+      - runtimeconfig.json was not found
+
+  也就是說，現在不是架構概念錯，而是：
+
+  - 這套原本偏 Windows/本機開發脈絡的啟動假設，搬到現在的 container 發佈模型後破了
+
+  最精確的說法是：
+
+  - 設計上：沒錯，procnode 本來就該是 Akka.Proc.Supervisor.dll --mode procnode
+  - 部署上：現在不能再假設 bare dotnet <dll> 一定有正確 runtime context
+  - 所以才需要顯式 dotnet exec --runtimeconfig --depsfile ...
+
+  下一步就該修這個啟動假設，不是重想架構。
+
+
+› 不過現在不是有 Akka.Proc.Supervisor.runtimeconfig.json 了?
+
+
+• 對，如果你是指 正式 build 出來的 Akka.Proc.Supervisor 輸出目錄，現在是有的。
+
+  我前面也已經用這個檔做過本機最小驗證：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_supervisor_getversion.fsx
+  - 它就是靠：
+      - Akka.Proc.Supervisor.runtimeconfig.json
+      - Akka.Proc.Supervisor.deps.json
+      - dotnet exec ...
+        成功把背景 ProcSupervisor 起來，然後 direct Ask<GetVesion> 成功
+
+  但你現在部署中的錯，不是在本機 build output 缺這兩個檔，而是：
+
+  - container 的 /app/ 底下沒有 Akka.Proc.Supervisor.runtimeconfig.json
+
+  從你現在實際 log 可直接看到：
+
+  /app/Akka.Proc.Supervisor.runtimeconfig.json was not found
+
+  而且我之前列過 container 內 /app 檔案清單，只有：
+
+  - Akka.Proc.Supervisor.dll
+  - 但沒看到 Akka.Proc.Supervisor.runtimeconfig.json
+
+  所以現在要分清楚兩件事：
+
+  1. PulseTrade.fs 本機編譯輸出
+
+  - 有 Akka.Proc.Supervisor.runtimeconfig.json
+  - 所以本機 direct ask 測試能通
+
+  2. fsharp-devkit container /app
+
+  - 目前只有 server publish 出來的共同輸出與隨包帶進來的 dll
+  - 沒有 Akka.Proc.Supervisor.runtimeconfig.json
+  - 所以 child proc 如果還是跑：
+      - dotnet /app/Akka.Proc.Supervisor.dll ...
+  - 就一定炸
+
+  所以答案是：
+
+  - 有，但不是在你現在 container 的 /app 那個位置
+  - 問題不是 package 世界裡完全沒有這個檔
+  - 而是部署 image 沒把它帶進 /app，而 child proc 又偏偏假設它在 /app
+
+  這也剛好呼應目前兩種修法：
+
+  1. 修 ProcSupervisor child proc spec
+
+  - 不要依賴 /app/Akka.Proc.Supervisor.runtimeconfig.json
+  - 改成顯式使用一個已知可用的 runtime/deps context
+
+  2. 或修 docker image
+
+  - 把 Akka.Proc.Supervisor.runtimeconfig.json / .deps.json 明確放進 /app
+
+  但因為你這套設計本來就是「child proc 啟的是同一支 Akka.Proc.Supervisor.dll」，我現在還是傾向：
+
+  - deployment 端把這兩個 sidecar 明確帶進 /app
+  - 再加上 ProcSupervisor 端顯式用 dotnet exec --runtimeconfig --depsfile
+  - 這樣最穩，不靠隱含行為
+

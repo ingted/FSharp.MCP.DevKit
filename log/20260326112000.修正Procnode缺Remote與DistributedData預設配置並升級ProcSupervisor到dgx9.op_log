@@ -1,0 +1,8 @@
+2026-03-26T11:20:00Z
+- 檢查部署 `docker logs`，確認 bootstrap procnode 缺 serializer id `6/12`
+- 修正 `Akka.Proc.Supervisor.ProcHost.loadConfig`
+- 補 bootstrap procnode regression test
+- 驗證 `verify_bootstrap_procnode.fsx` PASS
+- 發布 `FAkka.Proc.Supervisor 1.562.101.201-dgx.9`
+- 升級 `FSharp.MCP.DevKit` 到 `dgx.9`
+- 補 `DevLog` / `notes/00033.txt`

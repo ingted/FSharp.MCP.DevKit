@@ -1,0 +1,56 @@
+背景:
+- deployed `proc-supervisor` 已可 direct `GetVesion`
+- bootstrap procnode 持續 `stopped`
+- container log 顯示 serializer id `6` / `12` 缺失
+
+目標:
+- 修正 `Akka.Proc.Supervisor` bootstrap procnode 的 Akka default config fallback
+- 發布新 `FAkka.Proc.Supervisor` 套件
+- 讓 `FSharp.MCP.DevKit` 升到新套件並完成本地驗證
+
+計畫步驟:
+1. 檢查 `ProcHost.loadConfig` 的 HOCON fallback 組裝
+2. 補 `Remote` / `DistributedData` / `ClusterSharding` / `ClusterSingleton` 預設 config
+3. 新增 bootstrap procnode regression test
+4. 本機驗證 bootstrap procnode 能註冊非空 `fsiSupervisorPath`
+5. 發布 `FAkka.Proc.Supervisor 1.562.101.201-dgx.9`
+6. 升級 `FSharp.MCP.DevKit` package reference 並完成 restore/build/test
+
+執行命令/參數:
+- `docker logs fsharp-mcp-devkit --tail 120`
+- `dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "...GetVesion...|...Bootstrap procnode...|...dotnet exec..." -m:1`
+- `dotnet fsi Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx`
+- `dotnet pack Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj -c Release -m:1 -o /tmp/pulse-nupkgs`
+- `dotnet nuget push /tmp/pulse-nupkgs/FAkka.Proc.Supervisor.1.562.101.201-dgx.9.nupkg ...`
+- `dotnet restore tests/FSharp.MCP.DevKit.Tests.fsproj --configfile /tmp/fsharp-devkit-proc-dgx9.config -m:1`
+- `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release --no-restore -m:1`
+- `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore -m:1`
+
+結果:
+- `Akka.Proc.Supervisor` procnode 端現在具備 serializer id `6/12/13/14`
+- bootstrap procnode 本機驗證成功，`nodes` JSON 已出現非空 `fsiSupervisorPath`
+- `Akka.Proc.Supervisor.Tests` 針對 default procnode spec / remote GetVesion / bootstrap procnode 三項測試全綠
+- `FAkka.Proc.Supervisor 1.562.101.201-dgx.9` 已成功推上 NuGet
+- `FSharp.MCP.DevKit` 已升到 `dgx.9`，本地 `restore/build/test` 全部通過
+
+根因判讀:
+- 前一版 procnode 不是 serializer contract 問題，而是 `ProcHost.loadConfig` 未納入 `Remote` 與 `DistributedData` 的 Akka 預設配置
+- 因此 child proc 雖能啟動，卻會在 cluster/sharding replicator traffic 上失敗並停掉
+
+下一步:
+1. 重新部署 `fsharp-devkit`
+2. 先測 deployed `proc-supervisor GetVesion`
+3. 再測 deployed `GetAllProcInfo` 是否出現帶 `fsiSupervisorPath` 的 running procnode
+4. 最後測 deployed `fsi-supervisor GetVesion` 與 host/session 隔離
+
+關聯文件/工單/PR:
+- `/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs`
+- `/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs`
+- `/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md`
+- `/workspace/home/mcp/FSharp.MCP.DevKit/notes/00033.txt`
+
+prompt/上下文摘要:
+- 使用者要求在重新部署後，從最底層先確認 `proc/fsi supervisor` 是否可用；不得再跳到上層 MCP host/session
+- 本輪發現部署中的 `proc-supervisor` 已可 direct ask，但 bootstrap procnode 因缺 Akka default serializer config 而停掉

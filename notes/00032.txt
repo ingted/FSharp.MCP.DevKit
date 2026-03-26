@@ -1,0 +1,295 @@
+› Akka.Proc.Supervisor.runtimeconfig.json 要從哪邊複製? dockerfile 你說一下怎麼改，我去改(在這個 container 裡面是唯讀的)
+
+
+• 我先看目前 Dockerfile 和本機 FAkka.Proc.Supervisor 套件實際把 runtimeconfig/deps 放哪裡，再直接給你可改的片段。
+
+• Searched
+
+• Explored
+  └ Read Dockerfile
+    Search Akka.Proc.Supervisor.runtimeconfig.json in fakka.proc.supervisor
+    Search Akka.Proc.Supervisor.runtimeconfig.json in bin
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 要從 NuGet package cache 複製 Akka.Proc.Supervisor.runtimeconfig.json，不是從 fsharp-devkit publish 輸出裡找，因為 dotnet publish FSharp.MCP.DevKit.Server 不會自動把 package assembly 的 sidecar 全部丟
+  進 /app。
+
+  我剛查到：
+
+  - NuGet cache 裡有：
+      - /root/.nuget/packages/fakka.proc.supervisor/1.562.101.201-dgx.8/lib/net10.0/Akka.Proc.Supervisor.runtimeconfig.json
+  - 但沒有同名 Akka.Proc.Supervisor.deps.json
+  - 本機 source build output 裡兩個都有，但 Docker build context 目前沒有 PulseTrade.fs source，所以最穩的是：
+      - runtimeconfig 從 NuGet cache 複製
+      - deps.json 直接複製目前 server publish 出來的 FSharp.MCP.DevKit.deps.json，改名成 Akka.Proc.Supervisor.deps.json
+
+  原因很直接：
+
+  - 現在 ProcStartSpecBuilder 會找：
+      - Akka.Proc.Supervisor.runtimeconfig.json
+      - Akka.Proc.Supervisor.deps.json
+  - 找不到就退化成：
+      - dotnet /app/Akka.Proc.Supervisor.dll ...
+  - 這就是你現在爆掉的原因
+
+  你可以把 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 改成這樣：
+
+  FROM ai:v0.6.2 AS build
+
+  WORKDIR /src
+
+  COPY mcp/FSharp.MCP.DevKit/ ./FSharp.MCP.DevKit/
+  COPY mcp/csharp-sdk/ ./csharp-sdk/
+
+  RUN cat > /src/NuGet.Config <<'EOF'
+  <?xml version="1.0" encoding="utf-8"?>
+  <configuration>
+    <packageSources>
+      <clear />
+      <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    </packageSources>
+    <packageSourceMapping>
+      <packageSource key="nuget.org">
+        <package pattern="*" />
+      </packageSource>
+    </packageSourceMapping>
+  </configuration>
+  EOF
+
+  WORKDIR /src/FSharp.MCP.DevKit
+  RUN dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --configfile /src/NuGet.Config
+  RUN dotnet publish src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj \
+      -c Release \
+      -f net10.0 \
+      --no-restore \
+      -o /opt/fsharp-mcp
+
+  RUN PROC_RUNTIMECONFIG="$(find /root/.nuget/packages/fakka.proc.supervisor -path '*/lib/net10.0/Akka.Proc.Supervisor.runtimeconfig.json' | sort | tail -n1)" \
+   && test -n "$PROC_RUNTIMECONFIG" \
+   && cp "$PROC_RUNTIMECONFIG" /opt/fsharp-mcp/Akka.Proc.Supervisor.runtimeconfig.json \
+   && cp /opt/fsharp-mcp/FSharp.MCP.DevKit.deps.json /opt/fsharp-mcp/Akka.Proc.Supervisor.deps.json
+
+  FROM ai:v0.6.2
+
+  WORKDIR /app
+  COPY --from=build /opt/fsharp-mcp/ /app/
+  COPY mcp/docker/FSharp.MCP.DevKit/entrypoint.sh /app/entrypoint.sh
+
+  RUN chmod +x /app/entrypoint.sh
+
+  ENV ASPNETCORE_URLS=http://0.0.0.0:5000
+  ENV MCP_ENABLE_STDIO=false
+  ENV FSI_ENABLE_REMOTE_CLIENT=true
+  ENV FSI_ENABLE_PROC_SUPERVISOR=true
+  ENV FSI_PROC_SUPERVISOR_HOST=127.0.0.1
+  ENV FSI_PROC_SUPERVISOR_PORT=8110
+  ENV FSI_PROC_SUPERVISOR_WEB_HOST=127.0.0.1
+  ENV FSI_PROC_SUPERVISOR_WEB_PORT=6001
+  ENV FSI_PROC_SUPERVISOR_SYSTEM_NAME=proc-system
+  ENV FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor
+  EXPOSE 5000
+
+  ENTRYPOINT ["/app/entrypoint.sh"]
+
+  重點只有這段新增：
+
+  RUN PROC_RUNTIMECONFIG="$(find /root/.nuget/packages/fakka.proc.supervisor -path '*/lib/net10.0/Akka.Proc.Supervisor.runtimeconfig.json' | sort | tail -n1)" \
+   && test -n "$PROC_RUNTIMECONFIG" \
+   && cp "$PROC_RUNTIMECONFIG" /opt/fsharp-mcp/Akka.Proc.Supervisor.runtimeconfig.json \
+   && cp /opt/fsharp-mcp/FSharp.MCP.DevKit.deps.json /opt/fsharp-mcp/Akka.Proc.Supervisor.deps.json
+
+  補充：
+
+  - 這條路徑下 不需要 額外複製 Akka.FSI.Supervisor.runtimeconfig.json
+  - 因為現在 child proc 啟的是 Akka.Proc.Supervisor.dll --mode procnode
+  - fsi supervisor 是 actor，不是另一支獨立 exe/dll host
+
+  你改完重 build/redeploy 後，我再幫你驗：
+
+  1. proc-supervisor GetVesion
+  2. GetAllProcInfo 是否出現 running + fsiSupervisorPath
+  3. fsi-supervisor GetVesion
+  4. 再往上看 host/session isolation
+
+
+› 顯式使用一個已知可用的 runtime/deps context <= 這又是啥? 需要 json/deps.json 的 dll 執行感覺很不直覺阿
+
+
+• 你覺得不直覺是對的，但這其實是 .NET 的正常機制，不是我亂發明。
+
+  先講白話：
+
+  - dotnet some.dll
+  - 並不是單純「把這個 dll 當 exe 跑」
+
+  對 framework-dependent app 來說，dotnet 需要知道兩件事：
+
+  1. 這個 app 要用哪個 runtime/framework
+     這是 *.runtimeconfig.json
+  2. 這個 app 的依賴圖是什麼
+     這通常在 *.deps.json
+
+  所以你現在看到的問題，本質上是：
+
+  - Akka.Proc.Supervisor.dll 確實有 Main
+  - 但 dotnet 啟它時，旁邊沒有：
+      - Akka.Proc.Supervisor.runtimeconfig.json
+      - 或可用的對應 runtime context
+  - 所以 host policy 不知道怎麼把它當 framework-dependent app 啟起來
+  - 才會報：
+      - libhostpolicy.so
+      - runtimeconfig.json was not found
+
+  所謂：
+
+  > 顯式使用一個已知可用的 runtime/deps context
+
+  意思就是不要賭 dotnet 自己剛好猜中，而是明確告訴它：
+
+  - 用哪份 runtimeconfig
+  - 用哪份 depsfile
+
+  像這樣：
+
+  dotnet exec \
+    --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json \
+    --depsfile /app/Akka.Proc.Supervisor.deps.json \
+    /app/Akka.Proc.Supervisor.dll ...
+
+  這不是 hack，而是官方就支持的正常模式。
+  你現在的問題就是因為 child proc 還在跑比較含糊的：
+
+  dotnet /app/Akka.Proc.Supervisor.dll ...
+
+  在 Windows 開發環境裡，這種含糊模式常常剛好可用，因為：
+
+  - build output 旁邊通常剛好有對應 sidecar
+  - 或 Visual Studio / local run context 幫你把東西擺好了
+
+  但在現在這種 container/runtime 混裝情境裡，就不能再靠運氣。
+
+  所以這裡的重點不是：
+
+  - dll 執行很奇怪
+
+  而是：
+
+  - framework-dependent .NET app 本來就需要 runtime context
+  - 以前那條路徑只是剛好沒把這件事暴露出來
+
+  如果你從設計角度看，最乾淨的做法有兩種：
+
+  1. 讓 /app 真的有：
+
+  - Akka.Proc.Supervisor.dll
+  - Akka.Proc.Supervisor.runtimeconfig.json
+  - Akka.Proc.Supervisor.deps.json
+
+  然後仍可用：
+
+  dotnet /app/Akka.Proc.Supervisor.dll ...
+
+  2. 不要求檔名與 sidecar 自然配對，改成一律：
+
+  dotnet exec --runtimeconfig ... --depsfile ... /app/Akka.Proc.Supervisor.dll ...
+
+  我現在前面建議的是第 2 種，因為它比較穩。
+  但如果你更偏好第 1 種，我也同意，前提是 docker image 必須真的把這三個檔湊齊。
+  那樣整體看起來會比較直覺。
+
+  所以一句話總結：
+
+  - 你覺得「dll 執行還要靠 json/deps 很怪」這種感受是正常的
+  - 但在 .NET framework-dependent app 模式下，這其實是標準機制
+  - 現在只是以前 Windows/local build 幫你藏掉的依賴，在 container 裡被攤開了
+
+
+› FSharp.MCP.DevKit 參考proc supervisor，所以會使用 proc supervisor 呼叫 procnode 對吧? 那有 FSharp.MCP.DevKit.deps.json 不是就夠了，為什麼還要
+  Akka.Proc.Supervisor.runtimeconfig.json ? 還是你說 process.start 是 start dotnet 不是 start dll 所以要?!
+
+
+• 對，關鍵就在你最後那句：
+
+  因為現在 Process.Start 啟的是 dotnet，不是直接啟某個原生可執行檔，所以它需要知道「要把哪個 DLL 當成 app」以及「這個 app 的 runtime context 是什麼」。
+
+  你這個判斷基本正確。
+
+  先把兩件事拆開：
+
+  1. FSharp.MCP.DevKit 參考 FAkka.Proc.Supervisor
+
+  - 對
+  - 所以 FSharp.MCP.DevKit.deps.json 裡當然有 FAkka.Proc.Supervisor.dll 這條依賴
+  - 這能讓 FSharp.MCP.DevKit.dll 自己執行時 成功載入 Akka.Proc.Supervisor 當 library
+
+  2. 但現在 child proc 要做的不是「在同一個 process 內載入 library」
+
+  - 它是要另外 Process.Start("dotnet", "... Akka.Proc.Supervisor.dll ...")
+  - 也就是說，現在要被當作「entry assembly / app」跑的是：
+      - Akka.Proc.Supervisor.dll
+  - 不是 FSharp.MCP.DevKit.dll
+
+  這就是差別。
+
+  所以：
+
+  - FSharp.MCP.DevKit.deps.json 夠不夠？
+      - 對 server process 夠
+      - 對 另外新啟的一個 Akka.Proc.Supervisor.dll process 不一定夠
+
+  因為 dotnet 在啟 child proc 時，要判斷的是：
+
+  - 我現在要跑的 app 是哪個？
+  - 它要吃哪個 target framework/runtime？
+  - 它的 main assembly 對應 runtime config 是什麼？
+
+  如果你只給它：
+
+  dotnet /app/Akka.Proc.Supervisor.dll ...
+
+  它會先試著把 Akka.Proc.Supervisor.dll 當成一個 framework-dependent app。
+  這時候它自然就會去找：
+
+  - /app/Akka.Proc.Supervisor.runtimeconfig.json
+
+  而不是：
+
+  - /app/FSharp.MCP.DevKit.runtimeconfig.json
+
+  所以答案是：
+
+  - 不是因為 ProcSupervisor 當 library 不夠
+  - 而是因為 Process.Start 現在啟的是 dotnet + Akka.Proc.Supervisor.dll，所以 host 會把 Akka.Proc.Supervisor.dll 視為主 app
+  - 既然主 app 是它，runtimeconfig 的檔名就得對它
+
+  你前面問：
+
+  > 那有 FSharp.MCP.DevKit.deps.json 不是就夠了，為什麼還要 Akka.Proc.Supervisor.runtimeconfig.json ?
+
+  更精確答案是：
+
+  - 只靠 FSharp.MCP.DevKit.deps.json，可以讓 FSharp.MCP.DevKit 在自己 process 裡用到 Akka.Proc.Supervisor
+  - 但不能保證另外新開的 dotnet Akka.Proc.Supervisor.dll process` 也知道該怎麼跑
+  - 因為對那個新 process 而言，自己的 app identity 是 Akka.Proc.Supervisor.dll
+
+  這也是為什麼我前面說有兩種合法修法：
+
+  1. 給 child proc 一組與 Akka.Proc.Supervisor.dll 對應的：
+
+  - Akka.Proc.Supervisor.runtimeconfig.json
+  - Akka.Proc.Supervisor.deps.json
+
+  2. 或明確用：
+
+  dotnet exec --runtimeconfig ... --depsfile ... /app/Akka.Proc.Supervisor.dll ...
+
+  兩種本質上都在回答同一件事：
+
+  - 這個新 process 的 runtime context 到底是什麼
+
+  所以你現在的理解可以收斂成一句：
+
+  - 對，就是因為 Process.Start 啟的是 dotnet，不是直接啟一個原生 exe，所以要補 app 對應的 runtime/deps context。
+
+  這句是對的。

@@ -358,3 +358,40 @@
   - `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
   - `examples/FSharp.MCP.DevKit.DemoClient/Program.fs`
   - `tests/DemoClientSmokeTests.fs`
+
+## 2026-03-26 11:15:00
+
+- 背景：部署中的 `proc-supervisor` 已能 direct `GetVesion`，但 bootstrap procnode 一直 `stopped`，導致沒有 `fsiSupervisorPath`，因此 `fsi-supervisor` 版本探針與 host/session 驗證都上不去。
+- 現象：
+  - `docker logs fsharp-mcp-devkit` 持續出現：
+    - serializer id `6` `Akka.Remote.Serialization.MessageContainerSerializer`
+    - serializer id `12` `Akka.DistributedData.Serialization.ReplicatorMessageSerializer`
+  - 這代表 child proc 已經越過 `runtimeconfig/depsfile` 問題開始真正啟動，但在 cluster/sharding traffic 上仍缺 Akka 預設 serializer。
+- 根因：
+  - `Akka.Proc.Supervisor.ProcHost.loadConfig` 只有 shared contract serializer 與 sharding/singleton fallback。
+  - procnode 實際還需要：
+    - `Akka.Remote.Configuration.Remote.conf`
+    - `Akka.DistributedData.DistributedData.DefaultConfig()`
+  - 缺這兩份時，procnode 會在收到 replicator/sharding message 前就 fail 掉，因此 registry 只看到 `stopped` 的 bootstrap snapshot。
+- 解法：
+  - `ProcHost.loadConfig` 改為顯式 fallback：
+    - remote default config
+    - distributed-data default config
+    - cluster sharding default config
+    - cluster singleton default config
+  - `Akka.Proc.Supervisor.Tests` 新增真正的 bootstrap regression：
+    - `dotnet exec ... --mode supervisor --spawndefault`
+    - 輪詢 `/api/proc/nodes`
+    - 驗證 bootstrap procnode 出現非空 `fsiSupervisorPath`
+  - `FAkka.Proc.Supervisor` 升版為 `1.562.101.201-dgx.9`
+- 驗證：
+  - `dotnet fsi Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx`
+    - `PASS`
+    - nodes JSON 內已出現非空 `fsiSupervisorPath`
+  - `dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "...GetVesion...|...Bootstrap procnode...|...dotnet exec..." -m:1`
+    - `3 passed, 0 failed`
+- 判讀：
+  - 目前最底層已經收斂成：
+    - deployed `proc-supervisor` 可 direct ask
+    - local bootstrap procnode 可活著註冊 `fsiSupervisorPath`
+  - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
