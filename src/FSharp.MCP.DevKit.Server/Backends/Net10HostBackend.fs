@@ -99,6 +99,21 @@ type Net10HostBackend
         | RestartHost -> Error "RestartHost is handled via ProcSupervisor."
         | ResultQuery -> Error "ResultQuery is not implemented for Net10HostBackend yet."
 
+    let tryGetProcSnapshot (procSupervisorClient: IProcSupervisorClient) hostId =
+        task {
+            try
+                let! direct = procSupervisorClient.GetProcInfo(hostId)
+
+                match direct with
+                | Some snapshot -> return Some snapshot
+                | None ->
+                    let! snapshots = procSupervisorClient.ListProcInfo()
+                    return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+            with :? Akka.Actor.AskTimeoutException ->
+                let! snapshots = procSupervisorClient.ListProcInfo()
+                return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+        }
+
     let createUnsupportedRecord (request: ExecutionRequest) (host: HostRecord) (message: string) =
         let now = DateTime.UtcNow
         BackendAdapters.toExecutionRecord
@@ -193,7 +208,7 @@ type Net10HostBackend
 
         member _.HealthCheck(host: HostRecord) =
             task {
-                let! snapshot = procSupervisorClient.GetProcInfo(host.HostId)
+                let! snapshot = tryGetProcSnapshot procSupervisorClient host.HostId
 
                 match snapshot with
                 | Some value ->

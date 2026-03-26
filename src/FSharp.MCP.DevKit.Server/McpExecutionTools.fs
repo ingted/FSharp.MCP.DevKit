@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
+open System.Runtime.InteropServices
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -16,9 +17,10 @@ type McpExecutionTools =
           SessionId = sessionId }
 
     static member private resolveTimeout (fsiService: FsiMcpService) timeoutSeconds =
-        match timeoutSeconds with
-        | Some seconds -> TimeSpan.FromSeconds(float seconds)
-        | None -> fsiService.DefaultTimeout
+        if timeoutSeconds > 0 then
+            TimeSpan.FromSeconds(float timeoutSeconds)
+        else
+            fsiService.DefaultTimeout
 
     static member private formatResultError (fallbackMessage: string) (result: FsiResult) =
         if String.IsNullOrWhiteSpace result.Errors then
@@ -34,7 +36,8 @@ type McpExecutionTools =
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# code to execute.")>] code: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -51,7 +54,8 @@ type McpExecutionTools =
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# code to execute asynchronously.")>] code: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -67,7 +71,8 @@ type McpExecutionTools =
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# expression to evaluate.")>] expression: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -89,7 +94,8 @@ type McpExecutionTools =
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
             [<Description("Directory path to add to the F# search path.")>] path: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -106,7 +112,8 @@ type McpExecutionTools =
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
             [<Description("Assembly path or assembly name.")>] assemblyPath: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -122,7 +129,8 @@ type McpExecutionTools =
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
@@ -138,7 +146,8 @@ type McpExecutionTools =
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId

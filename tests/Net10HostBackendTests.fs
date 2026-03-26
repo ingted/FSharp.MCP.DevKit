@@ -10,10 +10,13 @@ open FSharp.MCP.DevKit.Server.Integration
 
 type private FakeProcSupervisorClient
     (
-        infoFactory: string -> ProcHostSnapshot option,
+        infoFactory: string -> Task<ProcHostSnapshot option>,
+        ?listFactory: unit -> Task<ProcHostSnapshot list>,
         ?restartFactory: string -> ProcHostSnapshot
     ) =
     let mutable restarted : string list = []
+    let listFactory = defaultArg listFactory (fun () -> Task.FromResult([]))
+
     let restartFactory =
         defaultArg
             restartFactory
@@ -34,8 +37,8 @@ type private FakeProcSupervisorClient
     interface IProcSupervisorClient with
         member _.StartProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc is not used in this test."))
         member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StopProc is not used in this test."))
-        member _.GetProcInfo(procId: string) = Task.FromResult(infoFactory procId)
-        member _.ListProcInfo() = Task.FromResult([])
+        member _.GetProcInfo(procId: string) = infoFactory procId
+        member _.ListProcInfo() = listFactory ()
 
         member _.RestartProc(procId: string) =
             restarted <- procId :: restarted
@@ -123,17 +126,18 @@ let ``Net10HostBackend maps nuget and path operations into supervisor execution 
 
         let fakeProcClient =
             FakeProcSupervisorClient(fun _ ->
-                Some
-                    { ProcId = host.HostId
-                      Status = "running"
-                      ProcessId = host.ProcId
-                      FsiSupervisorPath = host.Address
-                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
-                      LastProbeUtc = Some DateTime.UtcNow
-                      LastProbeOk = Some true
-                      ProbeFailures = 0
-                      Spec = None
-                      LastError = None })
+                Task.FromResult(
+                    Some
+                        { ProcId = host.HostId
+                          Status = "running"
+                          ProcessId = host.ProcId
+                          FsiSupervisorPath = host.Address
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None }))
 
         let backend =
             Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
@@ -201,17 +205,18 @@ let ``Net10HostBackend maps session snapshot into SessionRecord`` () =
 
         let fakeProcClient =
             FakeProcSupervisorClient(fun _ ->
-                Some
-                    { ProcId = host.HostId
-                      Status = "running"
-                      ProcessId = host.ProcId
-                      FsiSupervisorPath = host.Address
-                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
-                      LastProbeUtc = Some DateTime.UtcNow
-                      LastProbeOk = Some true
-                      ProbeFailures = 0
-                      Spec = None
-                      LastError = None })
+                Task.FromResult(
+                    Some
+                        { ProcId = host.HostId
+                          Status = "running"
+                          ProcessId = host.ProcId
+                          FsiSupervisorPath = host.Address
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None }))
 
         let backend =
             Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
@@ -258,17 +263,18 @@ let ``Net10HostBackend health check and restart delegate to ProcSupervisor`` () 
 
         let fakeProcClient =
             FakeProcSupervisorClient(fun _ ->
-                Some
-                    { ProcId = host.HostId
-                      Status = "running"
-                      ProcessId = host.ProcId
-                      FsiSupervisorPath = host.Address
-                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
-                      LastProbeUtc = Some DateTime.UtcNow
-                      LastProbeOk = Some true
-                      ProbeFailures = 0
-                      Spec = None
-                      LastError = None })
+                Task.FromResult(
+                    Some
+                        { ProcId = host.HostId
+                          Status = "running"
+                          ProcessId = host.ProcId
+                          FsiSupervisorPath = host.Address
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None }))
 
         let backend =
             Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
@@ -280,6 +286,58 @@ let ``Net10HostBackend health check and restart delegate to ProcSupervisor`` () 
         Assert.Contains(host.HostId, fakeProcClient.Restarted)
         Assert.True(health.IsAvailable)
         Assert.Equal(Some host.HostId, health.HostId)
+    }
+
+[<Fact>]
+let ``Net10HostBackend health check falls back to ListProcInfo when direct lookup times out`` () =
+    task {
+        let hostRegistry, host = createHostRegistry ()
+
+        let fakeFsiClient =
+            FakeFsiSupervisorClient(
+                (fun (_, request) ->
+                    { SessionId = request.SessionId
+                      RawErrorType = None
+                      Result = FsiResult.empty }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Status = "ready"
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = Some DateTime.UtcNow }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
+                      Status = "reset" })
+            )
+
+        let fakeProcClient =
+            FakeProcSupervisorClient(
+                (fun _ -> Task.FromException<ProcHostSnapshot option>(Akka.Actor.AskTimeoutException("Timeout after 5.00 seconds"))),
+                (fun () ->
+                    Task.FromResult(
+                        [ { ProcId = host.HostId
+                            Status = "running"
+                            ProcessId = host.ProcId
+                            FsiSupervisorPath = host.Address
+                            NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                            LastProbeUtc = Some DateTime.UtcNow
+                            LastProbeOk = Some true
+                            ProbeFailures = 0
+                            Spec = None
+                            LastError = Some "healthy via list" } ])))
+
+        let backend =
+            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+            :> IFsiExecutionBackend
+
+        let! health = backend.HealthCheck(host)
+
+        Assert.True(health.IsAvailable)
+        Assert.Equal(Some "healthy via list", health.Message)
     }
 
 [<Fact>]
@@ -310,17 +368,18 @@ let ``Net10HostBackend reset session delegates to supervisor and returns success
 
         let fakeProcClient =
             FakeProcSupervisorClient(fun _ ->
-                Some
-                    { ProcId = host.HostId
-                      Status = "running"
-                      ProcessId = host.ProcId
-                      FsiSupervisorPath = host.Address
-                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
-                      LastProbeUtc = Some DateTime.UtcNow
-                      LastProbeOk = Some true
-                      ProbeFailures = 0
-                      Spec = None
-                      LastError = None })
+                Task.FromResult(
+                    Some
+                        { ProcId = host.HostId
+                          Status = "running"
+                          ProcessId = host.ProcId
+                          FsiSupervisorPath = host.Address
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None }))
 
         let backend =
             Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)

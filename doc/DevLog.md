@@ -528,3 +528,44 @@
     - 這證明：
       - binder bug 已修掉；
       - 後續若還有 generic error，應歸因到 host provisioning/ask timeout，而不是 MCP optional parameter binding。
+
+## 2026-03-26 16:45 UTC ProcNode Address Propagation Follow-up
+
+- Reconfirmed the live problem is no longer generic MCP binding or shell-like argument tokenization.
+- Current live behavior after ProcSupervisor `dgx.11` redeploy:
+  - `create_fsi_host` succeeds far enough to create a proc entry and pid.
+  - Child procnode log reports remoting up and `FsiSupervisorActor ready`.
+  - Parent `ProcSnapshot` still remains `starting` with missing `nodeAddress`/`fsiSupervisorPath`, so MCP host records retain `address = null`.
+- The next diagnostic cycle is narrowed to `ProcNodeActor` state propagation, not the higher MCP layer.
+
+## 2026-03-26 16:56 UTC ProcSupervisor Local Package Payload Mismatch
+
+- The live container reported `Akka.Proc.Supervisor.dll` informational version `dgx.10` while `FSharp.MCP.DevKit.deps.json` referenced package `dgx.11`.
+- Inspecting the locally built `FAkka.Proc.Supervisor.1.562.101.201-dgx.11.nupkg` showed the packaged DLL itself still embedded `dgx.10`.
+- Running `dotnet clean -c Release && dotnet build -c Release` in `Libs/Akka.Proc.Supervisor` corrected both the Release DLL and its `.deps.json` to `dgx.11`.
+- Conclusion: the previous dgx.11 local package payload was stale; host docker rebuilds needed the corrected local package bits before live address-propagation validation meant anything.
+
+## 2026-03-26 17:43 UTC MCP Host Provisioning Timeout Recovery
+
+- Live deployment diagnostics showed a split between two ProcSupervisor query paths:
+  - `StartProc` / `GetProcInfo` go through the sharding region and could throw `AskTimeoutException`.
+  - `ListProcInfo` goes to the registry-backed aggregate view and already showed the new proc snapshots while MCP tools were still returning generic host/probe errors.
+- Concrete symptom:
+  - `create_fsi_host` timed out even though `/api/proc/nodes` already contained the new host proc id with `running` status.
+  - `get_fsi_host_health` also timed out on direct `GetProcInfo`.
+- Fixes applied in `FSharp.MCP.DevKit`:
+  - `HostProvisioningService` now resolves host snapshots through:
+    - `GetProcInfo(hostId)` first
+    - fallback to `ListProcInfo() |> find ProcId = hostId` on timeout or missing snapshot
+  - `Net10HostBackend.HealthCheck` uses the same fallback path.
+- Separate MCP tool-surface fix:
+  - routed execution tools in `McpExecutionTools` still used F# optional parameters (`?timeoutSeconds`) and the MCP reflection binder treated omitted values as required arguments.
+  - those methods were changed to CLR optional/default-value parameters so the HTTP MCP surface can omit `timeoutSeconds`.
+- Local verification:
+  - targeted tests for:
+    - `ProvisioningServicesTests`
+    - `Net10HostBackendTests`
+    - `McpExecutionToolsTests`
+    all passed after the fallback and binder changes.
+- Operational conclusion:
+  - once runtime/procnode execution had been proven healthy, the remaining `create_fsi_host` / `get_fsi_host_health` failures were orchestration-level timeout handling defects, not remote FSI capability defects.

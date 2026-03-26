@@ -1,0 +1,61 @@
+Title: MCP Agent Iteration
+StartedAtUtc: 2026-03-26T16:07:50Z
+
+Theme
+- Validate the deployed `fsharp-devkit` MCP server from the agent/tool path, not only from direct actor-level scripts.
+
+Thoughts
+- The runtime core is already proven usable at the actor layer.
+- Remaining risk is product-layer orchestration: MCP tool binding, host/session creation flow, routed execution stability, and result retrieval continuity.
+- This round should avoid broad exploration and stay on the live MCP path.
+
+ExecutionPlan
+1. Run a minimal MCP flow against the deployed server: register agent, create host, create session, routed execute/evaluate, inspect host/session health.
+2. Run a second-agent / second-host / second-session isolation flow through the MCP tools and compare returned values.
+3. If a regression appears, capture the exact failing MCP step and fix only that layer.
+4. Record findings in DevLog and close with concrete status.
+
+Conclusion
+- In progress.
+
+Notes
+- Existing unrelated dirty files in `log/` and `notes/` are intentionally left untouched.
+
+[2026-03-26T16:55:00Z] Next Step
+- Restart deployed fsharp-mcp-devkit container from the freshly rebuilt image on host 10.28.112.140.
+- Re-run MCP tool-path validation end-to-end:
+  1. register_fsi_agent
+  2. create_fsi_host with shell-like arguments string
+  3. create_fsi_session immediately after host creation
+  4. execute_f_sharp_code_routed
+  5. evaluate_f_sharp_expression_routed
+- If successful, record the exact live outcome in DevLog and finalize.
+
+[2026-03-26T16:45:00Z] Theme: dgx.11 live deployment still leaves host address null despite child FSI supervisor becoming ready.
+Thoughts:
+- Local package/source validation passed for ProcSupervisor dgx.11 and FSharp.MCP.DevKit using local package source.
+- Host docker rebuild/redeploy succeeded and live MCP create_fsi_host now reaches ProcSupervisor StartProc successfully.
+- Remaining fault is narrower: child procnode log shows remoting up + FsiSupervisorActor ready, but parent ProcSnapshot remains status=starting with fsiSupervisorPath/address missing.
+Plan:
+1. Verify live deployment is actually running dgx.11 assembly behavior, not stale dgx.8/dgx.10 bits.
+2. Instrument ProcNodeActor around ChildNodeAddressDiscovered receipt and snapshot persistence.
+3. Repack/publish ProcSupervisor, rebuild/redeploy host container, re-run live create_fsi_host and proc snapshot checks.
+
+[2026-03-26T16:56:00Z] Finding: previously published local dgx.11 package payload was stale.
+Evidence:
+- live /app/Akka.Proc.Supervisor.dll reported informational version dgx.10 while deps.json referenced dgx.11.
+- local Release output and dgx.11 nupkg also embedded dgx.10 before clean rebuild.
+Resolution:
+- ran dotnet clean -c Release && dotnet build -c Release in Akka.Proc.Supervisor.
+- rebuilt Release output now embeds dgx.11 and deps.json also references dgx.11.
+Next:
+1. rebuild host docker image against corrected local nupkg payload
+2. redeploy container
+3. re-run live create_fsi_host and proc snapshot validation
+[2026-03-26T17:20:00Z] Focus: verify fresh-host MCP flow on live deployment after dgx.11 image rebuild. Plan: (1) inspect live proc snapshots via ProcSupervisor REST, (2) rerun a fresh unique host/session MCP flow with unbuffered output, (3) if it fails, correlate with live server/proc logs before making further code changes.
+[2026-03-26T16:56:00Z] Implementation plan: (1) make HostProvisioningService poll registry-backed ListProcInfo when sharded GetProcInfo times out, (2) make Net10HostBackend.HealthCheck fall back to ListProcInfo on GetProcInfo timeout, (3) change McpExecutionTools routed timeoutSeconds signatures to CLR optional/default values, (4) run targeted tests, rebuild/redeploy live container, rerun fresh-host MCP flow.
+[2026-03-26T17:35:00Z] 主題: 修正 live MCP host 建立與 routed execute binder 問題
+[想法] live deployment 已證明 runtime/procnode/fsi supervisor 可用，剩餘問題收斂為: 1) StartProc/GetProcInfo 經 sharding region timeout，但 registry 已有 snapshot；2) routed MCP tools 的 F# optional 參數被 reflection binder 視為必填。
+[執行計畫] 1. ProvisioningServices/CreateHost 改為 GetProcInfo timeout 時 fallback ListProcInfo。 2. Net10HostBackend.HealthCheck 改為同樣 fallback。 3. McpExecutionTools 將 routed timeout 相關參數改為 CLR optional/default-value。 4. 補/修測試。 5. 本地 targeted test。 6. 更新 DevLog/log。 7. ssh 到 host 執行 build.host.sh。 8. live MCP fresh host/session 驗證。
+[2026-03-26T17:43:00Z] local targeted tests passed
+[結論] ProvisioningServices GetProcInfo->ListProcInfo fallback、Net10HostBackend health fallback、McpExecutionTools routed CLR optional timeout 均已通過 targeted tests。下一步重部署並驗 live MCP fresh host/session。

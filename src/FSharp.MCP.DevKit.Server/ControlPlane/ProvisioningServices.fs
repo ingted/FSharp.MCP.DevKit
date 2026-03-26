@@ -50,20 +50,49 @@ type HostProvisioningService
             )
             |> ignore
 
-    let rec pollProcSnapshot (procSupervisorClient: IProcSupervisorClient) (hostId: string) (deadlineUtc: DateTime) : Task<ProcHostSnapshot option> =
+    let tryGetProcSnapshot
+        (procSupervisorClient: IProcSupervisorClient)
+        (hostId: string)
+        : Task<ProcHostSnapshot option> =
+        task {
+            try
+                let! direct = procSupervisorClient.GetProcInfo(hostId)
+
+                match direct with
+                | Some snapshot -> return Some snapshot
+                | None ->
+                    let! snapshots = procSupervisorClient.ListProcInfo()
+                    return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+            with :? AskTimeoutException ->
+                let! snapshots = procSupervisorClient.ListProcInfo()
+                return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+        }
+
+    let rec pollProcSnapshot
+        (procSupervisorClient: IProcSupervisorClient)
+        (hostId: string)
+        (deadlineUtc: DateTime)
+        (isAcceptable: ProcHostSnapshot -> bool)
+        : Task<ProcHostSnapshot option> =
         task {
             if DateTime.UtcNow >= deadlineUtc then
                 return None
             else
-                let! snapshotOpt = procSupervisorClient.GetProcInfo(hostId)
+                let! snapshotOpt = tryGetProcSnapshot procSupervisorClient hostId
 
                 match snapshotOpt with
-                | Some snapshot when not (String.IsNullOrWhiteSpace snapshot.Status) ->
+                | Some snapshot when not (String.IsNullOrWhiteSpace snapshot.Status) && isAcceptable snapshot ->
                     return Some snapshot
                 | _ ->
                     do! Task.Delay 250
-                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc
+                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc isAcceptable
         }
+
+    let snapshotHasUsableRemoteAddress hostKind (snapshot: ProcHostSnapshot) =
+        match hostKind with
+        | Net10Host
+        | NetFxHost -> snapshot.FsiSupervisorPath |> Option.exists (String.IsNullOrWhiteSpace >> not)
+        | InProcHost -> true
 
     member _.CreateHost
         (
@@ -107,7 +136,11 @@ type HostProvisioningService
                             return! procSupervisorClient.StartProc(hostId, spec)
                         with :? AskTimeoutException ->
                             let! recovered =
-                                pollProcSnapshot procSupervisorClient hostId (DateTime.UtcNow.AddSeconds 15.0)
+                                pollProcSnapshot
+                                    procSupervisorClient
+                                    hostId
+                                    (DateTime.UtcNow.AddSeconds 15.0)
+                                    (fun snapshot -> not (String.IsNullOrWhiteSpace snapshot.Status))
 
                             match recovered with
                             | Some snapshot -> return snapshot
@@ -115,13 +148,28 @@ type HostProvisioningService
                                 return raise (AskTimeoutException("Timed out waiting for ProcSupervisor StartProc response and no proc snapshot became visible during recovery polling."))
                     }
 
+                let! finalizedSnapshot =
+                    if snapshotHasUsableRemoteAddress hostKind snapshot then
+                        Task.FromResult snapshot
+                    else
+                        task {
+                            let! recovered =
+                                pollProcSnapshot
+                                    procSupervisorClient
+                                    hostId
+                                    (DateTime.UtcNow.AddSeconds 15.0)
+                                    (snapshotHasUsableRemoteAddress hostKind)
+
+                            return recovered |> Option.defaultValue snapshot
+                        }
+
                 let readyRecord =
                     { creatingRecord with
-                        Status = mapHostStatus snapshot.Status
-                        Address = snapshot.FsiSupervisorPath |> Option.orElse snapshot.NodeAddress
-                        ProcId = snapshot.ProcessId
+                        Status = mapHostStatus finalizedSnapshot.Status
+                        Address = finalizedSnapshot.FsiSupervisorPath |> Option.orElse finalizedSnapshot.NodeAddress
+                        ProcId = finalizedSnapshot.ProcessId
                         LastHealthCheckAt = Some DateTime.UtcNow
-                        LastError = snapshot.LastError }
+                        LastError = finalizedSnapshot.LastError }
 
                 hostRegistry.Update readyRecord
                 return readyRecord

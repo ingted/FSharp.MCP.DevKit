@@ -34,8 +34,7 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 "default-agent",
                 "default-host",
                 "default-session",
-                "let routedExplicit = 77",
-                30
+                "let routedExplicit = 77"
             )
 
         let! evalOutput =
@@ -63,8 +62,7 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 service,
                 "default-agent",
                 "default-host",
-                "default-session",
-                30
+                "default-session"
             )
 
         let! asyncId =

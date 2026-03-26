@@ -1,0 +1,29 @@
+[2026-03-26T16:07:50Z] START topic=MCP agent iteration
+[2026-03-26T16:07:50Z] PLAN validate live MCP tool path, then host/session isolation via MCP, then fix only if needed
+[2026-03-26T16:08:12Z] register_fsi_agent agent-mcp-iter-20260326 success
+[2026-03-26T16:08:34Z] create_fsi_host mcp-iter-host-a generic_error
+[2026-03-26T16:09:29Z] create_fsi_host mcp-iter-host-b generic_error
+[2026-03-26T16:09:39Z] direct StartProc mcp-iter-direct-c started
+[2026-03-26T16:10:26Z] stopping stale proc mcp-tool-host-omit
+[2026-03-26T16:10:52Z] identified root cause: create_fsi_host arguments not tokenized; MCP path passes one giant arg to dotnet
+[2026-03-26T16:11:55Z] local test run started for McpControlPlaneToolsTests and ProvisioningServicesTests
+[2026-03-26T16:13:58Z] create_fsi_host mcp-iter-host-c success after argv tokenizer fix
+[2026-03-26T16:14:07Z] create_fsi_session mcp-iter-session-c failed while host health=starting
+[2026-03-26T16:14:31Z] create_fsi_session retry failed for mcp-iter-session-c
+[2026-03-26T16:14:33Z] identified root cause: create_host returns before fsiSupervisorPath is visible; create_session then fails on null host.Address
+[2026-03-26T16:55:00Z] resume: restarting live container from freshly rebuilt image and re-validating MCP tool-path
+[2026-03-26T17:05:00Z] diagnose: live procnode reaches FsiSupervisorActor ready but ProcSnapshot remains starting with no fsiSupervisorPath
+[2026-03-26T17:05:00Z] plan: patch ProcNodeActor to parse child stdout remoting address and infer fsiSupervisorPath without waiting for ProcNodeReady
+[2026-03-26T17:15:00Z] fix: patched ProcNodeActor to infer nodeAddress/fsiSupervisorPath from child stdout on actor thread
+[2026-03-26T17:15:00Z] verify: Akka.Proc.Supervisor.Tests bootstrap-related cases passed locally (4/4)
+[2026-03-26T16:45:00Z] resume: focusing only on live procnode address propagation; prior MCP generic binding issue already fixed.
+[2026-03-26T16:45:00Z] note: dgx.11 local tests/build passed; live create_fsi_host still yields address=null while child log reports FsiSupervisorActor ready.
+[2026-03-26T16:52:00Z] finding: live /app/Akka.Proc.Supervisor.dll strings still report informational version dgx.10 while deps.json reports package dgx.11.
+[2026-03-26T16:52:00Z] implication: deployment may be restoring dgx.11 package metadata whose assembly payload was not rebuilt/version-stamped as expected; verifying nupkg contents before further actor debugging.
+[2026-03-26T16:56:00Z] fix-root-cause: stale dgx.11 nupkg payload found; clean rebuild corrected Akka.Proc.Supervisor.dll from dgx.10 to dgx.11.
+[2026-03-26T17:08:00Z] note: live image now definitely runs Akka.Proc.Supervisor dgx.11 after clean rebuild and host docker rebuild.
+[2026-03-26T17:20:00Z] START fresh-host MCP verification on deployed fsharp-devkit. Expectation: either confirm end-to-end MCP create_fsi_host/create_fsi_session/routed execute on a new host, or isolate remaining orchestration failure with matching live logs.
+[2026-03-26T16:56:00Z] DIAGNOSIS: live create_fsi_host fails because StartProc/GetProcInfo use sharding path and can time out while ProcSupervisor registry already contains the new snapshot. Planned fix: add ListProcInfo-based recovery/fallback for CreateHost and HealthCheck; also convert routed timeoutSeconds tool parameters to CLR optional so MCP binder stops treating them as required.
+[2026-03-26T17:35:00Z] start 修正 CreateHost/GetProcInfo fallback 與 routed timeout binder
+[2026-03-26T17:43:00Z] local targeted tests passed
+[結論] ProvisioningServices GetProcInfo->ListProcInfo fallback、Net10HostBackend health fallback、McpExecutionTools routed CLR optional timeout 均已通過 targeted tests。下一步重部署並驗 live MCP fresh host/session。
