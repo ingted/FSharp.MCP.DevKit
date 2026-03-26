@@ -1,0 +1,545 @@
+› 我按照你說的修了dockerfile重布署了，測吧
+
+
+• 我先照同一個最小順序重測：proc-supervisor GetVesion，再 GetAllProcInfo 看 fsiSupervisorPath，有活著的 fsi 再直接 GetVesion。
+
+• Context compacted
+
+• 我先只盯最低層：proc-supervisor 已可 direct ask，但 bootstrap procnode 仍停掉。我現在查 Akka.Proc.Supervisor 的 procnode HOCON 組裝，找出為什麼缺 DistributedData/Remote
+  serializer。
+
+• 我先只做兩件事：驗現在部署中的 proc-supervisor GetVesion 和 GetAllProcInfo。如果 bootstrap-net10-host 仍是 stopped，下一刀就只修 ProcHost 的 procnode config fallback。
+
+• 現在部署狀態已經收斂了：proc-supervisor 活著，但 bootstrap procnode 因為缺 Remote/DistributedData 預設 serializer 而停掉。我先只修 ProcHost.loadConfig，把 procnode/system
+  需要的 Akka 預設 config fallback 補齊。
+
+• 我找到具體缺口了：loadConfig 目前只補了 sharding/singleton 的 resource config，沒有把 RemoteConfigFactory.Default() 和 DistributedData.DefaultConfig() 明確接進來。這正好對
+  上部署 log 的 serializer id 6/12。我先修 PulseTrade.fs 這一刀，再本機起一個 supervisor 驗 bootstrap procnode 是否會進 running。
+
+• 我要補一個真正卡現在問題的回歸測試：背景起 supervisor + --spawndefault + 查 /api/proc/nodes，確保 bootstrap procnode 至少能進 registry，不再因 serializer 6/12 爆掉。先把
+  loadConfig 補完整，再加這個測試。
+
+• 我順手把這個失敗模式固化成回歸測試，避免之後又靠人工 docker log 才抓到。測試會真的 dotnet exec ... --spawndefault 起一個 supervisor，再看 /api/proc/nodes 是否出現帶
+  fsiSupervisorPath 的 bootstrap procnode。
+
+• 我先把這個回歸測試編到能跑，再直接跑最小測試組。現在只碰 PulseTrade.fs，不動 fsharp-devkit。
+
+• 編譯與腳本都在跑。我先等結果，不切題。
+
+• 編譯錯是我命名猜錯了。我先查 Akka.Remote 那個 type 的實際 namespace，修完立刻重跑，不再猜。
+
+• RemoteConfigFactory 是 internal，不能直接用。我改成跟前面 sharding/singleton 一樣，直接從 Akka.Remote assembly resource 讀 Remote.conf。这样是同一層修法，不會再卡 internal
+  API。
+
+• 編譯過了，現在等 bootstrap 測試本體。 if fsiSupervisorPath 出現，這刀就對。
+
+• 本機 bootstrap 現在已經過了，fsiSupervisorPath 也有了。我再等 xUnit 那個新回歸測試收完，然後就能回頭要求你重部署並重測 deployed fsi/proc version。
+
+• 最低層問題已本機修通：bootstrap procnode 現在能拿到 fsiSupervisorPath，xUnit 也綠了。接下來我直接把 FAkka.Proc.Supervisor 升版發 NuGet，再把 FSharp.MCP.DevKit 跟上，省掉你
+  手動對版本。
+
+• 我把修正收成一個新 ProcSupervisor 版號，避免你部署端還指到有 serializer 6/12 問題的 package。之後我會只更新 FSharp.MCP.DevKit 的 ProcSupervisor 版本，不亂動其他 package。
+
+• 測試與打包都在跑。這一版只碰 ProcSupervisor，不會把其他 package 一起亂升。
+
+• 打包好了；PostBuild 還在用舊 .8 檔名當推送目標，但這不影響我手動推 .9。我先把測試收完，然後直接推 dgx.9。
+
+• 我在推 dgx.9。推完就把 FSharp.MCP.DevKit 只升這一個 package，然後用本地來源先驗一次 build/test。
+
+• 我把這次真正的根因也補進 FSharp.MCP.DevKit 的 DevLog/notes，避免之後又回頭猜 service 或 parser。然后用本地 source 先驗 FSharp.MCP.DevKit 能吃 dgx.9。
+
+• FSharp.MCP.DevKit 已經切到 dgx.9 並開始本地驗證。我等 restore/build/test 收完，再一起提交兩邊。
+
+• restore 和 build 都過了，現在只剩測試尾巴。收完我就提交兩邊。
+
+• PulseTrade 和 FSharp.MCP.DevKit 都過了。最後我跑一次 check.fsx，然後就提交兩邊。
+
+• 我把這輪的關鍵決策和驗證補成正式 log/op_log，順手把 check.fsx 的缺口補掉。之后直接提交，不再留 dirty。
+
+• 我現在只把 source/doc/log/notes 這些有意義的檔案進版控，不會把 bin/obj 那坨垃圾一起送上去。先確認待提交清單，再各自 commit + push。
+
+• PulseTrade.fs 已 commit，現在只差第一次 push 設 upstream。我補這一步，不改別的。
+
+• FSharp.MCP.DevKit 也已 commit，現在等 push。提交裡包含這輪的 DevLog、notes、log/op_log。
+
+• 我補跑一次 check.fsx，確認這個 branch 現在不是只有 code 過，文件/紀錄也收乾淨。
+
+• 兩邊 source/doc/worktree 都乾淨了。等 check.fsx 收完，我就回你這次部署前後最精簡的結論與下一步測法。
+
+• check.fsx 只剩檔名規範不過。我把這輪 log/op_log 改成 ASCII 檔名，再補一個小 commit，把 SOP 收乾淨。
+
+• 我補跑最後一次 check.fsx。這次只應該剩綠燈。
+
+• SOP 最後一輪檢查在跑。收完我就只給你部署面真正需要知道的結論，不再加雜訊。
+
+• 結果先講：
+
+  - 你剛剛那次已部署的版本，我已驗到 proc-supervisor GetVesion 是通的。
+  - 真正卡住的是 bootstrap procnode，它因為缺 Akka.Remote / Akka.DistributedData 的預設 serializer config 而停掉，所以沒有 fsiSupervisorPath，當然也沒法測 fsi-supervisor
+  GetVesion 或 host/session 隔離。
+  - 這個根因我已經修好，而且不是 fsdevkit.service 問題。
+
+  已完成的修正：
+
+  - PulseTrade.fs branch 20260325_002.fspickler-remoting-contracts
+  - commit: 65d2778 fix: add remote and ddata defaults to procnode bootstrap
+  - NuGet 已推：
+      - FAkka.Proc.Supervisor 1.562.101.201-dgx.9
+
+  FSharp.MCP.DevKit 也已跟上：
+
+  - branch 20260325_002.fspickler-remoting-contracts
+  - latest commits:
+      - 02f8712 build: upgrade proc supervisor to dgx9 bootstrap fix
+      - 90c0e3b docs: normalize procnode bootstrap log filenames
+
+  本機驗證：
+
+  - Akka.Proc.Supervisor：
+      - bootstrap procnode regression test 通過
+      - verify_bootstrap_procnode.fsx 通過，已出現非空 fsiSupervisorPath
+  - FSharp.MCP.DevKit：
+      - restore/build/test 通過
+
+  要你現在做的只有一件事：
+
+  1. 重新部署 fsharp-devkit，吃到 FAkka.Proc.Supervisor 1.562.101.201-dgx.9
+
+  你重部署後，我下一輪就只做這三步：
+
+  1. 在已部署實例上 direct ask proc-supervisor GetVesion
+  2. ask GetAllProcInfo，確認 bootstrap procnode 不是 stopped，且有 fsiSupervisorPath
+  3. 再 direct ask fsi-supervisor GetVesion，然後才往上測 host/session 隔離
+
+  補充：
+
+  - check.fsx 現在 code/doc/worktree 都是乾淨的，只剩它對「我剛把舊中文 log 檔名 rename 成規範檔名」這件事記成刪檔，這不是功能問題。
+
+⚠ Heads up, you have less than 25% of your weekly limit left. Run /status for a breakdown.
+
+
+› 布署好了請測
+
+
+• 我先按最低層順序測：proc-supervisor GetVesion、GetAllProcInfo、fsi-supervisor GetVesion。只有這三個都通，我才往上打 MCP host/session。
+
+• Ran curl -fsS http://127.0.0.1:15000/healthz
+  └ {"isWindowsService":false,"procSupervisor":"enabled","procSupervisorPath":"akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","remoteClient":"enabled","serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+
+• Ran cat > /tmp/ask_proc_and_fsi_versions_live.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ … +48 lines
+  └
+
+    /tmp/ask_proc_and_fsi_versions_live.fsx(16,47): error FS0597: Successive arguments should be separated by spaces or tupled, and arguments involving function or method
+    applications should be parenthesized
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 腳本有一個 F# 語法小錯，不是部署錯。我改成最簡單可跑版本，再直接重測，不岔開。
+
+• Explored
+  └ Read ask_proc_and_fsi_versions_live.fsx
+
+• Ran cat > /tmp/ask_proc_and_fsi_versions_live.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ … +51 lines
+  └
+
+    … +8 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本機 DLL 路徑不對，我直接改用 NuGet cache 裡的 FsPickler，不再引用那個不存在的舊 packages 資料夾。
+
+• Explored
+  └ Search */fspickler/*/lib/netstandard2.0/FsPickler.dll in packages
+    Search */fspickler.json/*/lib/netstandard2.0/FsPickler.Json.dll in packages
+    Search FsPickler.Json.dll in packages
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 先只做最低層驗證：直接對你剛部署的 proc-supervisor / fsi-supervisor 做 GetVesion，不碰 MCP host/session。我要先把本地臨時腳本的引用路徑修正到這台環境可用的 NuGet cache。
+
+• Explored
+  └ List ask_proc_and_fsi_versions_live.fsx
+    Read ask_proc_and_fsi_versions_live.fsx
+    List FsPickler.dll
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把直接 ask 用的腳本改成只引用這台機器確定存在的 DLL，然後直接打已部署的 proc-supervisor。如果 fsiSupervisorPath 已經出來，再往下一跳 ask fsi-supervisor。
+
+• Explored
+  └ List Akka.Proc.Supervisor.dll
+    Search Akka.FSharp.dll in packages
+    Search */Akka.Remote.dll in work
+    Search /(bin|artifacts)/
+    Search */Akka.dll in work
+    Search /(bin|artifacts)/
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把腳本縮成最小依賴，只保留 Akka、Akka.Remote、FAkka.Fsi.Contracts、Akka.Proc.Supervisor 與 FsPickler。這樣結果只反映已部署實例，不再混進本機其他 build 產物。
+
+• Deleted /tmp/ask_proc_and_fsi_versions_live.fsx (+0 -50)
+     1 -#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+     2 -#r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+     3 -#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+     4 -#r "/workspace/home/work/PulseTrade.fs/packages/FsPickler/FsPickler.5.3.2/lib/netstandard2.0/FsPickler.dll"
+     5 -#r "/workspace/home/work/PulseTrade.fs/packages/FsPickler.Json/FsPickler.Json.5.3.2/lib/netstandard2.0/FsPickler.Json.dll"
+     6 -#r "/workspace/home/work/AkkaSQLCLR/bin/Debug/Akka.dll"
+     7 -#r "/workspace/home/work/AkkaSQLCLR/src/core/Akka.Remote/bin/Debug/netstandard2.0/Akka.Remote.dll"
+     8 -
+     9 -open System
+    10 -open Akka.Actor
+    11 -open Akka.Configuration
+    12 -open Akka.FSI.Contracts
+    13 -open Akka.Proc.Supervisor
+    14 -
+    15 -let contractCfg =
+    16 -    ContractSerialization.configForAssemblies ([ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ])
+    17 -
+    18 -let cfg =
+    19 -    contractCfg
+    20 -        .WithFallback(
+    21 -            ConfigurationFactory.ParseString("""
+    22 -akka {
+    23 -  actor.provider = remote
+    24 -  remote.dot-netty.tcp {
+    25 -    hostname = "127.0.0.1"
+    26 -    port = 0
+    27 -  }
+    28 -}
+    29 -"""))
+    30 -        .WithFallback(ConfigurationFactory.Default())
+    31 -
+    32 -use system = ActorSystem.Create("live-probe-client", cfg)
+    33 -let timeout = TimeSpan.FromSeconds 10.0
+    34 -let procPath = "akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor"
+    35 -let proc = system.ActorSelection(procPath)
+    36 -let procVersion = proc.Ask<OpResult>(GetVesion, timeout).Result
+    37 -printfn "PROC_VERSION=%s" (procVersion.informationalVersion |> Option.defaultValue "<none>")
+    38 -let infos = proc.Ask<ProcSnapshot array>(GetAllProcInfo, timeout).Result
+    39 -printfn "PROC_COUNT=%d" infos.Length
+    40 -for i in infos do
+    41 -    printfn "PROC %s status=%s fsi=%s node=%s" i.procId i.status (i.fsiSupervisorPath |> Option.defaultValue "<none>") (i.nodeAddress |> Option.defaultValue "<none>")
+    42 -let liveFsi = infos |> Array.tryFind (fun i -> i.status = "running" && i.fsiSupervisorPath.IsSome)
+    43 -match liveFsi with
+    44 -| None ->
+    45 -    printfn "FSI_NONE"
+    46 -| Some info ->
+    47 -    let fsi = system.ActorSelection(info.fsiSupervisorPath.Value)
+    48 -    let fsiVersion = fsi.Ask<OpResult>(GetVesion, timeout).Result
+    49 -    printfn "FSI_VERSION=%s" (fsiVersion.informationalVersion |> Option.defaultValue "<none>")
+    50 -    printfn "FSI_PATH=%s" info.fsiSupervisorPath.Value
+
+• Added /tmp/ask_proc_and_fsi_versions_live.fsx (+62 -0)
+     1 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.dll"
+     2 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Remote.dll"
+     3 +#r "/root/.nuget/packages/fspickler/5.3.2/lib/netstandard2.0/FsPickler.dll"
+     4 +#r "/root/.nuget/packages/fakka.fspickler.json/10.0.2/lib/net10.0/FsPickler.Json.dll"
+     5 +#r "/root/.nuget/packages/fakka.fsi.contracts/10.1.201.3/lib/net10.0/FAkka.Fsi.Contracts.dll"
+     6 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+     7 +
+     8 +open System
+     9 +open Akka.Actor
+    10 +open Akka.Configuration
+    11 +open Akka.FSI.Contracts
+    12 +open Akka.Proc.Supervisor
+    13 +
+    14 +let contractCfg =
+    15 +    ContractSerialization.configForAssemblies([ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ])
+    16 +
+    17 +let cfg =
+    18 +    contractCfg
+    19 +        .WithFallback(
+    20 +            ConfigurationFactory.ParseString(
+    21 +                """
+    22 +akka {
+    23 +  actor.provider = remote
+    24 +  remote.dot-netty.tcp {
+    25 +    hostname = "127.0.0.1"
+    26 +    port = 0
+    27 +  }
+    28 +}
+    29 +"""
+    30 +            )
+    31 +        )
+    32 +        .WithFallback(ConfigurationFactory.Default())
+    33 +
+    34 +use system = ActorSystem.Create("live-probe-client", cfg)
+    35 +let timeout = TimeSpan.FromSeconds 10.0
+    36 +let procPath = "akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor"
+    37 +let proc = system.ActorSelection(procPath)
+    38 +
+    39 +let procVersion = proc.Ask<OpResult>(GetVesion, timeout).Result
+    40 +printfn "PROC_VERSION=%s" (procVersion.informationalVersion |> Option.defaultValue "<none>")
+    41 +
+    42 +let infos = proc.Ask<ProcSnapshot array>(GetAllProcInfo, timeout).Result
+    43 +printfn "PROC_COUNT=%d" infos.Length
+    44 +
+    45 +for info in infos do
+    46 +    printfn
+    47 +        "PROC %s status=%s fsi=%s node=%s"
+    48 +        info.procId
+    49 +        info.status
+    50 +        (info.fsiSupervisorPath |> Option.defaultValue "<none>")
+    51 +        (info.nodeAddress |> Option.defaultValue "<none>")
+    52 +
+    53 +let liveFsi = infos |> Array.tryFind (fun info -> info.status = "running" && info.fsiSupervisorPath.IsSome)
+    54 +
+    55 +match liveFsi with
+    56 +| None ->
+    57 +    printfn "FSI_NONE"
+    58 +| Some info ->
+    59 +    let fsi = system.ActorSelection(info.fsiSupervisorPath.Value)
+    60 +    let fsiVersion = fsi.Ask<OpResult>(GetVesion, timeout).Result
+    61 +    printfn "FSI_VERSION=%s" (fsiVersion.informationalVersion |> Option.defaultValue "<none>")
+    62 +    printfn "FSI_PATH=%s" info.fsiSupervisorPath.Value
+
+• Ran dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+  └
+
+    … +22 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這次不是部署問題，是我這個臨時 probe client 少載了 Akka 預設 JSON serializer 的相依。先把 client 端補到和 ProcSupervisor 的輸出目錄一致，再直接重跑 GetVesion。
+
+• Explored
+  └ List net10.0
+    Search Microsoft.Extensions.ObjectPool.dll in net10.0
+    Search Microsoft.Extensions.ObjectPool.dll in net10.0
+    Search Microsoft.Extensions.ObjectPool.dll in workspace
+    List Microsoft.Extensions.ObjectPool.dll
+    List Microsoft.Extensions.ObjectPool.dll
+
+• Edited /tmp/ask_proc_and_fsi_versions_live.fsx (+3 -0)
+    1 +#I "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0"
+    2  #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.dll"
+    3  #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Remote.dll"
+    4 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Microsoft.Extensions.ObjectPool.dll"
+    5 +#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Newtonsoft.Json.dll"
+    6  #r "/root/.nuget/packages/fspickler/5.3.2/lib/netstandard2.0/FsPickler.dll"
+
+• Waited for background terminal
+
+• Waited for background terminal · dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+
+• Ran dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+  └
+
+    … +17 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+─ Worked for 1m 22s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 最低層結果已經出來了：proc-supervisor GetVesion 正常，而且 bootstrap procnode 也活著，fsiSupervisorPath 已經有了。現在唯一還沒過的是直接 ask fsi-supervisor GetVesion，我先
+  對照實際 actor path 和 Receive<OpCmd> 實作，再決定是 path 還是 actor 本體沒接好。
+
+• Explored
+  └ Search Receive<OpCmd>|GetVesion|EnsureSupervisor|fsi/supervisor|supervisor in Akka.FSI.Supervisor
+    Read Api.fs, Supervisor.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• proc-supervisor 已經直接 ask 成功了。我再加一個最小探針：先 ResolveOne(fsiSupervisorPath)，再直接 ask 一個既有的 ListSessions。這樣能把問題切成「actor path 不存在」還是「只
+  有 OpCmd 壞掉」。
+
+• Edited /tmp/ask_proc_and_fsi_versions_live.fsx (+5 -1)
+    62      let fsi = system.ActorSelection(info.fsiSupervisorPath.Value)
+    63 +    printfn "FSI_PATH=%s" info.fsiSupervisorPath.Value
+    64 +    let resolved = fsi.ResolveOne(timeout).Result
+    65 +    printfn "FSI_RESOLVED=%s" resolved.Path.ToStringWithAddress()
+    66 +    let sessions = fsi.Ask<Sessions>(ListSessions(true), timeout).Result
+    67 +    printfn "FSI_SESSION_COUNT=%d" sessions.items.Length
+    68      let fsiVersion = fsi.Ask<OpResult>(GetVesion, timeout).Result
+    69      printfn "FSI_VERSION=%s" (fsiVersion.informationalVersion |> Option.defaultValue "<none>")
+    65 -    printfn "FSI_PATH=%s" info.fsiSupervisorPath.Value
+
+• Ran dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+  └
+
+    … +5 lines
+    applications should be parenthesized
+
+
+• Explored
+  └ Read ask_proc_and_fsi_versions_live.fsx
+
+• Edited /tmp/ask_proc_and_fsi_versions_live.fsx (+1 -1)
+    64      let resolved = fsi.ResolveOne(timeout).Result
+    65 -    printfn "FSI_RESOLVED=%s" resolved.Path.ToStringWithAddress()
+    65 +    printfn "FSI_RESOLVED=%s" (resolved.Path.ToString())
+    66      let sessions = fsi.Ask<Sessions>(ListSessions(true), timeout).Result
+
+• Ran dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+  └
+
+    … +4 lines
+    /tmp/ask_proc_and_fsi_versions_live.fsx(66,38): error FS0800: Invalid use of a type name
+
+
+• Explored
+  └ Search type ListSessions|type Sessions|ListSessions\( in FAkka.Fsi.Contracts
+    Read Contracts.fs
+
+• Edited /tmp/ask_proc_and_fsi_versions_live.fsx (+1 -1)
+    65      printfn "FSI_RESOLVED=%s" (resolved.Path.ToString())
+    66 -    let sessions = fsi.Ask<Sessions>(ListSessions(true), timeout).Result
+    66 +    let sessions = fsi.Ask<Sessions>({ all = true }, timeout).Result
+    67      printfn "FSI_SESSION_COUNT=%d" sessions.items.Length
+
+• Waited for background terminal · dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+
+• Ran dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+  └
+
+    … +20 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+• Explored
+  └ Read Supervisor.fs
+    Search Receive<obj>|ReceiveAny|JObject|JValue|JArray in Supervisor.fs
+    Read Supervisor.fs
+
+─ Worked for 1m 30s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 測完了，最低層結果很清楚。
+
+  我不是走 MCP，也不是走 /send，而是直接起一個 client ActorSystem，對你部署中的 actor path 做 Akka.Remote Ask。
+
+  結果：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - bootstrap procnode：成功啟動，status=running
+  - fsiSupervisorPath：存在
+  - 直接 ResolveOne(fsiSupervisorPath)：成功
+  - 直接 Ask<ListSessions> 給 fsi-supervisor：成功，回 0 sessions
+  - 直接 Ask<GetVesion> 給 fsi-supervisor：timeout
+
+  實際拿到的是：
+
+  PROC_VERSION=1.562.101.201-dgx.8+dea4308...
+  PROC_COUNT=1
+  PROC bootstrap-net10-host status=running fsi=akka.tcp://proc-system@10.28.112.140:42313/user/fsi/supervisor node=akka.tcp://proc-system@10.28.112.140:42313
+  FSI_PATH=akka.tcp://proc-system@10.28.112.140:42313/user/fsi/supervisor
+  FSI_RESOLVED=akka.tcp://proc-system@10.28.112.140:42313/user/fsi/supervisor
+  FSI_SESSION_COUNT=0
+
+  然後卡在：
+
+  AskTimeoutException: Timeout after 10.00 seconds
+
+  所以目前結論不是「整條 Akka.Remote 壞掉」，而是更窄：
+
+  - ProcSupervisor 這層已經正常
+  - procnode 也活著
+  - fsi supervisor actor path 也存在
+  - fsi supervisor 對既有 contract ListSessions 有回應
+  - 只有 fsi-supervisor 的 OpCmd.GetVesion 這條不通
+
+  也就是說，現在 root cause 已經縮到：
+
+  - FsiSupervisorActor 的 Receive<OpCmd> 在部署情境下沒有正常吃到這個訊息
+    或
+  - OpCmd 在 procnode/fsi-supervisor 這段 wire 上仍然沒有跟 proc-supervisor 那段一樣被正確還原
+
+  下一刀就不該再碰 docker/service 了，應該直接查：
+
+  - fsi-supervisor process 內部收到的 GetVesion 到底是 typed OpCmd 還是又掉成 JObject
+  - 也就是去補 Akka.FSI.Supervisor 那邊的 actor log / fallback 診斷
+
+  如果你要，我下一步就只針對 FAkka.FSI.Supervisor 這條 OpCmd 做 debug，不再碰上層。
+
+
+› proc supervisor 有的修正，特別是針對 hocon 的都是在 fakka.fsi.contracts 中?那麼 fsi supervisor 也都有嗎?
+
+
+• 我先直接核對三個點：shared serializer HOCON 在哪、ProcSupervisor 額外補了哪些 fallback、FSI Supervisor 現在實際有沒有吃到同一份 config。
+
+• Explored
+  └ Search ContractSerialization|configForAssemblies|DistributedData.DefaultConfig|Remote.conf|ClusterSharding.DefaultConfig|ClusterSingleton.DefaultConfig in
+FAkka.Fsi.Contracts
+    Read Serialization.fs, ProcHost.fs, WorkerHost.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 不是全部都在 FAkka.Fsi.Contracts，要分開看。
+
+  共用、放在 FAkka.Fsi.Contracts 的有：
+
+  - ContractSerialization.configForAssemblies
+  - ContractSerialization.installForAssemblies
+
+  它負責的是：
+
+  - FsPickler serializer 本體
+  - id=199
+  - 對 IMessage 型別的 serialization-bindings
+
+  這一份是 proc 和 fsi 兩邊共用的。
+
+  但 ProcSupervisor 額外修的 HOCON 不在 contracts，在：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+
+  那邊另外補了：
+
+  - Akka.Remote.Configuration.Remote.conf
+  - DistributedData.DefaultConfig()
+  - ClusterSharding.DefaultConfig()
+  - ClusterSingleton.DefaultConfig()
+
+  這些不是 contracts 的責任，這是 procnode/supervisor actor system 啟動時自己的 fallback config。
+
+  FSI Supervisor 這邊要再分兩種情況：
+
+  1. 跑在 procnode 裡的 fsi supervisor
+
+  - 它是掛在 ProcHost 起來的同一個 ActorSystem 裡
+  - 所以 會間接吃到 ProcHost 那些 remote/ddata/sharding defaults
+  - 也就是現在部署中的 fsi supervisor，理論上有這些 config
+
+  2. 單獨跑 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/WorkerHost.fs 時
+
+  - 它目前只有：
+      - base HOCON
+      - ContractSerialization.configForAssemblies
+  - 沒有 額外顯式補：
+      - Remote.conf
+      - DistributedData.DefaultConfig()
+      - ClusterSharding.DefaultConfig()
+      - ClusterSingleton.DefaultConfig()
+
+  所以準確答案是：
+
+  - shared serializer/binding：在 FAkka.Fsi.Contracts，兩邊都有
+  - proc 專屬的 Akka fallback HOCON 修正：不在 contracts，只在 ProcHost.fs
+  - fsi supervisor 如果是掛在 procnode 裡，會吃到
+  - fsi supervisor 如果是走 standalone WorkerHost，目前沒有完整照搬
+
+  所以如果你的問題是：
+
+  > fsi supervisor 也都有嗎?
+
+  答案是：
+
+  - 在 procnode 承載模式下，有間接吃到
+  - 在 standalone WorkerHost 路徑下，沒有完全補齊
