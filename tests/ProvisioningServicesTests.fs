@@ -2,24 +2,26 @@ module ProvisioningServicesTests
 
 open System
 open System.Threading.Tasks
+open Akka.Actor
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Backends
 open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.Integration
 
-type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot) =
+type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> Task<ProcHostSnapshot>, ?getFactory: string -> Task<ProcHostSnapshot option>) =
     let mutable starts : (string * ProcHostSpec) list = []
+    let getFactory = defaultArg getFactory (fun _ -> Task.FromResult(None))
 
     member _.Starts = List.rev starts
 
     interface IProcSupervisorClient with
         member _.StartProc(procId: string, spec: ProcHostSpec) =
             starts <- (procId, spec) :: starts
-            Task.FromResult(startFactory (procId, spec))
+            startFactory (procId, spec)
 
         member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StopProc is not used in this test."))
-        member _.GetProcInfo(_) = Task.FromResult(None)
+        member _.GetProcInfo(procId) = getFactory procId
         member _.ListProcInfo() = Task.FromResult([])
         member _.RestartProc(_) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("RestartProc is not used in this test."))
 
@@ -47,7 +49,7 @@ let ``HostProvisioningService rejects explicit inproc host creation`` () =
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let procClient =
             FakeProcSupervisorClient(fun _ ->
-                failwith "StartProc should not be called for InProcHost")
+                Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc should not be called for InProcHost")))
 
         let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
 
@@ -75,16 +77,17 @@ let ``HostProvisioningService starts proc and stores ready net10 host`` () =
 
         let procClient =
             FakeProcSupervisorClient(fun (procId, spec) ->
-                { ProcId = procId
-                  Status = "running"
-                  ProcessId = Some 9020
-                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor"
-                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9020"
-                  LastProbeUtc = Some DateTime.UtcNow
-                  LastProbeOk = Some true
-                  ProbeFailures = 0
-                  Spec = Some spec
-                  LastError = None })
+                Task.FromResult(
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9020
+                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9020"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }))
 
         let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
 
@@ -105,6 +108,53 @@ let ``HostProvisioningService starts proc and stores ready net10 host`` () =
         Assert.Equal(Some 9020, host.ProcId)
         Assert.Equal(Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor", host.Address)
         Assert.Equal(host.HostId, stored.HostId)
+    }
+
+[<Fact>]
+let ``HostProvisioningService recovers from StartProc ask timeout by polling proc info`` () =
+    task {
+        let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
+        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+        let mutable getCalls = 0
+
+        let spec =
+            { ExecutablePath = "dotnet"
+              Arguments = [ "fsi-host.dll"; "--port"; "9021" ]
+              WorkingDirectory = Some "/srv/fsi"
+              Role = None
+              ProbeMessage = None
+              ProbeCron = None
+              ProbeIntervalMs = None }
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun _ -> Task.FromException<ProcHostSnapshot>(AskTimeoutException("Timeout after 5.00 seconds"))),
+                (fun procId ->
+                    getCalls <- getCalls + 1
+
+                    if getCalls < 2 then
+                        Task.FromResult(None)
+                    else
+                        Task.FromResult(
+                            Some
+                                { ProcId = procId
+                                  Status = "running"
+                                  ProcessId = Some 9021
+                                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9021/user/fsi/supervisor"
+                                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9021"
+                                  LastProbeUtc = Some DateTime.UtcNow
+                                  LastProbeOk = Some true
+                                  ProbeFailures = 0
+                                  Spec = Some spec
+                                  LastError = None })))
+
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+
+        let! host = provisioning.CreateHost("agent-recover", Net10Host, spec, requestedHostId = "host-recover")
+
+        Assert.Equal(Ready, host.Status)
+        Assert.Equal(Some 9021, host.ProcId)
+        Assert.True(getCalls >= 2)
     }
 
 [<Fact>]

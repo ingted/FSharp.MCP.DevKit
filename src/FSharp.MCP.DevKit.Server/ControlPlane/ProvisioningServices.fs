@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server.ControlPlane
 
 open System
 open System.Threading.Tasks
+open Akka.Actor
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Backends
 open FSharp.MCP.DevKit.Server.Integration
@@ -49,6 +50,21 @@ type HostProvisioningService
             )
             |> ignore
 
+    let rec pollProcSnapshot (procSupervisorClient: IProcSupervisorClient) (hostId: string) (deadlineUtc: DateTime) : Task<ProcHostSnapshot option> =
+        task {
+            if DateTime.UtcNow >= deadlineUtc then
+                return None
+            else
+                let! snapshotOpt = procSupervisorClient.GetProcInfo(hostId)
+
+                match snapshotOpt with
+                | Some snapshot when not (String.IsNullOrWhiteSpace snapshot.Status) ->
+                    return Some snapshot
+                | _ ->
+                    do! Task.Delay 250
+                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc
+        }
+
     member _.CreateHost
         (
             agentId: string,
@@ -85,7 +101,19 @@ type HostProvisioningService
             hostRegistry.Create creatingRecord |> ignore
 
             try
-                let! snapshot = procSupervisorClient.StartProc(hostId, spec)
+                let! snapshot =
+                    task {
+                        try
+                            return! procSupervisorClient.StartProc(hostId, spec)
+                        with :? AskTimeoutException ->
+                            let! recovered =
+                                pollProcSnapshot procSupervisorClient hostId (DateTime.UtcNow.AddSeconds 15.0)
+
+                            match recovered with
+                            | Some snapshot -> return snapshot
+                            | None ->
+                                return raise (AskTimeoutException("Timed out waiting for ProcSupervisor StartProc response and no proc snapshot became visible during recovery polling."))
+                    }
 
                 let readyRecord =
                     { creatingRecord with

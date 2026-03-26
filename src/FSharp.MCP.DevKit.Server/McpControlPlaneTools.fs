@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
+open System.Runtime.InteropServices
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Integration
@@ -32,9 +33,11 @@ type McpControlPlaneTools =
         (
             fsiService: FsiMcpService,
             [<Description("Agent identifier used for routed execution and host ownership.")>] agentId: string,
-            [<Description("Optional display name for the agent.")>] ?displayName: string
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional display name for the agent.")>] displayName: string
         ) : string =
-        let record = fsiService.RegisterAgent(agentId, ?displayName = displayName)
+        let displayNameOpt = if String.IsNullOrWhiteSpace displayName then None else Some displayName
+        let record = fsiService.RegisterAgent(agentId, ?displayName = displayNameOpt)
         FSharpJson.serialize record
 
     [<McpServerTool(Name = "create_fsi_host"); Description("Create an out-of-proc FSI host. Only netfx and net10 are supported, and provisioning always goes through ProcSupervisor.")>]
@@ -44,27 +47,38 @@ type McpControlPlaneTools =
             [<Description("Owning agent id. Register the agent first for explicit routing.")>] agentId: string,
             [<Description("Host kind: netfx or net10.")>] hostKind: string,
             [<Description("Executable path for the host process, for example 'dotnet' or a netfx host executable path.")>] executablePath: string,
-            [<Description("Arguments passed to the host process as a single string. Leave empty for none.")>] ?arguments: string,
-            [<Description("Optional working directory for the host process.")>] ?workingDirectory: string,
-            [<Description("Optional requested host id. If omitted, a generated id is used.")>] ?hostId: string,
-            [<Description("Optional probe message used by ProcSupervisor.")>] ?probeMessage: string,
-            [<Description("Optional probe interval in milliseconds.")>] ?probeIntervalMs: int
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Arguments passed to the host process as a single string. Leave empty for none.")>] arguments: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional working directory for the host process.")>] workingDirectory: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional requested host id. If omitted, a generated id is used.")>] hostId: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional probe message used by ProcSupervisor for active health checks. Leave empty to disable probing.")>] probeMessage: string,
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Optional probe interval in milliseconds. Use 0 to disable probing.")>] probeIntervalMs: int
         ) : Task<string> =
         task {
             let parsedHostKind = McpControlPlaneTools.parseHostKind hostKind
 
-            let args = McpControlPlaneTools.parseArguments arguments
+            let argumentsOpt = if String.IsNullOrWhiteSpace arguments then None else Some arguments
+            let workingDirectoryOpt = if String.IsNullOrWhiteSpace workingDirectory then None else Some workingDirectory
+            let hostIdOpt = if String.IsNullOrWhiteSpace hostId then None else Some hostId
+            let probeMessageOpt = if String.IsNullOrWhiteSpace probeMessage then None else Some probeMessage
+            let probeIntervalMsOpt = if probeIntervalMs > 0 then Some probeIntervalMs else None
+
+            let args = McpControlPlaneTools.parseArguments argumentsOpt
 
             let spec =
                 { ExecutablePath = executablePath
                   Arguments = args
-                  WorkingDirectory = workingDirectory
+                  WorkingDirectory = workingDirectoryOpt
                   Role = None
-                  ProbeMessage = probeMessage
+                  ProbeMessage = probeMessageOpt
                   ProbeCron = None
-                  ProbeIntervalMs = probeIntervalMs }
+                  ProbeIntervalMs = probeIntervalMsOpt }
 
-            let! hostRecord = fsiService.CreateHost(agentId, parsedHostKind, spec, ?requestedHostId = hostId)
+            let! hostRecord = fsiService.CreateHost(agentId, parsedHostKind, spec, ?requestedHostId = hostIdOpt)
             return FSharpJson.serialize hostRecord
         }
 
@@ -82,11 +96,15 @@ type McpControlPlaneTools =
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
-            [<Description("Optional session id. If omitted, a generated id is used.")>] ?sessionId: string,
-            [<Description("Optional display name for the session.")>] ?sessionName: string
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional session id. If omitted, a generated id is used.")>] sessionId: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional display name for the session.")>] sessionName: string
         ) : Task<string> =
         task {
-            let! sessionRecord = fsiService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
+            let sessionIdOpt = if String.IsNullOrWhiteSpace sessionId then None else Some sessionId
+            let sessionNameOpt = if String.IsNullOrWhiteSpace sessionName then None else Some sessionName
+            let! sessionRecord = fsiService.CreateSession(agentId, hostId, ?sessionId = sessionIdOpt, ?sessionName = sessionNameOpt)
             return FSharpJson.serialize sessionRecord
         }
 
@@ -141,8 +159,13 @@ type McpControlPlaneTools =
     static member GetFsiPathMappings
         (
             fsiService: FsiMcpService,
-            [<Description("Optional agent id filter.")>] ?agentId: string,
-            [<Description("Optional host id filter.")>] ?hostId: string
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional agent id filter.")>] agentId: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional host id filter.")>] hostId: string
         ) : string =
-        fsiService.ListPathMappings(?agentId = agentId, ?hostId = hostId)
+        let agentIdOpt = if String.IsNullOrWhiteSpace agentId then None else Some agentId
+        let hostIdOpt = if String.IsNullOrWhiteSpace hostId then None else Some hostId
+
+        fsiService.ListPathMappings(?agentId = agentIdOpt, ?hostId = hostIdOpt)
         |> FSharpJson.serialize

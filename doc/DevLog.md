@@ -431,3 +431,100 @@
     - `log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log`
     - `log/20260326124500.修正續寫既有oplog並補新任務log.op_log`
   - 後續若要補記 `push/check` 或二次收尾，固定開新 log，不再改既有 log 檔。
+
+## 2026-03-26 14:35:00 Deployment Verification
+
+- 背景：
+  - 使用者要求停止高層推測，只驗最底層 deployed `fsharp-devkit` remote host/session 隔離是否真的可用。
+  - 驗證方式改成：
+    - 不走 MCP
+    - 不走 `/send`
+    - 直接對 deployed `proc-supervisor` / `fsi-supervisor` 做 `Akka.Remote Ask`
+- 已確認事項：
+  - `proc-supervisor GetVesion` 成功。
+  - `GetAllProcInfo` 成功。
+  - `ProcSupervisor` 在 deployed host 上可 direct `StartProc` 成功建立新的 procnode。
+  - `bootstrap-net10-host` 已不再是必要前提；改由 actor-level `StartProc` 驗證新 host。
+- host isolation 驗證：
+  - 直接建立兩個 remote procnode：
+    - `deploy-host-a-actor`
+    - `deploy-host-test-single`
+  - 對兩邊同名 session `shared-session` 分別執行：
+    - host A: `let hostValue = 101`
+    - host B: `let hostValue = 202`
+  - 再各自讀回：
+    - host A -> `101`
+    - host B -> `202`
+  - 結論：deployed remote host isolation 成立。
+- session isolation 驗證：
+  - 在同一個 deployed remote host 下，使用兩個不同 session：
+    - `verify-session-a`
+    - `verify-session-b`
+  - 分別執行：
+    - session A: `let sessionValue = 111`
+    - session B: `let sessionValue = 222`
+  - 再各自讀回：
+    - session A -> `111`
+    - session B -> `222`
+  - 結論：deployed remote session isolation 成立。
+- 注意事項：
+  - 先前 direct `StartProc` 超時，不等於 child proc 啟動失敗；這次重新觀察後，`StartProc` 可能成功但 ask 在 coordinator 壓力下未及時回覆。
+  - operational 驗證應固定落在 `log/` 與 `DevLog.md`，不再回寫到 `notes/`。
+
+## 2026-03-26 15:50:00 MCP Tool Binding Fix
+
+- 背景：
+  - 使用真正的 HTTP MCP client 直打 deployed `fsharp-devkit` 時，`create_fsi_host` 只回 generic error：
+    - `An error occurred invoking 'create_fsi_host'.`
+  - container log 裡的真 exception 是：
+    - `System.ArgumentException: The arguments dictionary is missing a value for the required parameter 'probeMessage'.`
+- 根因：
+  - `McpControlPlaneTools.CreateFsiHost` 對外暴露的是 F# optional parameters：
+    - `?arguments`
+    - `?workingDirectory`
+    - `?hostId`
+    - `?probeMessage`
+    - `?probeIntervalMs`
+  - ModelContextProtocol 的 reflection binder 對這種 F# optional surface 沒有正確降成「可省略」的 tool arguments，省略 `probeMessage` 時被當成缺必填欄位。
+- 修法：
+  - 將 `McpControlPlaneTools` 的 public tool surface 改成 CLR optional/default-value 參數：
+    - `RegisterFsiAgent.displayName`
+    - `CreateFsiHost.arguments/workingDirectory/hostId/probeMessage/probeIntervalMs`
+    - `CreateFsiSession.sessionId/sessionName`
+    - `GetFsiPathMappings.agentId/hostId`
+  - method 內再把：
+    - `null` / 空字串 -> `None`
+    - `0` -> `None`
+  - 也就是說，MCP reflection binder 看到的是正常 CLR optional 參數，而 service 層仍保留原本的 option semantics。
+  - `probeMessage` / `probeIntervalMs` 的語意補充：
+    - 它們不是 host creation 的核心必填欄位。
+    - 它們是 `ProcSupervisor` 對 child proc 做週期性健康檢查時用的 probe 設定。
+    - `probeMessage`：要送進 proc 的探測字串，例如 `listsessions --all true`。
+    - `probeIntervalMs`：探測週期。
+    - 省略時代表：
+      - host 仍可建立與使用；
+      - 但 `ProcSupervisor` 不會額外替這個 proc 啟用 active probe。
+    - 因此這兩個欄位在工具層應該是 optional，不應被 MCP binder 當成 create host 的必填參數。
+- 驗證：
+  - 本地：
+    - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -m:1`
+    - `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~McpControlPlaneToolsTests" -m:1`
+    - 均通過。
+  - live deployment：
+    - 重新 build docker image 並重起 container 後，
+    - 直接使用 MCP tools 成功完成：
+      - `register_fsi_agent`
+      - `create_fsi_host`
+      - `create_fsi_session`
+      - `execute_f_sharp_code_routed`
+      - `evaluate_f_sharp_expression_routed`
+  - 結論：
+    - 先前的 generic error 不是 runtime/procnode/fsi-supervisor 的問題，而是 MCP reflection binder 與 F# optional tool signature 的相容性問題。
+  - 後續驗證補充：
+    - 將 `probeMessage` / `probeIntervalMs` 完全省略後，live deployment 不再拋出 `missing probeMessage`。
+    - 新的真 exception 變成：
+      - `Akka.Actor.AskTimeoutException: Timeout after 5.00 seconds`
+      - 位置在 `ProvisioningServices.CreateHost`
+    - 這證明：
+      - binder bug 已修掉；
+      - 後續若還有 generic error，應歸因到 host provisioning/ask timeout，而不是 MCP optional parameter binding。
