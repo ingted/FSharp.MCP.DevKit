@@ -395,3 +395,23 @@
     - deployed `proc-supervisor` 可 direct ask
     - local bootstrap procnode 可活著註冊 `fsiSupervisorPath`
   - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
+
+## 2026-03-26 11:50:00 Correction
+
+- 背景：
+  - 使用者指出 `notes/00033.txt` 承載了 deployment / diagnosis 類 operational finding。
+  - 依 `AGENTS.md`，這類資訊應該進 `log/` 與 `doc/DevLog.md`，不應只停留在 `notes/`。
+- 補正：
+  - 將 `notes/00033.txt` 的核心內容正式回填到：
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    - 本段 `DevLog Correction`
+  - 既有 `notes/00033.txt` 保留不動，視為當時的暫存摘錄；後續不再把 deployment / diagnosis 類內容單獨留在 `notes/`。
+- 判讀：
+  - `notes/` 適合閱讀摘錄與探索片段。
+  - deployment / diagnosis / root-cause / command evidence 應固定落在：
+    - `log/`：任務級證據
+    - `DevLog.md`：長期知識沉澱
+- 行動準則更新：
+  - 之後若有類似 operational finding，先寫 `log/.op_log`，收斂後 append 到 `DevLog.md`。
+  - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。

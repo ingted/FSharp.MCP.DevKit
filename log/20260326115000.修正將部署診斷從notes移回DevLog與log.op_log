@@ -1,0 +1,150 @@
+[context] migrate note operational content into DevLog/log
+[pwd] /workspace/home/mcp/FSharp.MCP.DevKit
+[git-head] 90c0e3b
+[note-00033]
+2026-03-26
+
+- 部署中的 `proc-supervisor` direct `GetVesion` 已正常，證明：
+  - Akka.Remote reachable
+  - shared FsPickler contract serializer 生效
+  - deployed package version 正確
+- 但 bootstrap procnode 持續 `stopped`，container log 顯示缺：
+  - serializer id `6` `Akka.Remote.Serialization.MessageContainerSerializer`
+  - serializer id `12` `Akka.DistributedData.Serialization.ReplicatorMessageSerializer`
+- 根因不是 `fsdevkit.service`，也不是 parser/MCP。
+- 真根因是 `Akka.Proc.Supervisor.ProcHost.loadConfig` 沒把 remote/distributed-data default config fallback 補齊。
+- 已在 `PulseTrade.fs` 修正並加 regression test：
+  - bootstrap procnode 現在可註冊非空 `fsiSupervisorPath`
+  - package 版號升到 `FAkka.Proc.Supervisor 1.562.101.201-dgx.9`
+- `FSharp.MCP.DevKit` 下一步只需要升到 `dgx.9` 並重部署，再重新測 deployed `fsi-supervisor GetVesion` / host isolation / session isolation。
+
+[devlog-tail-before]
+  - `FSharp.MCP.DevKit` 現在吃的是帶 shared remoting serializer 的 package 線
+- 判讀：
+  - 這次真正修掉的是底層 remoting contract，不是再往 `/send` 或 parser 疊 workaround
+  - 之後若部署端仍有 host/session 問題，優先看 deployment/runtime wiring，而不是再懷疑 `GetVesion` typed actor message 本身
+  - `FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor`
+  - 這組設定只對「同一個 container 內」成立
+  - 當 caller 在另一個 container 時，`127.0.0.1` 指向 caller 自己，不是 `fsharp-devkit` 那個 container；即使 HTTP MCP 可用，Akka actor path 仍會 timeout
+- 困境：
+  - 若繼續沿用 bridge networking + container loopback，任何跨 container 的 direct Akka debug script 都會失效
+  - 只 publish `8110` 也不夠，因為 `ProcSupervisor` 若仍綁 loopback，外部 port forward 一樣不會通
+- 解法：
+  - 將 [fsdevkit.service](/workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service) 改為 host networking
+  - 由 service 在啟動時解析 host IP：
+    - 預設 `hostname -I | awk '{print $1}'`
+    - 可用 `/etc/default/fsdevkit` 的 `FSDEVKIT_HOST_IP` 覆蓋
+  - 將 `ASPNETCORE_URLS` 固定為 `http://0.0.0.0:15000`
+  - 將 `FSI_PROC_SUPERVISOR_HOST / WEB_HOST / PATH` 全部改成可從其他 container 到達的 host IP
+- 結果：
+  - `fsharp-devkit` 與 `ProcSupervisor` 不再只對 container loopback 可見
+  - 後續版本驗證腳本與 cross-container Akka debug 流程有穩定入口
+- 關聯：
+  - `/workspace/home/mcp/docker/FSharp.MCP.DevKit/fsdevkit.service`
+  - `/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx`
+  - `notes/00024.txt`
+  - `notes/00025.txt`
+- 結果：
+  - 真 stdio MCP client 現在可穩定跑通 `discover`、`legacy-roundtrip`、`ensure-default-route`、`async-roundtrip`、`result-aggregation`
+  - `ensure_fsi_route` 現在可作為 routed onboarding helper，但不會偷幫 out-of-proc host provisioning；要建 host 仍必須明確呼叫 `create_fsi_host`
+  - `CreatedHost` 對 legacy `default-host` 不再誤報成 `true`
+- 困境：
+  - direct-call 測試不會暴露 F# optional parameter 與 F# DU JSON 在 MCP binder/serializer 上的相容性問題
+  - 真 client 路徑下，若 deserialize 失敗，沒有 raw response 與 stderr 很難定位
+- 解法：
+  - client harness 在 JSON parse 失敗時附上 raw response + stderr
+  - 對高流量 MCP façade 優先收斂成 transport-safe 參數，減少把 F# type system 直接暴露給 JSON binder
+  - 將外部 consumer 的第一層體驗改為 demo client，而不是鼓勵從裸 `.fsx` 起手
+- 關聯：
+  - `src/FSharp.MCP.DevKit.Core/Json.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpResultTools.fs`
+  - `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
+  - `examples/FSharp.MCP.DevKit.DemoClient/Program.fs`
+  - `tests/DemoClientSmokeTests.fs`
+
+## 2026-03-26 11:15:00
+
+- 背景：部署中的 `proc-supervisor` 已能 direct `GetVesion`，但 bootstrap procnode 一直 `stopped`，導致沒有 `fsiSupervisorPath`，因此 `fsi-supervisor` 版本探針與 host/session 驗證都上不去。
+- 現象：
+  - `docker logs fsharp-mcp-devkit` 持續出現：
+    - serializer id `6` `Akka.Remote.Serialization.MessageContainerSerializer`
+    - serializer id `12` `Akka.DistributedData.Serialization.ReplicatorMessageSerializer`
+  - 這代表 child proc 已經越過 `runtimeconfig/depsfile` 問題開始真正啟動，但在 cluster/sharding traffic 上仍缺 Akka 預設 serializer。
+- 根因：
+  - `Akka.Proc.Supervisor.ProcHost.loadConfig` 只有 shared contract serializer 與 sharding/singleton fallback。
+  - procnode 實際還需要：
+    - `Akka.Remote.Configuration.Remote.conf`
+    - `Akka.DistributedData.DistributedData.DefaultConfig()`
+  - 缺這兩份時，procnode 會在收到 replicator/sharding message 前就 fail 掉，因此 registry 只看到 `stopped` 的 bootstrap snapshot。
+- 解法：
+  - `ProcHost.loadConfig` 改為顯式 fallback：
+    - remote default config
+    - distributed-data default config
+    - cluster sharding default config
+    - cluster singleton default config
+  - `Akka.Proc.Supervisor.Tests` 新增真正的 bootstrap regression：
+    - `dotnet exec ... --mode supervisor --spawndefault`
+    - 輪詢 `/api/proc/nodes`
+    - 驗證 bootstrap procnode 出現非空 `fsiSupervisorPath`
+  - `FAkka.Proc.Supervisor` 升版為 `1.562.101.201-dgx.9`
+- 驗證：
+  - `dotnet fsi Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx`
+    - `PASS`
+    - nodes JSON 內已出現非空 `fsiSupervisorPath`
+  - `dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "...GetVesion...|...Bootstrap procnode...|...dotnet exec..." -m:1`
+    - `3 passed, 0 failed`
+- 判讀：
+  - 目前最底層已經收斂成：
+    - deployed `proc-supervisor` 可 direct ask
+    - local bootstrap procnode 可活著註冊 `fsiSupervisorPath`
+  - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
+
+[devlog-tail-after]
+    - remote default config
+    - distributed-data default config
+    - cluster sharding default config
+    - cluster singleton default config
+  - `Akka.Proc.Supervisor.Tests` 新增真正的 bootstrap regression：
+    - `dotnet exec ... --mode supervisor --spawndefault`
+    - 輪詢 `/api/proc/nodes`
+    - 驗證 bootstrap procnode 出現非空 `fsiSupervisorPath`
+  - `FAkka.Proc.Supervisor` 升版為 `1.562.101.201-dgx.9`
+- 驗證：
+  - `dotnet fsi Libs/Akka.Proc.Supervisor/test_scripts/verify_bootstrap_procnode.fsx`
+    - `PASS`
+    - nodes JSON 內已出現非空 `fsiSupervisorPath`
+  - `dotnet test Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "...GetVesion...|...Bootstrap procnode...|...dotnet exec..." -m:1`
+    - `3 passed, 0 failed`
+- 判讀：
+  - 目前最底層已經收斂成：
+    - deployed `proc-supervisor` 可 direct ask
+    - local bootstrap procnode 可活著註冊 `fsiSupervisorPath`
+  - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
+
+## 2026-03-26 11:50:00 Correction
+
+- 背景：
+  - 使用者指出 `notes/00033.txt` 承載了 deployment / diagnosis 類 operational finding。
+  - 依 `AGENTS.md`，這類資訊應該進 `log/` 與 `doc/DevLog.md`，不應只停留在 `notes/`。
+- 補正：
+  - 將 `notes/00033.txt` 的核心內容正式回填到：
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    - 本段 `DevLog Correction`
+  - 既有 `notes/00033.txt` 保留不動，視為當時的暫存摘錄；後續不再把 deployment / diagnosis 類內容單獨留在 `notes/`。
+- 判讀：
+  - `notes/` 適合閱讀摘錄與探索片段。
+  - deployment / diagnosis / root-cause / command evidence 應固定落在：
+    - `log/`：任務級證據
+    - `DevLog.md`：長期知識沉澱
+- 行動準則更新：
+  - 之後若有類似 operational finding，先寫 `log/.op_log`，收斂後 append 到 `DevLog.md`。
+  - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。
+
+[git-status-before-commit]
+ M doc/DevLog.md
+ M notes/00031.txt
+?? "log/20260326115000.\344\277\256\346\255\243\345\260\207\351\203\250\347\275\262\350\250\272\346\226\267\345\276\236notes\347\247\273\345\233\236DevLog\350\210\207log.00001.00001.log"
+?? "log/20260326115000.\344\277\256\346\255\243\345\260\207\351\203\250\347\275\262\350\250\272\346\226\267\345\276\236notes\347\247\273\345\233\236DevLog\350\210\207log.op_log"
+?? notes/00034.txt

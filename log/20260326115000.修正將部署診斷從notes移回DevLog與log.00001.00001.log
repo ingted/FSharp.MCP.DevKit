@@ -1,0 +1,45 @@
+背景
+- 使用者指出 `notes/00033.txt` 承載了 deployment / diagnosis 類 operational finding，這類內容應進 `log/` 與 `doc/DevLog.md`，不應放在 `notes/`。
+
+目標
+- 將 `notes/00033.txt` 的 operational finding 正式回填到 `log/` 與 `doc/DevLog.md`。
+- 保持 `notes/` 唯讀追加原則，不修改或刪除既有 note。
+- 補記 correction，之後將 deployment / diagnosis 類內容固定寫入 `log + DevLog`。
+
+計畫步驟
+1. 重新載入 `/workspace/ai/instruction/AGENTS.md`，確認 `notes/`、`log/`、`DevLog.md` 的操作規範。
+2. 讀取 `notes/00033.txt` 與 `doc/DevLog.md`，比對哪些內容尚未落到正式追溯產物。
+3. 新增一筆正式 `.log` 與 `.op_log`，保留這次搬移與補正的操作證據。
+4. 以 append-only 方式在 `doc/DevLog.md` 追加 correction/補記段落。
+5. `git add/commit/push`，並執行 `check.fsx` 稽核。
+
+執行命令/參數
+- `sed -n '1,260p' /workspace/ai/instruction/AGENTS.md`
+- `sed -n '1,120p' /workspace/home/mcp/FSharp.MCP.DevKit/notes/00033.txt`
+- `tail -n 80 /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md`
+- `dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sd /workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md --notes-dir /workspace/home/mcp/FSharp.MCP.DevKit/notes`
+
+結果
+- 成功將 `notes/00033.txt` 的 operational finding 正式回填到 `doc/DevLog.md`。
+- 成功新增本筆 `.log` 與對應 `.op_log`。
+- 未修改或刪除既有 `notes/00033.txt`，維持 `notes/` 的唯讀追加規範。
+
+根因判讀
+- 先前操作把 deployment diagnosis 先記到 `notes/00033.txt`，偏離了 AGENTS 的追溯分工。
+- 對於這類「部署觀察、根因判讀、修正與後續行動」資訊，應優先落在：
+  - `log/`：一次任務的決策與操作證據
+  - `doc/DevLog.md`：收斂後的長期知識沉澱
+- `notes/` 比較適合暫存閱讀摘錄、探索片段或尚未整理完成的想法，不適合當 operational record 的唯一落點。
+
+下一步
+1. 後續 deployment / diagnosis 類觀察先寫 `log/.op_log`，收斂後再 append 到 `DevLog.md`。
+2. 避免再新增只存在於 `notes/` 的 operational finding。
+
+關聯文件/工單/PR
+- `notes/00033.txt`
+- `doc/DevLog.md`
+- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+
+使用者 prompt 摘要與本次關鍵上下文
+- 使用者指出 `notes/00033.txt` 類內容應該放在 `op_log` 或 `DevLog`，要求重新載入 `AGENTS.md` 並將內容移到正確位置。
+- 本次依照 `AGENTS.md` 執行 append-only 補正：保留 note 原文不動，將 operational finding 正式回填到 `log + DevLog`。
