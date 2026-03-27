@@ -1,0 +1,33 @@
+Task: verify deployed remote host/session isolation without MCP surface
+Date: 2026-03-26
+
+Environment
+- deployed host: 10.28.112.140
+- proc supervisor actor path: akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor
+- proc supervisor REST: http://10.28.112.140:6001
+
+Actions
+- Stopped stale proc `deploy-startproc-a` via REST `/api/proc/nodes/{procId}/stop`.
+- Directly asked deployed `proc-supervisor` to start procnode `deploy-host-test-single`.
+- Observed existing running procnode `deploy-host-a-actor`.
+- Directly targeted two remote `fsi-supervisor` actor paths:
+  - akka.tcp://proc-system@10.28.112.140:43121/user/fsi/supervisor
+  - akka.tcp://proc-system@10.28.112.140:43131/user/fsi/supervisor
+- Executed same-session cross-host isolation check.
+- Executed multi-session same-host isolation check.
+
+Evidence
+- Host isolation result:
+  - A1 ok=true
+  - B1 ok=true
+  - A2 ok=true result=Some "101"
+  - B2 ok=true result=Some "202"
+- Session isolation result:
+  - S1_SET ok=true
+  - S2_SET ok=true
+  - S1_GET ok=true result=Some "111"
+  - S2_GET ok=true result=Some "222"
+
+Conclusion
+- deployed remote host isolation: PASS
+- deployed remote session isolation: PASS

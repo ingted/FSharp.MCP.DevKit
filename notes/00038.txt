@@ -1,0 +1,117 @@
+› • create_fsi_host 本身出 generic error。先看部署中的 server log，抓真 exception，不再猜 那之前這個問題又是不存在了!?
+
+
+• 對，對現在這個部署狀態來說，先前那句已經不成立了。
+
+  當時那句話是基於那時候的現象：
+
+  - MCP create_fsi_host 回 generic error
+  - 我還沒把底層 direct actor path 驗乾淨
+  - 所以只能先保守說「去看 server log 抓真 exception」
+
+  但現在我們已經把底層拆開驗過了，而且結果是：
+
+  - deployed proc-supervisor：可用
+  - direct StartProc：可用
+  - deployed remote host isolation：可用
+  - deployed remote session isolation：可用
+
+  所以現在回頭看，當時的 generic error 不能再被解讀成「底層 host/session 壞掉」。
+  它比較像是：
+
+  - 當時測法不乾淨
+  - 或 MCP orchestration / timeout / stale proc 干擾
+  - 而不是 runtime capability 本身不存在
+
+  所以是，你可以把我先前那句更新成現在這個版本：
+
+  - 先前 create_fsi_host 的 generic error，現在不能再當成底層 remote host 建立失敗的證據
+  - 對目前部署來說，底層 remote host/session 已證明可用
+
+  剩下如果還要追的，就只剩產品層問題：
+
+  - MCP create_fsi_host / create_fsi_session 這層是不是還有 timeout、等待策略、stale proc handling 之類的 orchestration 問題
+
+  也就是：
+
+  - 不存在的是「底層不行」這個假設
+  - 可能仍存在的是「MCP tool path 不夠穩」這個問題
+
+
+› 那時候怎麼測的?
+
+
+• 那時候的測法有幾個問題，現在回頭看不夠乾淨。
+
+  我當時主要是這樣測的：
+
+  1. 先從 MCP tool path 下手
+
+  - 直接打部署中的 fsharp-devkit tools
+  - 測：
+      - create_fsi_host
+      - create_fsi_session
+      - routed execute
+
+  這一步的問題是：
+
+  - 一上來就把 MCP orchestration、registry、timeout、proc lifecycle 全混在一起
+  - 所以一旦回 generic error，沒法立刻知道是上層還是底層
+
+  2. 後來改去測 direct actor ask
+
+  - 先測 proc-supervisor GetVesion
+  - 再測 GetAllProcInfo
+  - 再拿回來的 fsiSupervisorPath 去打 fsi-supervisor
+
+  但這一步當時也不夠乾淨，因為：
+
+  - 我直接拿當時 deployment 裡已存在的 bootstrap/stale proc
+  - 沒先停掉舊 proc
+  - 沒先強制 StartProc 一個 fresh procnode
+  - 所以 fsiSupervisorPath 可能對應的是舊狀態、半穩定狀態、或帶著 sharding/coordinator 噪音的 target
+
+  3. 我那時用 GetVesion 當單點判斷
+
+  - ListSessions 有時其實已經會回
+  - 但 GetVesion timeout
+  - 我那時就太早把它解讀成「fsi-supervisor 不通」
+
+  這是錯的，因為後來你也看到了：
+
+  - 直接對 fresh/deployed fsi-supervisor 做 ExecCode
+  - host/session isolation 都成功
+  - 所以 GetVesion 當時 timeout，不等於 fsi-supervisor 整體壞掉
+
+  4. 還混進 bootstrap 問題
+
+  - 當時 deployment 一度有：
+      - runtimeconfig.json was not found
+      - serializer id 問題
+      - stale proc / bootstrap host 狀態
+  - 我在那些問題還沒完全切開時，就往上試 host/session
+  - 這讓整個診斷順序變差
+
+  所以現在回頭總結，當時測法的問題是：
+
+  - 太早測 MCP
+  - 太晚切到底層
+  - 直接拿舊 fsiSupervisorPath 測
+  - 沒先 StopProc / StartProc 一個 fresh target
+  - 用單一 GetVesion timeout 過度下結論
+
+  而這一輪之所以能驗清楚，是因為我改成這個順序：
+
+  1. direct proc-supervisor GetVesion
+  2. GetAllProcInfo
+  3. StopProc 清 stale proc
+  4. direct StartProc 起 fresh procnode
+  5. 拿 fresh fsiSupervisorPath
+  6. 直接 ExecCode
+  7. 驗 host isolation
+  8. 驗 session isolation
+
+  這個順序才是乾淨的。
+
+
+› 所以你有沒有更新 proc/fsi supervisor 各自的 README.md 提醒這類容易錯誤的地方?

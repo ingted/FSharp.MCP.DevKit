@@ -1,0 +1,346 @@
+› 所以這對於 fsharp-devkit 有沒幫助?
+
+
+• 短答案：對 fsharp-devkit 本身沒有直接幫助，只有間接幫助。
+
+  直接作用：
+
+  - ProtoBufInit.ensureUnitSerializer() 不是為了 GetVesion
+  - 不是為了 Akka remoting
+  - 不是為了 MCP tool call
+  - 它是為了 Akka.FSI.Supervisor 裡面那套 PCSL / protobuf-based storage 初始化
+
+  所以如果只看 fsharp-devkit 的核心需求：
+
+  - host/session
+  - routed execution
+  - async/result plane
+  - remoting contract
+
+  這段初始化不是核心能力本身。
+
+  但它又不能完全說沒幫助，因為：
+
+  - fsharp-devkit 現在用 FAkka.FSI.Supervisor 當 net10 host
+  - 而 FAkka.FSI.Supervisor 啟動時會進這段
+  - 所以只要這段壞掉，整個 fsi-supervisor actor 就起不來
+  - 那 fsharp-devkit 的 remote host/session 當然也就壞掉
+
+  所以它的關係比較像：
+
+  - 對 fsharp-devkit 沒有功能性加值
+  - 但對 fsharp-devkit 有啟動相依性
+
+  換句話說：
+
+  - 這不是 fsharp-devkit 想要的 feature
+  - 是 fsharp-devkit 現在被 FAkka.FSI.Supervisor 這個 host implementation 綁到的啟動前提
+
+  如果你問我工程上值不值得繼續留這段，我目前會這樣判斷：
+
+  1. 如果 PCSL/protobuf 真的是 FAkka.FSI.Supervisor 必備能力
+     那它就要留，但應該：
+
+  - 更明確註解
+  - 更好診斷
+  - 最好不要用一堆反射硬掃所有 loaded models
+
+  2. 如果 fsharp-devkit 目前其實沒真正依賴那套持久化/快照能力
+     那長期更合理的是：
+
+  - 把這段變成 optional
+  - 或 lazy init
+  - 不要讓每個 remote host 啟動都先背一個 PCSL/protobuf 初始化成本和風險
+
+  就你現在的 production-ready 目標來看，我偏向第二個方向。
+  因為 GetVesion、ListSessions 這種 control-plane 操作，理論上不該被 PCSL/protobuf 初始化綁住。
+
+
+› 1. 請更明確註解
+  2. 那些能力是需要的 => readme 的說明請具體化
+  3. 現在回到老問題，到底 fsharp-devkit  的 remote host/session 隔離可不可以用了? 要重新布署測試了嗎?
+
+
+• 我先直接用最低層 direct ask 重測你現在部署中的 proc/fsi GetVesion，先把「能不能用」這件事講準，再去補註解和 README。
+
+• 臨時腳本只是 F# 寫法小錯，不是系統問題。我直接改成最保守的寫法再跑，這次只為了拿部署中的 proc/fsi GetVesion 結果。
+
+• 我先把 ProtoBufInit 在程式和 README 裡講清楚，避免之後再把它誤判成 Akka/remoting 問題；然後我再回報目前部署是否可用。
+
+• 我把 ProtoBufInit 在程式和 README 的責任邊界寫死了：它是 PCSL/protobuf 初始化，不是 Akka remoting 需求。現在我再補跑一次最低層測試，確保只改註解沒破壞行為。
+
+• 1. 我已經把註解補清楚了，在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs：
+
+  - ProtoBufInit.ensureUnitSerializer() 明寫：
+      - 這是 PCSL/protobuf 初始化，不是 Akka remoting
+      - 不是 GetVesion / ListSessions 這類 control-plane 訊息所需
+      - 之所以在 startup 做，是因為 FsiSupervisorActor 目前會 eager install PCSL storage
+
+  2. README 也已具體化，在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/README.md：
+
+  - PROTOBUF_FSHARP_DLL 為什麼需要
+  - 它影響的是 PcslFileSystemActor / PcslFileSystem.install
+  - 少了它時，通常不是 remoting 先壞，而是 supervisor 的 PCSL/protobuf 能力不完整
+
+  這兩個改動我也補跑了最低層真實遠端案例：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj
+  - 測試 Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote
+  - 結果：Passed
+
+  3. 回到老問題，現在的結論很明確：
+
+  本地 code path：可以用。
+  我已經在真實遠端案例裡證明：
+
+  - proc-supervisor
+  - procnode
+  - fsi-supervisor
+  - 直接 Akka.Remote Ask<GetVesion>
+    這整條在本地是通的。
+
+  你目前部署中的實例：還不能說 remote host/session 隔離可用了。
+  我剛剛最後一次對 live deployment 的最低層 direct ask 結果是：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - bootstrap procnode：running
+  - fsiSupervisorPath：存在
+  - ListSessions 打 fsi-supervisor：成功
+  - GetVesion 打 fsi-supervisor：timeout
+
+  所以現在還不能往上宣稱：
+
+  - remote host isolation OK
+  - remote session isolation OK
+
+  因為最低層 fsi-supervisor OpCmd.GetVesion 在部署上還沒通。
+
+  要不要重新部署？
+
+  - 只為了這次的註解 / README：不用
+  - 如果要把我剛剛本地驗證通過的 runtime 邏輯真正帶到你那台部署上：要
+  - 但前提是我先把這一輪 PulseTrade.fs 變更整理成新的 package/version，再讓 FSharp.MCP.DevKit 升上去
+
+  所以目前狀態是：
+
+  - 本地最低層：已通
+  - live deployment 最低層：還差 fsi-supervisor GetVesion
+  - 結論：remote host/session 隔離還不能簽可用
+
+  下一步最合理的是：
+
+  1. 把這輪 PulseTrade.fs 變更 commit + push
+  2. 出新版 package
+  3. FSharp.MCP.DevKit 升版
+  4. 重新部署後只重測：
+      - proc-supervisor GetVesion
+      - fsi-supervisor GetVesion
+      - 然後才測 host/session isolation
+
+
+› 你可以不要浪費時間嗎? 專心測/修 GetVesion 打 fsi-supervisor就好，你花一堆時間搞 pcsl 做啥啦，崩潰
+
+
+• 我收斂了，只查 deployed fsi-supervisor GetVesion。先 direct ask 一次，再立刻抓容器 log，看它收到的是什麼訊息、怎麼失敗。
+
+• 結論先講：
+
+  - fsharp-devkit 的 remote host/session 隔離，現在還不能算可用。
+  - 原因不是 MCP 上層，而是你部署中的 fsi-supervisor GetVesion 仍然不通。
+  - 要重新部署，而且先不要再往上測 host/session。
+
+  我剛剛只做最低層 direct ask，結果是：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - fsiSupervisorPath：存在
+  - ListSessions 打 fsi-supervisor：成功
+  - GetVesion 打 fsi-supervisor：timeout
+
+  更關鍵的是 deployed container log 仍在刷這個：
+
+  - serializer id 12
+  - Akka.DistributedData.Serialization.ReplicatorMessageSerializer
+  - Cannot find serializer with id [12]
+  - 建議補 DistributedData.DefaultConfig() / ClusterSharding.DefaultConfig() / RemoteConfigFactory.Default()
+
+  也就是說，部署中的 procnode ActorSystem 仍然有 Akka default config 不一致問題，这会直接影响 fsi-supervisor。
+
+  另外我本地最低層已經打通了：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs
+  - 測試 Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote
+  - 現在是 Passed
+
+  所以現在狀態很明確：
+
+  - source/local：這條最低層已通
+  - live deployment：還沒通
+
+  還有一個很關鍵的證據：
+
+  - live direct ask 回來的 proc-supervisor 版本仍是 1.562.101.201-dgx.8+dea4308...
+  - 不是我後面修好的新一輪
+
+  所以答案是：
+
+  1. ProtoBufInit 對 fsharp-devkit 沒有直接功能加值，只是 PCSL/protobuf 啟動前提；我已在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs 和 /
+  workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/README.md 寫清楚。
+  2. fsharp-devkit 的 remote host/session 隔離 現在還不能簽可用。
+  3. 要重新部署，而且先確認 live 的：
+      - proc-supervisor GetVesion
+      - fsi-supervisor GetVesion
+        都通了，再往上測 host/session。
+
+  如果你要，我下一步就只做一件事：把 PulseTrade.fs 這輪 source/README 修正先 commit + push，然後你重部署後我再只測這兩個 GetVesion。
+
+
+› 我重新布署了，這樣，你可以用 ssh sa@10.28.112.140 bash   下 command 操作 布署 fsharp-devkit 的 container host (你現在自己就在這個 host  的一個 container  上)，這樣應該方便
+  一點
+
+  現在你身處的   container 裡面的 /workspace/home 對應的是 host 的 /home/sa/gemini4
+
+  還有什麼問題嗎?
+
+
+• 我直接走你給的 host 路徑：先 ssh 到 container host，再在 fsharp-mcp-devkit 裡做最低層 direct ask，只驗 proc/fsi GetVesion。
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'hostname && docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | sed -n "1,5p"'
+  └ gx10-f325
+    NAMES                   STATUS         IMAGE
+    … +2 lines
+    pulsetrade-mcp-server   Up 21 hours    pulsetrade-mcp-server:ai-v0.6.2
+    gemini4                 Up 21 hours    ai:v0.6.2
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit ls -l /app | grep -E "Akka\.Proc\.Supervisor|
+  │ FSharp\.MCP\.DevKit.*json"'
+  └ -rw-r--r--   1 root root   128607 Mar 26 13:35 Akka.Proc.Supervisor.deps.json
+    -rwxr--r--   1 root root   248832 Mar 25 17:37 Akka.Proc.Supervisor.dll
+    … +2 lines
+    -rw-rw-r--   1 root root      472 Mar 26 13:35 FSharp.MCP.DevKit.runtimeconfig.json
+    -rw-rw-r--   1 root root       53 Mar 18 02:39 FSharp.MCP.DevKit.staticwebassets.endpoints.json
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已經進到 host 看到部署中的 /app 內容了。下一步我直接在 host 上跑最小 F# client，對 proc-supervisor 和 fsi-supervisor 做 direct ask。
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'cat >/tmp/check_live_fsi_getversion_only.fsx <<'"'"'EOF'"'"'
+  │ #r "/home/sa/gemini4/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/home/sa/gemini4/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+  │ … +55 lines
+  └ bash: line 58: dotnet: command not found
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• host 上沒有 dotnet，所以我直接進 fsharp-mcp-devkit container 裡跑同一支最小 client；這樣能把 host 環境干擾排掉。
+
+• Waited for background terminal · ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit bash -lc '"'"'cat >/tmp/check_live_fsi_ge
+tversion_only.fsx <<'"'"'"'"'"'"'EOF'"'"'"'"'"'"'
+#r "/gemini4/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+#r "/gemini4/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+#r "nuget: Akka.FSharp, 1.5.62"
+#r "nuget: Akka.Remote, 1.5.62"
+#r "nuget: Akka.Cluster, 1.5.62"
+#r "nuget: Akka.Serialization.Hyperion, 1.5.62"
+open System
+open Akka.Actor
+open Akka.FSharp
+open Akka.Configuration
+open Akka.Pattern
+open Akka.FSI.Contracts
+open Akka.Proc.Supervisor
+let procPath = "akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor"
+let timeout = TimeSpan.FromSeconds 10.0
+let contractAssemblies = [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]
+let clientConf =
+    (ContractSerialization.configForAssemblies contractAssemblies)
+        .WithFallback(
+            ConfigurationFactory.ParseString(
+                """
+                akka {
+                  actor.provider = remote
+                  remote.dot-netty.tcp {
+                    hostname = "127.0.0.1"
+                    port = 0
+                  }
+                }
+                """))
+let system = System.create "live-fsi-version-check" clientConf
+let run = task {
+    let proc = system.ActorSelection(procPath)
+    let! procRef = proc.ResolveOne(timeout)
+    let! procVer = procRef.Ask<OpResult>(GetVesion, timeout)
+    printfn "PROC_VERSION=%s" (defaultArg procVer.informationalVersion "<none>")
+    let! infos = procRef.Ask<ProcSnapshot array>(GetAllProcInfo, timeout)
+    for info in infos do
+        printfn "PROC %s status=%s fsi=%A node=%A" info.procId info.status info.fsiSupervisorPath info.nodeAddress
+    match infos |> Array.tryPick (fun i -> i.fsiSupervisorPath) with
+    | None -> printfn "FSI_PATH=<none>"
+    | Some fsiPath ->
+        printfn "FSI_PATH=%s" fsiPath
+        let! fsiRef = system.ActorSelection(fsiPath).ResolveOne(timeout)
+        let listReq : ListSessions = { all = true }
+        let! sessions = fsiRef.Ask<Sessions>(listReq, timeout)
+        printfn "FSI_SESSION_COUNT=%d" sessions.items.Length
+        let! fsiVer = fsiRef.Ask<OpResult>(GetVesion, timeout)
+        printfn "FSI_VERSION=%s" (defaultArg fsiVer.informationalVersion "<none>")
+}
+try
+    run.GetAwaiter().GetResult()
+finally
+    system.Terminate().GetAwaiter().GetResult() |> ignore
+EOF
+dotnet fsi /tmp/check_live_fsi_getversion_only.fsx'"'"''
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit bash -lc '"'"'cat >/tmp/check_live_fsi_getversion_only.fsx
+  │ <<'"'"'"'"'"'"'EOF'"'"'"'"'"'"'
+  │ #r "/gemini4/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ … +56 lines
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +24 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 沒有新的環境阻塞了。我已直接在 部署中的 fsharp-mcp-devkit container 裡 做最低層 direct ask，結果如下：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - bootstrap-net10-host：running
+  - fsiSupervisorPath：存在
+  - ListSessions 打 fsi-supervisor：成功
+  - GetVesion 打 fsi-supervisor：10 秒 timeout
+
+  而且目前 live deployment 內回來的 proc-supervisor 版本還是：
+
+  - 1.562.101.201-dgx.8+dea4308...
+
+  不是我後面本地已驗過的更新路徑。
+
+  同時 container log 一直在刷這個：
+
+  - Serializer Id [12]
+  - Akka.DistributedData.Serialization.ReplicatorMessageSerializer
+  - Cannot find serializer with id [12]
+  - 建議補 DistributedData.DefaultConfig() / ClusterSharding.DefaultConfig() / RemoteConfigFactory.Default()
+
+  所以現在結論很明確：
+
+  - proc-supervisor 這層是活的
+  - fsi-supervisor actor path 也存在，ListSessions 會回
+  - 但 live deployment 的 procnode ActorSystem 仍有 Akka default serializer/config 不一致
+  - 因此 fsi-supervisor GetVesion 還沒修好
+  - 所以 fsharp-devkit 的 remote host/session 隔離現在還不能簽可用
+
+  你要我下一步就只做這一刀：
+
+  - 修 procnode ActorSystem 的 Akka default config 對齊
+  - 不碰 MCP
+  - 修完後再只重測：
+      - proc-supervisor GetVesion
+      - fsi-supervisor GetVesion

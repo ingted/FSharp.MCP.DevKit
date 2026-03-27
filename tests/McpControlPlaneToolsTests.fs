@@ -141,6 +141,79 @@ let ``McpControlPlaneTools register host session and health flow works`` () =
     }
 
 [<Fact>]
+let ``CreateFsiHost tokenizes shell-like argument string into argv`` () =
+    task {
+        let mutable capturedSpec : ProcHostSpec option = None
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    capturedSpec <- Some spec
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9300
+                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9300/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9300"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun _ -> None)
+            )
+
+        let fsiClient =
+            FakeFsiSupervisorClient(fun (_, sessionId) ->
+                { SessionId = sessionId
+                  Status = "ready"
+                  Refs = []
+                  Loads = []
+                  SearchPaths = []
+                  Variables = []
+                  LastCheckpointId = None
+                  RunningSinceUtc = Some DateTime.UtcNow })
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-tokenize",
+                "net10",
+                "dotnet",
+                "exec --runtimeconfig /app/test.runtimeconfig.json --depsfile /app/test.deps.json \"/app/My Host.dll\" --flag \"two words\" --role procnode",
+                "/app",
+                "host-tokenize",
+                "",
+                0
+            )
+
+        let spec = capturedSpec |> Option.defaultWith (fun () -> failwith "expected captured proc spec")
+
+        let expectedArgs : string list =
+            [ "exec"
+              "--runtimeconfig"
+              "/app/test.runtimeconfig.json"
+              "--depsfile"
+              "/app/test.deps.json"
+              "/app/My Host.dll"
+              "--flag"
+              "two words"
+              "--role"
+              "procnode" ]
+
+        Assert.Equal<string>(expectedArgs, spec.Arguments)
+    }
+
+[<Fact>]
 let ``ControlPlaneResources expose registered host and session`` () =
     task {
         let procClient =

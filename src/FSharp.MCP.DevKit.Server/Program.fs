@@ -148,7 +148,7 @@ let main argv =
     if enableProcSupervisor then
         builder.Services.AddSingleton<IProcSupervisorClient>(fun serviceProvider ->
             let actorSystem = serviceProvider.GetRequiredService<ActorSystem>()
-            ProcSupervisorClient(actorSystem, procSupervisorPath) :> IProcSupervisorClient)
+            ProcSupervisorClient(actorSystem, procSupervisorPath, TimeSpan.FromSeconds(60.0)) :> IProcSupervisorClient)
         |> ignore
 
         builder.Services.AddSingleton<IFsiSupervisorClient>(fun serviceProvider ->

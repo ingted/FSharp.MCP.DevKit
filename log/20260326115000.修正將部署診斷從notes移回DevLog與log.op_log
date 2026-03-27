@@ -259,3 +259,31 @@ Summary     : PASS=19 WARN=1 FAIL=0
   - 真正卡住的是 bootstrap procnode，它因為缺 Akka.Remote / Akka.DistributedData 的預設 serializer config 而停掉，所以沒有 fsiSupervisorPath，當然也沒法測 fsi-supervisor
   GetVesion 或 host/session 隔離。
   - 這個根因我已經修好，而且不是 fsdevkit.service 問題。
+SessionId   : 019cfeb7-7b04-78c1-a7c6-c859782d0919
+State file  : /workspace/home/codex/019cfeb7-7b04-78c1-a7c6-c859782d0919.state.json
+Summary     : PASS=19 WARN=3 FAIL=2
+
+[PASS] log_dir_exists - log 目錄存在：/workspace/home/mcp/FSharp.MCP.DevKit/log
+[PASS] op_log_dir_default - .op_log 檢查目錄使用 --log-dir
+[PASS] latest_log_found - 最新 log：/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log @ 2026-03-26T12:38:24.347Z
+[PASS] latest_op_log_found - 最新 op_log：/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log @ 2026-03-26T12:39:56.925Z
+[PASS] latest_log_name - 最新 log 檔名符合規範
+[PASS] latest_op_log_name - 最新 op_log 檔名符合規範
+[PASS] latest_log_has_plan - 最新 log 內含 planned steps/計畫步驟
+[PASS] latest_log_required_fields - 最新 log 已覆蓋最低欄位
+[PASS] op_log_after_log - 最新 op_log 時間不早於最新 log，可視為有收尾操作證據
+[PASS] devlog_exists - devlog 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md
+[WARN] devlog_unchanged - devlog 自上次檢查後未更新
+[PASS] wbs_exists - wbs 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md
+[WARN] wbs_unchanged - wbs 自上次檢查後未更新
+[PASS] sd_exists - sd 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md
+[WARN] sd_unchanged - sd 自上次檢查後未更新
+[FAIL] log_readonly_modify - log 目錄中的既有檔案被修改：20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+[FAIL] latest_log_not_advanced - 與上次檢查相比，最新 log 沒有前進
+[PASS] latest_op_log_advanced - 與上次檢查相比，最新 op_log 已前進
+[PASS] git_new_commit - HEAD 已更新：1239123852c6e37b75519c1c44a74962ab8e71ba 2026-03-26T12:39:56+00:00 docs: checkpoint append-only notes and op log
+[PASS] git_repo - Git repo：/workspace/home/mcp/FSharp.MCP.DevKit
+[PASS] git_branch - 目前 branch：20260325_002.fspickler-remoting-contracts
+[PASS] git_head - 目前 HEAD：1239123852c6e37b75519c1c44a74962ab8e71ba 2026-03-26T12:39:56+00:00 docs: checkpoint append-only notes and op log
+[PASS] git_clean - repo 工作樹乾淨
+[PASS] git_branch_name - 目前 branch 命名可接受

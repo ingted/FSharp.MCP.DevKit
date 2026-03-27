@@ -1,0 +1,722 @@
+• Edited doc/DevLog.md (+8 -0)
+    522      - 先前的 generic error 不是 runtime/procnode/fsi-supervisor 的問題，而是 MCP reflection binder 與 F# optional tool signature 的相容性問題。
+    523 +  - 後續驗證補充：
+    524 +    - 將 `probeMessage` / `probeIntervalMs` 完全省略後，live deployment 不再拋出 `missing probeMessage`。
+    525 +    - 新的真 exception 變成：
+    526 +      - `Akka.Actor.AskTimeoutException: Timeout after 5.00 seconds`
+    527 +      - 位置在 `ProvisioningServices.CreateHost`
+    528 +    - 這證明：
+    529 +      - binder bug 已修掉；
+    530 +      - 後續若還有 generic error，應歸因到 host provisioning/ask timeout，而不是 MCP optional parameter binding。
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我繼續往下修的目標很單純：create_fsi_host 在 provisioning 層的 5 秒 ask timeout。這次不再碰 binder，直接看 ProvisioningServices.CreateHost。
+
+• Explored
+  └ Read ProvisioningServices.fs, ProcSupervisorClient.fs
+    Search Timeout after 5.00 seconds|TimeSpan.FromSeconds 5|CreateHost\(|waitForHostReady|GetProcInfo|ListProcInfo|StartProc in FSharp.MCP.DevKit
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我往下修的是 provisioning 的韌性，不是再改 binder。現在問題像是 StartProc 的 5 秒 ask 太短，所以我要把 create_fsi_host 補成「AskTimeout 後改用 GetProcInfo 輪詢補收斂」。
+
+• Explored
+  └ Read ProvisioningServicesTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要把 HostProvisioningService.CreateHost 補成：StartProc AskTimeout 後，短時間輪詢 GetProcInfo 收斂。這能直接覆蓋現在 live MCP tool path 的 timeout。
+
+• Edited src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs (+29 -1)
+      4  open System.Threading.Tasks
+      5 +open Akka.Actor
+      6  open FSharp.MCP.DevKit.Core
+        ⋮
+     52
+     53 +    let rec pollProcSnapshot (procSupervisorClient: IProcSupervisorClient) (hostId: string) (deadlineUtc: DateTime) : Task<ProcHostSnapshot option> =
+     54 +        task {
+     55 +            if DateTime.UtcNow >= deadlineUtc then
+     56 +                return None
+     57 +            else
+     58 +                let! snapshotOpt = procSupervisorClient.GetProcInfo(hostId)
+     59 +
+     60 +                match snapshotOpt with
+     61 +                | Some snapshot when not (String.IsNullOrWhiteSpace snapshot.Status) ->
+     62 +                    return Some snapshot
+     63 +                | _ ->
+     64 +                    do! Task.Delay 250
+     65 +                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc
+     66 +        }
+     67 +
+     68      member _.CreateHost
+        ⋮
+    103              try
+     88 -                let! snapshot = procSupervisorClient.StartProc(hostId, spec)
+    104 +                let! snapshot =
+    105 +                    task {
+    106 +                        try
+    107 +                            return! procSupervisorClient.StartProc(hostId, spec)
+    108 +                        with :? AskTimeoutException ->
+    109 +                            let! recovered =
+    110 +                                pollProcSnapshot procSupervisorClient hostId (DateTime.UtcNow.AddSeconds 15.0)
+    111 +
+    112 +                            match recovered with
+    113 +                            | Some snapshot -> return snapshot
+    114 +                            | None ->
+    115 +                                return raise (AskTimeoutException("Timed out waiting for ProcSupervisor StartProc response and no proc snapshot became visible during
+          recovery polling."))
+    116 +                    }
+    117
+
+⚠ Heads up, you have less than 5% of your weekly limit left. Run /status for a breakdown.
+
+• Edited tests/ProvisioningServicesTests.fs (+64 -14)
+      4  open System.Threading.Tasks
+      5 +open Akka.Actor
+      6  open Xunit
+        ⋮
+     11
+     11 -type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot) =
+     12 +type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> Task<ProcHostSnapshot>, ?getFactory: string -> Task<ProcHostSnapshot option>) =
+     13      let mutable starts : (string * ProcHostSpec) list = []
+     14 +    let getFactory = defaultArg getFactory (fun _ -> Task.FromResult(None))
+     15
+        ⋮
+     20              starts <- (procId, spec) :: starts
+     19 -            Task.FromResult(startFactory (procId, spec))
+     21 +            startFactory (procId, spec)
+     22
+     23          member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StopProc is not used in this test."))
+     22 -        member _.GetProcInfo(_) = Task.FromResult(None)
+     24 +        member _.GetProcInfo(procId) = getFactory procId
+     25          member _.ListProcInfo() = Task.FromResult([])
+        ⋮
+     51              FakeProcSupervisorClient(fun _ ->
+     50 -                failwith "StartProc should not be called for InProcHost")
+     52 +                Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc should not be called for InProcHost")))
+     53
+        ⋮
+     79              FakeProcSupervisorClient(fun (procId, spec) ->
+     78 -                { ProcId = procId
+     79 -                  Status = "running"
+     80 -                  ProcessId = Some 9020
+     81 -                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor"
+     82 -                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9020"
+     83 -                  LastProbeUtc = Some DateTime.UtcNow
+     84 -                  LastProbeOk = Some true
+     85 -                  ProbeFailures = 0
+     86 -                  Spec = Some spec
+     87 -                  LastError = None })
+     80 +                Task.FromResult(
+     81 +                    { ProcId = procId
+     82 +                      Status = "running"
+     83 +                      ProcessId = Some 9020
+     84 +                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor"
+     85 +                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9020"
+     86 +                      LastProbeUtc = Some DateTime.UtcNow
+     87 +                      LastProbeOk = Some true
+     88 +                      ProbeFailures = 0
+     89 +                      Spec = Some spec
+     90 +                      LastError = None }))
+     91
+        ⋮
+    113  [<Fact>]
+    114 +let ``HostProvisioningService recovers from StartProc ask timeout by polling proc info`` () =
+    115 +    task {
+    116 +        let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
+    117 +        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+    118 +        let mutable getCalls = 0
+    119 +
+    120 +        let spec =
+    121 +            { ExecutablePath = "dotnet"
+    122 +              Arguments = [ "fsi-host.dll"; "--port"; "9021" ]
+    123 +              WorkingDirectory = Some "/srv/fsi"
+    124 +              Role = None
+    125 +              ProbeMessage = None
+    126 +              ProbeCron = None
+    127 +              ProbeIntervalMs = None }
+    128 +
+    129 +        let procClient =
+    130 +            FakeProcSupervisorClient(
+    131 +                (fun _ -> Task.FromException<ProcHostSnapshot>(AskTimeoutException("Timeout after 5.00 seconds"))),
+    132 +                (fun procId ->
+    133 +                    getCalls <- getCalls + 1
+    134 +
+    135 +                    if getCalls < 2 then
+    136 +                        Task.FromResult(None)
+    137 +                    else
+    138 +                        Task.FromResult(
+    139 +                            Some
+    140 +                                { ProcId = procId
+    141 +                                  Status = "running"
+    142 +                                  ProcessId = Some 9021
+    143 +                                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9021/user/fsi/supervisor"
+    144 +                                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9021"
+    145 +                                  LastProbeUtc = Some DateTime.UtcNow
+    146 +                                  LastProbeOk = Some true
+    147 +                                  ProbeFailures = 0
+    148 +                                  Spec = Some spec
+    149 +                                  LastError = None })))
+    150 +
+    151 +        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+    152 +
+    153 +        let! host = provisioning.CreateHost("agent-recover", Net10Host, spec, requestedHostId = "host-recover")
+    154 +
+    155 +        Assert.Equal(Ready, host.Status)
+    156 +        Assert.Equal(Some 9021, host.ProcId)
+    157 +        Assert.True(getCalls >= 2)
+    158 +    }
+    159 +
+    160 +[<Fact>]
+    161  let ``SessionProvisioningService bootstraps missing session through backend execute`` () =
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先本地跑 ProvisioningServicesTests，這裡過了才重建部署。不然直接上 host 等於盲修。
+
+• Provisioning timeout 的 fallback 已經加上，現在本地編譯與兩組測試在跑。過了我就再上 host 重建一次，然後重測「完全省略 probe 欄位」的 MCP create_fsi_host。
+
+• Ran dotnet build /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    … +100 lines
+
+    Time Elapsed 00:00:08.34
+
+• Waited for background terminal · dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter
+"FullyQualifiedName~ProvisioningServicesTests|FullyQualifiedName~McpControlPlaneToolsTests" -m:1
+
+• Ran dotnet test /workspace/home/mcp/FSharp.MCP.DevKit/tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~ProvisioningServicesTests|
+  │ FullyQualifiedName~McpControlPlaneToolsTests" -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    … +51 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+
+
+
+
+• 本地已過。我現在再重建部署一次，只為了把這個 provisioning timeout fallback 帶上線，然後重測「完全不帶 probe 欄位」的 create_fsi_host。
+
+• image 正在重建。我等 build 完後直接手動重起 container，再只測「省略 probeMessage/probeIntervalMs 的 create_fsi_host」。
+
+• Waited for background terminal · ssh sa@10.28.112.140 'cd /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit && docker build --no-cache -t fsharp-mcp-devkit:ai-v0.6.2 -f
+Dockerfile /home/sa/gemini4'
+
+• Ran ssh sa@10.28.112.140 'cd /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit && docker build --no-cache -t fsharp-mcp-devkit:ai-v0.6.2 -f Dockerfile /home/sa/gemini4'
+  └ #0 building with "default" instance using docker driver
+
+    … +126 lines
+    #20 naming to docker.io/library/fsharp-mcp-devkit:ai-v0.6.2 done
+    #20 DONE 0.2s
+
+• Ran ssh sa@10.28.112.140 'set -e; docker rm -f fsharp-mcp-devkit >/dev/null 2>&1 || true; HOST_IP=${FSDEVKIT_HOST_IP:-$(hostname -I | cut -d" " -f1)}; docker run -d --name
+  │ fsharp-mcp-devkit --network host -e ASPNETCORE_URLS=http://0.0.0.0:15000 -e MCP_ENABLE_STDIO=false -e FSI_ENABLE_REMOTE_CLIENT=true -e FSI_ENABLE_PROC_SUPERVISOR=true
+  │ -e FSI_PROC_SUPERVISOR_HOST="$HOST_IP" -e FSI_PROC_SUPERVISOR_PORT=8110 -e FSI_PROC_SUPERVISOR_WEB_HOST="$HOST_IP" -e FSI_PROC_SUPERVISOR_WEB_PORT=6001 -e
+  │ … +2 lines
+  └ a6db9e780beb108b58c3c6d927f81cbc43ff02bfd0b174178181ef1940501c96
+
+• Ran ssh sa@10.28.112.140 'for i in $(seq 1 20); do curl -fsS http://10.28.112.140:15000/healthz && exit 0; sleep 1; done; exit 1'
+  └ curl: (7) Failed to connect to 10.28.112.140 port 15000 after 0 ms: Couldn't connect to server
+    curl: (7) Failed to connect to 10.28.112.140 port 15000 after 0 ms: Couldn't connect to server
+    curl: (7) Failed to connect to 10.28.112.140 port 15000 after 0 ms: Couldn't connect to server
+    {"isWindowsService":false,"procSupervisor":"enabled","procSupervisorPath":"akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","remoteClient":"enabled","serviceName":"fsharp-devkit","status":"ok","transport":"http-only"}
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• container 剛重起，health 還沒 ready。我等一輪，ready 後立刻重測「完全省略 probe 欄位」的 create_fsi_host。
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --tail 80'
+  └ info: Microsoft.Hosting.Lifetime[14]
+          Now listening on: http://0.0.0.0:15000
+    … +76 lines
+    [INFO][03/26/2026 15:52:44.399Z][Thread 0001][remoting (akka://McpClientSystem)] Remoting started; listening on addresses : [akka.tcp://McpClientSystem@localhost:39083]
+    [INFO][03/26/2026 15:52:44.400Z][Thread 0001][remoting (akka://McpClientSystem)] Remoting now listens on addresses: [akka.tcp://McpClientSystem@localhost:39083]
+
+• Called fsharp-devkit.register_fsi_agent({"agentId":"mcp-tools-agent-omit","displayName":"MCP Tools Omit Agent"})
+  └ {"agentId": "mcp-tools-agent-omit", "displayName": "MCP Tools Omit Agent", "createdAt": "2026-03-26T15:52:56.5295264Z", "lastSeenAt": "2026-03-26T15:52:56.5295264Z",
+        "defaultHostId": null, "metadata": {}}
+
+• Called
+  └ fsharp-devkit.create_fsi_host({"agentId":"mcp-tools-agent-omit","hostKind":"net10","executablePath":"dotnet","arguments":"exec\n--runtimeconfig\n/app/
+        Akka.Proc.Supervisor.runtimeconfig.json\n--depsfile\n/app/Akka.Proc.Supervisor.deps.json\n/app/Akka.Proc.Supervisor.dll\n--mode\nprocnode\n--procid\nmcp-tool-host-
+        omit\n--systemname\nproc-system\n--supervisor\nakka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor\n--seed\nakka.tcp://proc-
+        system@10.28.112.140:8110\n--host\n10.28.112.140\n--port\n43144","workingDirectory":"/app","hostId":"mcp-tool-host-omit"})
+    {"hostId": "mcp-tool-host-omit", "agentId": "mcp-tools-agent-omit", "hostKind": {"Case": "Net10Host"}, "backendKind": {"Case": "Net10Remote"}, "status": {"Case": "Creati
+        ng"}, "address": "akka.tcp://proc-system@10.28.112.140:43144/user/fsi/supervisor", "procId": 152, "createdAt": "2026-03-26T15:53:02.1105283Z", "lastHealthCheckAt": "
+        2026-03-26T15:53:02.5018286Z", "lastError": null}
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已把說明補進 DevLog，而且剛剛繼續驗到一個更重要的結果：現在 完全省略 probeMessage/probeIntervalMs 的 create_fsi_host 也已經成功，不再是 generic error。接著我補做同一個
+  host 的 session/execute，確認這條路徑端到端沒斷。
+
+• Called fsharp-devkit.create_fsi_session({"agentId":"mcp-tools-agent-omit","hostId":"mcp-tool-host-omit","sessionId":"mcp-session-omit","sessionName":"Omit Session"})
+  └ {"sessionId": "mcp-session-omit", "agentId": "mcp-tools-agent-omit", "hostId": "mcp-tool-host-omit", "sessionName": "Omit Session", "status": {"Case": "SessionReady"},
+        "refs": [], "loads": [], "searchPaths": [], "variables": [["it", "Microsoft.FSharp.Core.Unit"]], "lastCheckpointId": null, "runningSinceUtc": "2026-03-
+        26T15:53:22.3797029Z", "lastExecutionAt": null}
+
+• Called fsharp-devkit.get_fsi_host_health({"hostId":"mcp-tool-host-omit"})
+  └ {"backendKind": {"Case": "Net10Remote"}, "isAvailable": true, "message": "running", "hostId": "mcp-tool-host-omit", "checkedAt": "2026-03-26T15:53:22.8817739Z"}
+
+• Called
+  └ fsharp-devkit.execute_f_sharp_code_routed({"agentId":"mcp-tools-agent-omit","hostId":"mcp-tool-host-omit","sessionId":"mcp-session-omit","code":"let omittedProbeValue =
+        4242","timeoutSeconds":30})
+    val omittedProbeValue: int = 4242
+
+
+
+• Called
+  └ fsharp-devkit.evaluate_f_sharp_expression_routed({"agentId":"mcp-tools-agent-omit","hostId":"mcp-tool-host-omit","sessionId":"mcp-session-
+        omit","expression":"omittedProbeValue","timeoutSeconds":30})
+    4242
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這條路現在已經完全通了：省略 probeMessage/probeIntervalMs 也能 create_fsi_host -> create_fsi_session -> routed execute/evaluate。我把這輪修正直接收成 commit。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short
+  └  M doc/DevLog.md
+     M "log/20260326115000.
+    … +16 lines
+    ?? notes/00040.txt
+    ?? tmp/
+
+• Ran printf '%s
+  │ ' "$(date -u +%Y%m%d%H%M%S).fix-mcp-create-host-binder-and-provisioning-timeout"
+  └ 20260326155340.fix-mcp-create-host-binder-and-provisioning-timeout
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我只收這輪真正相關的 code/test/DevLog，不把那些既有 dirty 的 notes/log 一起捲進去。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit add doc/DevLog.md src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs src/FSharp.MCP.DevKit.Server/
+  │ McpControlPlaneTools.fs tests/ProvisioningServicesTests.fs && git -C /workspace/home/mcp/FSharp.MCP.DevKit commit -m "fix: harden MCP host creation optional args and
+  │ timeout recovery"
+  └ [20260325_002.fspickler-remoting-contracts a4e4106] fix: harden MCP host creation optional args and timeout recovery
+     4 files changed, 231 insertions(+), 33 deletions(-)
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit push
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       1e25a94..a4e4106  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• commit 已經出去了，我等 push 完就收斂目前狀態給你。
+
+• Waited for background terminal
+
+• probeMessage / probeIntervalMs 是 ProcSupervisor 的主動健康檢查設定，不是 create host 的核心必填欄位。
+
+  - probeMessage
+      - 要定期送給 child proc 的 probe 指令
+      - 例如 listsessions --all true
+  - probeIntervalMs
+      - probe 的週期
+
+  所以它們「重要」，但重要的是後續 health monitoring，不是 host 建立當下的必要前置。省略它們代表：
+
+  - host 仍可建立與使用
+  - 但不啟用 active probe
+
+  這件事我已補進 doc/DevLog.md。
+
+  另外，先前那個 generic error 的根因與現在狀態也已經釐清：
+
+  - 原本的 generic error 真 exception 是：
+      - missing required parameter 'probeMessage'
+  - 那是 MCP reflection binder 和 F# optional tool signature 的相容性問題
+  - 我已修掉，現在 create_fsi_host 完全省略 probeMessage/probeIntervalMs 也能成功
+
+  接著又修了第二個問題：
+
+  - 省略這兩個欄位後，曾出現新的 AskTimeoutException: Timeout after 5.00 seconds
+  - 我把 src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs 補成：
+      - StartProc ask timeout 時，改用 GetProcInfo 短時間輪詢補收斂
+  - 本地測試已補上：
+      - tests/ProvisioningServicesTests.fs
+
+  live deployment 也已重建並驗過：
+
+  - create_fsi_host 省略 probeMessage/probeIntervalMs：成功
+  - create_fsi_session：成功
+  - execute_f_sharp_code_routed：成功
+  - evaluate_f_sharp_expression_routed：成功
+
+  這輪已 commit + push：
+
+  - a4e4106 fix: harden MCP host creation optional args and timeout recovery
+
+  目前產品層結論是：
+
+  - fsharp-devkit 的 MCP tool path 現在可正常建立 remote host/session
+  - 省略 probe 欄位也不會再炸 generic error
+  - remote routed execute/evaluate 也已在 live deployment 上通了
+
+
+
+
+
+  - remote routed execute/evaluate 也已在 live deployment 上通了
+
+
+› /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/README.md 如果是要起別的 dotnet xxx.dll 或甚至是  起 python 那 --mode 要給什麼?
+  README 沒有說明這些情況，請補
+
+
+• 我先補 Akka.Proc.Supervisor README，把「起別的 dotnet xxx.dll」和「起 python」這兩種 custom process 情況寫清楚，避免再把 --mode 誤當成通用必填。
+
+• Explored
+  └ Read README.md
+
+─ Worked for 1m 02s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+
+› StartProc ask timeout 時，改用 GetProcInfo 短時間輪詢補收斂 => 不懂
+
+
+• 你問的是 provisioning timeout recovery 那段邏輯，我先直接看 src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs 對應實作，然後用實際流程解釋，不再抽象描述。
+
+• Explored
+  └ Read ProvisioningServices.fs, ProvisioningServicesTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 意思是：
+
+  StartProc 這個 RPC 有時候會「proc 其實已經被建出來了，但回覆在 ask timeout 前沒回來」。
+
+  所以修法不是重試整個 StartProc，而是：
+
+  1. 先呼叫 StartProc(hostId, spec)
+  2. 如果它正常回，就直接用回傳的 snapshot
+  3. 如果它丟 AskTimeoutException
+      - 不立刻判定失敗
+      - 改成短時間一直查 GetProcInfo(hostId)
+  4. 只要在這段短時間內查到 proc snapshot，就當作「其實已成功建立，只是 StartProc 回覆慢了」
+  5. 如果輪詢一段時間後還是查不到，才真正當失敗
+
+  對應實作在：
+
+  - src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs:103
+  - src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs:53
+
+  核心邏輯是：
+
+  - StartProc timeout
+  - pollProcSnapshot ... GetProcInfo(hostId) 每 250ms 查一次
+  - 最多查 15 秒
+  - 查到就收斂成成功
+
+  為什麼這樣合理：
+
+  - ProcSupervisor 可能已經把 child process 起好了
+  - host registry / proc snapshot 也可能已經更新了
+  - 只是 StartProc 那個 ask-reply 沒趕上 5 秒 timeout
+  - 這時候直接報失敗會誤殺
+
+  所以「短時間輪詢補收斂」的白話就是：
+
+  - StartProc 回覆太慢時，改看「結果有沒有其實已經落地」
+
+  測試案例在：
+
+  - tests/ProvisioningServicesTests.fs:114
+
+  那個測試模擬的是：
+
+  - StartProc 一開始 timeout
+  - 但第二次 GetProcInfo 就查到 running
+  - 最後 CreateHost 仍成功
+
+  如果你要一句更短的版本，可以理解成：
+
+  - StartProc 是「命令回覆」
+  - GetProcInfo 是「查最終狀態」
+  - timeout 時改查最終狀態，不再只信命令回覆
+
+
+› 1. StartProc ask timeout 時，改用 GetProcInfo 短時間輪詢補收斂 => README.md 要清楚寫
+  2. probeMessage 的範例 section 以及機制也要補啊！特別是不同種類的 proc supervisee  clinet
+
+
+• 我要直接補 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/README.md，把 StartProc timeout -> GetProcInfo recovery 和 probeMessage 的用途、範例、不同
+  supervisee 類型怎麼選都寫清楚。
+
+• Explored
+  └ Search probe|StartProc|start-default|mode procnode|send|GetProcInfo|timeout|Probe in README.md
+    Read README.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先確認 probeMessage 在 Akka.Proc.Supervisor 裡到底怎麼跑，避免 README 又寫成半對半錯，然後我會直接補到 README 裡，連 --mode 的自訂 .NET dll/python 情境一起補。
+
+• Explored
+  └ Search ProbeMessage|probeMessage|ProbeCron|ProbeIntervalMs|ForwardMessage|probe in Akka.Proc.Supervisor
+    Search type ProcHostSpec|ProcHostSpec =|type StartProcRequest|StartDefault|StartProc in Akka.Proc.Supervisor
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已確認 probeMessage 不是 generic health endpoint，它實際上會被 ProcMessageParser 解析後，轉送到 child proc 內的 fsi-supervisor。所以 README 會明寫兩件事：
+
+  - 只有 supervisee 是 procnode + Akka.FSI.Supervisor 時，probeMessage 才真的有意義
+  - generic .NET dll/python supervisee 如果沒有 fsiSupervisorPath，就不該設 probeMessage，也不能期待 /send 或 probe 會工作。
+
+• 我要直接改 README，把三件事寫死：
+
+  - --mode 只對 Akka.Proc.Supervisor 自己有意義
+  - probeMessage/probeIntervalMs 的機制與 supervisee 類型對應
+  - StartProc timeout 和 GetProcInfo 的補收斂語意，避免之後再誤會 provisioning 壞掉。
+
+
+  • Explored
+  └ Read README.md
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/README.md (+143 -1)
+     42  - `POST /api/proc/nodes/start`: 啟動一個自訂進程。
+     43 -  - Payload: `{ "procId": "...", "fileName": "...", "args": [...], "workingDir": "...", "probeMessage": "..." }`
+     43 +  - Payload: `{ "procId": "...", "fileName": "...", "args": [...], "workingDir": "...", "probeMessage": "...", "probeCron": "...", "probeIntervalMs": 15000 }`
+     44  - `POST /api/proc/nodes/{procId}/stop`: 停止指定的進程。
+        ⋮
+     98
+     99 +## `--mode` 與自訂 supervisee
+    100 +
+    101 +`--mode` 只對 **`Akka.Proc.Supervisor.dll` 自己** 有意義：
+    102 +
+    103 +- `--mode supervisor`
+    104 +  - 啟動 Supervisor process
+    105 +- `--mode procnode`
+    106 +  - 啟動 ProcNode process，並在該 process 內 bootstrap `Akka.FSI.Supervisor`
+    107 +
+    108 +若你透過 `POST /api/proc/nodes/start` 啟動的是別的程式，`--mode` 通常不該出現在該程式的 args 裡。
+    109 +
+    110 +### 啟動另一個 `.NET dll`
+    111 +
+    112 +如果 supervisee 是另一個 framework-dependent `.NET dll`，建議用：
+    113 +
+    114 +```json
+    115 +{
+    116 +  "procId": "my-dotnet-app",
+    117 +  "fileName": "dotnet",
+    118 +  "args": [
+    119 +    "exec",
+    120 +    "--runtimeconfig", "/path/MyApp.runtimeconfig.json",
+    121 +    "--depsfile", "/path/MyApp.deps.json",
+    122 +    "/path/MyApp.dll",
+    123 +    "--arg1", "value1"
+    124 +  ]
+    125 +}
+    126 +```
+    127 +
+    128 +除非你啟動的仍然是 `Akka.Proc.Supervisor.dll` 本身，否則不要再加 `--mode`。
+    129 +
+    130 +### 啟動 Python
+    131 +
+    132 +如果 supervisee 是 Python：
+    133 +
+    134 +```json
+    135 +{
+    136 +  "procId": "my-python-app",
+    137 +  "fileName": "python3",
+    138 +  "args": ["/path/app.py", "--arg1", "value1"]
+    139 +}
+    140 +```
+    141 +
+    142 +同樣不需要 `--mode`。
+    143 +
+    144 +### 什麼情況下才要 `--mode procnode`
+    145 +
+    146 +只有當你要啟動的 child process 本身就是 `Akka.Proc.Supervisor.dll`，而且要把它當成可回報 `fsiSupervisorPath` 的 FSI host 時，才需要 `--mode procnode`。
+    147 +
+    148 +---
+    149 +
+    150 +## `probeMessage` / `probeIntervalMs` 的用途與限制
+    151 +
+    152 +- `probeMessage`
+    153 +  - 要定期送給 child proc 的 probe 內容
+    154 +- `probeIntervalMs`
+    155 +  - 固定週期 probe 的毫秒數
+    156 +- `probeCron`
+    157 +  - 若使用 Quartz cron，則用這個欄位排程 probe
+    158 +
+    159 +這套 probe 機制不是 generic health check，也不是 generic IPC。實際流程是：
+    160 +
+    161 +1. `ProcSupervisor` 定時觸發 probe
+    162 +2. 讀出 `probeMessage`
+    163 +3. 用 `ProcMessageParser` 解析該字串
+    164 +4. 轉送到 child proc 內的 `fsi-supervisor`
+    165 +5. 依回應是否成功來判定 probe success / failure
+    166 +
+    167 +所以：
+    168 +
+    169 +- supervisee 若是 `procnode + Akka.FSI.Supervisor`
+    170 +  - `probeMessage` 有意義
+    171 +- supervisee 若是一般 `.NET dll`、Python、或其他外部程式
+    172 +  - 不應使用 FSI probe
+    173 +  - `/send` 也不成立
+    174 +
+    175 +### 推薦 probe 設定：FSI host / procnode
+    176 +
+    177 +建議使用不改動 session state、且能穩定反映 FSI 可用性的指令：
+    178 +
+    179 +```json
+    180 +{
+    181 +  "probeMessage": "listsessions --all true",
+    182 +  "probeIntervalMs": 15000
+    183 +}
+    184 +```
+    185 +
+    186 +這是目前最建議的預設 probe。
+    187 +
+    188 +### 一般自訂 `.NET dll` supervisee
+    189 +
+    190 +若 child process 不是 procnode，建議不要設 `probeMessage`：
+    191 +
+    192 +```json
+    193 +{
+    194 +  "probeMessage": null,
+    195 +  "probeCron": null,
+    196 +  "probeIntervalMs": null
+    197 +}
+    198 +```
+    199 +
+    200 +### Python supervisee
+    201 +
+    202 +同樣不建議設 `probeMessage`：
+    203 +
+    204 +```json
+    205 +{
+    206 +  "probeMessage": null,
+    207 +  "probeCron": null,
+    208 +  "probeIntervalMs": null
+    209 +}
+    210 +```
+    211 +
+    212 +若要監控這類 process，應另外定義 generic health contract，而不是重用 FSI probe。
+    213 +
+    214 +---
+    215 +
+    216 +## `StartProc` ask timeout 與 `GetProcInfo` 補收斂
+    217 +
+    218 +在上層 orchestration（例如 `fsharp-devkit create_fsi_host`）中，`StartProc` 有時會出現：
+    219 +
+    220 +- child proc 其實已成功啟動
+    221 +- `ProcRegistry` 也已看得到 snapshot
+    222 +- 但 `StartProc` 這個 ask-reply 還沒在 timeout 前回來
+    223 +
+    224 +因此：
+    225 +
+    226 +- `StartProc` ask timeout
+    227 +  - 不一定等於 host 建立失敗
+    228 +
+    229 +較穩定的做法是：
+    230 +
+    231 +1. 先送 `StartProc`
+    232 +2. 若 `StartProc` ask timeout
+    233 +3. 立刻在短時間內輪詢 `GetProcInfo(procId)`
+    234 +4. 若很快查到 snapshot，將其視為「已成功建立，但命令回覆較慢」
+    235 +5. 只有在短時間輪詢後仍查不到 snapshot，才真正當作建立失敗
+    236 +
+    237 +這就是「`StartProc` ask timeout 時，改用 `GetProcInfo` 短時間輪詢補收斂」的意思。
+    238 +
+    239 +---
+    240 +
+    241  ## E2E 範例 (FSX 腳本)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• README 已改好。我順手把這次 README 補強也記進 Akka.Proc.Supervisor 自己的 DevLog，然後一起 commit/push，避免之後又不知道這些說明是為了哪個坑補的。
+
+• Explored
+  └ List doc
+    Read DevLog.md
+
+• Ran cd /workspace/home/work/PulseTrade.fs && git status --short
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +404 lines
+    ?? Libs/TestScripts/verify_deployed_host_isolation.fsx
+    ?? Libs/TestScripts/verify_deployed_session_isolation.fsx
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/doc/DevLog.md (+25 -0)
+    34  - `FSharp.MCP.DevKit` 升級新版 package 後再驗 host/session 隔離
+    35 +
+    36 +## 2026-03-26 - README 補齊 `--mode`、probe 與 `StartProc` timeout recovery 說明
+    37 +
+    38 +### Context
+    39 +
+    40 +- 文件先前只說了 `start-default` / `send` 的基本用法，沒有把下列容易誤解的點寫清楚：
+    41 +  - `--mode` 只對 `Akka.Proc.Supervisor.dll` 自己有意義，不是 generic supervisee contract
+    42 +  - `probeMessage` / `probeIntervalMs` 其實依賴 `fsiSupervisorPath` 與 `ProcMessageParser`
+    43 +  - 上層 orchestration 在 `StartProc` ask timeout 時，常會改用 `GetProcInfo` 做短時間補收斂
+    44 +
+    45 +### Resolutions
+    46 +
+    47 +- 在 `README.md` 補上：
+    48 +  - 自訂 `.NET dll` / Python supervisee 不應使用 `--mode`
+    49 +  - `probeMessage` 僅適用於 `procnode + Akka.FSI.Supervisor`
+    50 +  - 推薦 probe 範例使用 `listsessions --all true`
+    51 +  - `StartProc` ask timeout 不一定等於建立失敗；應短時間輪詢 `GetProcInfo(procId)`
+    52 +
+    53 +### Rationale
+    54 +
+    55 +- 這些點若不寫明，呼叫端很容易把：
+    56 +  - generic process lifecycle
+    57 +  - FSI-specific forwarding
+    58 +  - provisioning timeout recovery
+    59 +  混成同一件事，之後排錯成本會持續偏高。
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• README 與 DevLog 都補好了。我只會 stage 這兩個檔，不碰 repo 裡大量既有的 bin/obj 雜訊，然後直接 commit/push。
+
+• Ran cd /workspace/home/work/PulseTrade.fs && git add Libs/Akka.Proc.Supervisor/README.md Libs/Akka.Proc.Supervisor/doc/DevLog.md && git commit -m "docs: clarify proc
+  │ supervisor modes and probe semantics" && git push
+  └ To github.com:ingted/PulseTrade.fs.git
+       65d2778..3753adb  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 文件已提交，我正在等 push 完成。接著我會直接回覆你這次 README 補了哪些關鍵點。
+
+• Waited for background terminal
+
+• 已補完並推上。
+
+  更新位置：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/README.md
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/doc/DevLog.md
+
+  commit:
+
+  - 3753adb docs: clarify proc supervisor modes and probe semantics
+
+  README 現在多了這幾塊：
+
+  - --mode 只對 Akka.Proc.Supervisor.dll 自己有意義
+  - 啟動別的 .NET dll 或 python 時，--mode 不該帶
+  - /send 與 probeMessage 只對 procnode + Akka.FSI.Supervisor 類型的 supervisee 有效
+  - probeMessage / probeIntervalMs / probeCron 的機制、限制與推薦範例
+  - StartProc ask timeout 不一定等於建立失敗，應短時間輪詢 GetProcInfo(procId) 補收斂
+
+  你剛剛問的那句：
+
+  - StartProc ask timeout 時，改用 GetProcInfo 短時間輪詢補收斂
+
+  README 現在也明寫了它的意思：
+
+  - child proc 可能其實已經起來
+  - ProcRegistry 也已經有 snapshot
+  - 只是 StartProc 那個 ask-reply 還沒來得及在 timeout 前回來
+  - 這時候應先查 GetProcInfo(procId)，不是直接判定失敗
+
+  如果你要，我下一步就回到 fsharp-devkit 這邊，繼續做 agent 視角的 MCP server 實戰測試與修正。

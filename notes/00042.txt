@@ -1,0 +1,1898 @@
+• fresh host 流程還在跑，我等它吐出 live MCP 結果；如果卡住，我就同時抓 container log 和 /api/proc/nodes 看它停在哪個步驟。
+
+• Ran curl -fsS http://10.28.112.140:6001/api/proc/nodes | python - <<'PY'
+  │ import sys, json
+  │ try:
+  │ … +7 lines
+  └ JSON_ERROR Expecting value: line 1 column 1 (char 0)
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --tail 80'
+  └ [ERROR][03/26/2026 16:45:22.416Z][Thread 0004][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-nodeCoordinator/singleton/coordinator] proc-node: The Shard
+    Coordinator was unable to update a distributed state within 'updating-state-timeout': 5000 millis (retrying). Perhaps the ShardRegion has not started on all active nodes
+    … +82 lines
+    info: ModelContextProtocol.Server.McpServer[570385771]
+          Server (FSharp.MCP.DevKit 1.0.0.0), Client (debug-client 1.0) method 'tools/call' request handler called.
+
+• Waited for background terminal · cat > /tmp/live_mcp_http_flow_fresh.py <<'PY'
+import json, time, uuid, requests
+BASE = 'http://10.28.112.140:15000/mcp'
+init_payload = {
+    'jsonrpc':'2.0',
+    'id':1,
+    'method':'initialize',
+    'params':{
+        'protocolVersion':'2025-03-26',
+        'capabilities':{},
+        'clientInfo':{'name':'debug-client','version':'1.0'}
+    }
+}
+resp = requests.post(BASE, json=init_payload)
+resp.raise_for_status()
+session = resp.headers['Mcp-Session-Id']
+print('SESSION=', session)
+def parse_sse(text:str):
+    for line in text.splitlines():
+        if line.startswith('data: '):
+            return json.loads(line[6:])
+    raise RuntimeError(f'No data line in response: {text}')
+def call_tool(i,name,args):
+    payload = {'jsonrpc':'2.0','id':i,'method':'tools/call','params':{'name':name,'arguments':args}}
+    r = requests.post(BASE, json=payload, headers={'Mcp-Session-Id':session})
+    r.raise_for_status()
+    obj = parse_sse(r.text)
+    texts = [block['text'] for block in obj['result']['content'] if block.get('type')=='text']
+    return '\n'.join(texts)
+suffix = uuid.uuid4().hex[:8]
+host_ip = '10.28.112.140'
+supervisor_path = f'akka.tcp://proc-system@{host_ip}:8110/user/proc-supervisor'
+agent_id = f'agent-mcp-live-{suffix}'
+host_id = f'mcp-live-host-{suffix}'
+session_id = f'mcp-live-session-{suffix}'
+cid {host_id} --systemname proc-system --supervisor {supervisor_path} --host {host_ip} --port 0 --seed akka.tcp://proc-system@{host_ip}:8110 --procnoderole procnode'
+print('REGISTER=', call_tool(2,'register_fsi_agent', {'agentId':agent_id,'displayName':'Live MCP Agent'}))
+print('HOST=', call_tool(3,'create_fsi_host', {'agentId':agent_id,'hostKind':'net10','executablePath':'dotnet','arguments':args,'workingDirectory':'/app','hostId':host_id}))
+for i in range(41):
+    health = call_tool(10+i,'get_fsi_host_health', {'hostId':host_id})
+    print(f'HEALTH[{i}]={health}')
+    if '"isAvailable":true' in health:
+        break
+    time.sleep(0.5)
+print('SESSION_REC=', call_tool(100,'create_fsi_session', {'agentId':agent_id,'hostId':host_id,'sessionId':session_id,'sessionName':'Live Session'}))
+print('EXEC=', call_tool(101,'execute_f_sharp_code_routed', {'agentId':agent_id,'hostId':host_id,'sessionId':session_id,'code':'let liveMcpValue = 314','timeoutSeconds':30}))
+30}))
+PY
+python /tmp/live_mcp_http_flow_fresh.py
+
+─ Worked for 1m 57s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 先把這輪的實驗計畫寫進 .log/.op_log，接著只做兩件事：重跑 fresh-host 的 live MCP flow，然後直接看部署端 proc-supervisor 狀態，先把「MCP 新建 host/session 這條到底穩不穩」釘
+  死。
+
+• Ran cat <<'EOF' >> /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326160750.mcp-agent-iteration.00001.00001.log
+  │ [2026-03-26T17:20:00Z] Focus: verify fresh-host MCP flow on live deployment after dgx.11 image rebuild. Plan: (1) inspect live proc snapshots via ProcSupervisor REST, (2)
+  │ rerun a fresh unique host/session MCP flow with unbuffered output, (3) if it fails, correlate with live server/proc logs before making further code changes.
+  │ … +1 lines
+  └ (no output)
+
+• Ran cat <<'EOF' >> /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326160750.mcp-agent-iteration.op_log
+  │ [2026-03-26T17:20:00Z] START fresh-host MCP verification on deployed fsharp-devkit. Expectation: either confirm end-to-end MCP create_fsi_host/create_fsi_session/routed
+  │ execute on a new host, or isolate remaining orchestration failure with matching live logs.
+  │ … +1 lines
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 先看 live ProcSupervisor snapshot 和 fsharp-devkit log，不再靠猜。若 bootstrap/舊 proc 很髒，我會直接走 fresh hostId/sessionId 的 MCP flow。
+
+• Ran python - <<'PY'
+  │ import requests, json
+  │ url='http://10.28.112.140:6001/api/proc/nodes'
+  │ … +4 lines
+  └ STATUS 200
+    [{"procId":"mcp-live-host-g","status":"running","pid":255,"fsiSupervisorPath":"akka.tcp://proc-system@10.28.112.140:34689/user/fsi/supervisor","nodeAddress":"akka.tcp://
+    … +2 lines
+    Akka.Proc.Supervisor.dll","--mode","procnode","--procid","mcp-live-host-g","--systemname","proc-system","--supervisor","akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","--host","10.28.112.140","--port","0","--seed","akka.tcp://proc-system@10.28.112.140:8110","--procnoderole","procnode"],"workingDir":"/app"}}]
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --tail 120'
+  └       Akka.Actor.AskTimeoutException: Timeout after 5.00 seconds
+             at <StartupCode$FSharp-MCP-DevKit>.$ProcSupervisorClient.FSharp-MCP-DevKit-Server-Integration-IProcSupervisorClient-GetProcInfo@106.MoveNext() in /src/
+    … +128 lines
+    Coordinator was unable to update a distributed state within 'updating-state-timeout': 5000 millis (retrying). Perhaps the ShardRegion has not started on all active nodes
+    yet? event=ShardHomeAllocated(shard:80, region:[akka://proc-system/system/sharding/proc-node#893146103])
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先用全新 agentId/hostId/sessionId 直接打 live MCP，不走舊 host，也不以 get_fsi_host_health 成敗當唯一依據；先看 fresh host 能不能建立、開 session、跑 code。
+
+• fresh-host MCP flow 已經起跑，register_fsi_agent 正常。現在等後續工具回覆，重點看 create_fsi_host 與 create_fsi_session/routed execute 是否能在全新 host 上打通。
+
+• Waited for background terminal · python -u - <<'PY'
+import requests, json, time, uuid, sys
+BASE='http://10.28.112.140:15000/mcp'
+INIT={"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"debug-client","version":"1.0"}}}
+resp=requests.post(BASE, json=INIT, timeout=20)
+print('INIT_STATUS', resp.status_code, flush=True)
+print('INIT_BODY', resp.text[:500], flush=True)
+session=resp.headers.get('Mcp-Session-Id')
+print('SESSION', session, flush=True)
+headers={'Content-Type':'application/json','Mcp-Session-Id':session}
+ctr=2
+def call(tool, args):
+    global ctr
+    payload={"jsonrpc":"2.0","id":ctr,"method":"tools/call","params":{"name":tool,"arguments":args}}
+    ctr += 1
+    r=requests.post(BASE, headers=headers, json=payload, timeout=40)
+    txt=r.text
+    try:
+        data=r.json()
+    except Exception:
+        data=None
+    print(f'TOOL {tool} STATUS {r.status_code}', flush=True)
+    print(txt[:1200], flush=True)
+    return data
+suffix=uuid.uuid4().hex[:8]
+agent=f'mcp-agent-{suffix}'
+host=f'mcp-host-{suffix}'
+session_id=f'mcp-session-{suffix}'
+print('IDS', agent, host, session_id, flush=True)
+call('register_fsi_agent', {'agentId': agent, 'displayName': 'Debug Agent'})
+call('create_fsi_host', {
+    'agentId': agent,
+    'hostKind': 'net10',
+    'hostId': host,
+    'executablePath': 'dotnet',
+0.28.112.140 --port 0 --seed akka.tcp://proc-system@10.28.112.140:8110 --procnoderole procnode',
+    'workingDirectory': '/app'
+})
+for i in range(6):
+    time.sleep(2)
+    call('get_fsi_host_health', {'hostId': host})
+call('create_fsi_session', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'sessionName': 'debug'})
+call('execute_f_sharp_code_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'code': 'let liveValue = 987'})
+call('evaluate_f_sharp_expression_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'expression': 'liveValue'})
+PY
+
+• fresh host 的 create_fsi_host 仍先回 generic error，但這次 hostId 是全新的，所以不能再用「重複 host」解釋。我接著看後續 get_fsi_host_health / proc snapshot，判斷是 host 已
+  落地但回覆超時，還是 binder/tool path 仍有別的錯。
+
+• Ran python - <<'PY'
+  │ import requests, json
+  │ resp=requests.get('http://10.28.112.140:6001/api/proc/nodes', timeout=10)
+  │ … +2 lines
+  └ [{"procId":"mcp-live-host-g","status":"running","pid":255,"fsiSupervisorPath":"akka.tcp://proc-system@10.28.112.140:34689/user/fsi/supervisor","nodeAddress":"akka.tcp://
+    proc-system@10.28.112.140:34689","probeFailures":0,"spec":{"procId":"mcp-live-host-g","fileName":"dotnet","args":["exec","--runtimeconfig","/app/
+    Akka.Proc.Supervisor.runtimeconfig.json","--depsfile","/app/Akka.Proc.Supervisor.deps.json","/app/
+    Akka.Proc.Supervisor.dll","--mode","procnode","--procid","mcp-live-host-g","--systemname","proc-system","--supervisor","akka.tcp://proc-system@10.28.112.140:8110/user/
+    proc-supervisor","--host","10.28.112.140","--port","0","--seed","akka.tcp://proc-system@10.28.112.140:8110","--procnoderole","procnode"],"workingDir":"/app"}}]
+
+• Waited for background terminal · python -u - <<'PY'
+import requests, json, time, uuid, sys
+BASE='http://10.28.112.140:15000/mcp'
+INIT={"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"debug-client","version":"1.0"}}}
+resp=requests.post(BASE, json=INIT, timeout=20)
+print('INIT_STATUS', resp.status_code, flush=True)
+print('INIT_BODY', resp.text[:500], flush=True)
+session=resp.headers.get('Mcp-Session-Id')
+print('SESSION', session, flush=True)
+headers={'Content-Type':'application/json','Mcp-Session-Id':session}
+ctr=2
+def call(tool, args):
+    global ctr
+    payload={"jsonrpc":"2.0","id":ctr,"method":"tools/call","params":{"name":tool,"arguments":args}}
+    ctr += 1
+    r=requests.post(BASE, headers=headers, json=payload, timeout=40)
+    txt=r.text
+    try:
+        data=r.json()
+    except Exception:
+        data=None
+    print(f'TOOL {tool} STATUS {r.status_code}', flush=True)
+    print(txt[:1200], flush=True)
+    return data
+suffix=uuid.uuid4().hex[:8]
+agent=f'mcp-agent-{suffix}'
+host=f'mcp-host-{suffix}'
+session_id=f'mcp-session-{suffix}'
+print('IDS', agent, host, session_id, flush=True)
+call('register_fsi_agent', {'agentId': agent, 'displayName': 'Debug Agent'})
+call('create_fsi_host', {
+    'agentId': agent,
+    'hostKind': 'net10',
+    'hostId': host,
+    'executablePath': 'dotnet',
+0.28.112.140 --port 0 --seed akka.tcp://proc-system@10.28.112.140:8110 --procnoderole procnode',
+    'workingDirectory': '/app'
+})
+for i in range(6):
+    time.sleep(2)
+    call('get_fsi_host_health', {'hostId': host})
+call('create_fsi_session', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'sessionName': 'debug'})
+call('execute_f_sharp_code_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'code': 'let liveValue = 987'})
+call('evaluate_f_sharp_expression_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'expression': 'liveValue'})
+PY
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• create_fsi_host 與 get_fsi_host_health 對 fresh host 都是 generic error，而且 ProcSupervisor REST 沒看到新 proc，表示失敗點在 server tool path/actor ask，還沒到 child proc
+  真建立。現在直接抓同時段的 live server log，拿真 exception。
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --since 3m'
+  └ fail: ModelContextProtocol.Server.McpServer[1433779783]
+          "create_fsi_host" threw an unhandled exception.
+    … +1118 lines
+    info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+          Request finished HTTP/1.1 POST http://10.28.112.140:15000/mcp - 200 - text/event-stream 5002.3827ms
+
+• Waited for background terminal · python -u - <<'PY'
+import requests, json, time, uuid, sys
+BASE='http://10.28.112.140:15000/mcp'
+INIT={"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"debug-client","version":"1.0"}}}
+resp=requests.post(BASE, json=INIT, timeout=20)
+print('INIT_STATUS', resp.status_code, flush=True)
+print('INIT_BODY', resp.text[:500], flush=True)
+session=resp.headers.get('Mcp-Session-Id')
+print('SESSION', session, flush=True)
+headers={'Content-Type':'application/json','Mcp-Session-Id':session}
+ctr=2
+def call(tool, args):
+    global ctr
+    payload={"jsonrpc":"2.0","id":ctr,"method":"tools/call","params":{"name":tool,"arguments":args}}
+    ctr += 1
+    r=requests.post(BASE, headers=headers, json=payload, timeout=40)
+    txt=r.text
+    try:
+        data=r.json()
+    except Exception:
+        data=None
+    print(f'TOOL {tool} STATUS {r.status_code}', flush=True)
+    print(txt[:1200], flush=True)
+    return data
+suffix=uuid.uuid4().hex[:8]
+agent=f'mcp-agent-{suffix}'
+host=f'mcp-host-{suffix}'
+session_id=f'mcp-session-{suffix}'
+print('IDS', agent, host, session_id, flush=True)
+call('register_fsi_agent', {'agentId': agent, 'displayName': 'Debug Agent'})
+call('create_fsi_host', {
+    'agentId': agent,
+    'hostKind': 'net10',
+    'hostId': host,
+    'executablePath': 'dotnet',
+0.28.112.140 --port 0 --seed akka.tcp://proc-system@10.28.112.140:8110 --procnoderole procnode',
+    'workingDirectory': '/app'
+})
+for i in range(6):
+    time.sleep(2)
+    call('get_fsi_host_health', {'hostId': host})
+call('create_fsi_session', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'sessionName': 'debug'})
+call('execute_f_sharp_code_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'code': 'let liveValue = 987'})
+call('evaluate_f_sharp_expression_routed', {'agentId': agent, 'hostId': host, 'sessionId': session_id, 'expression': 'liveValue'})
+PY
+
+• Ran python -u - <<'PY'
+  │ import requests, json, time, uuid, sys
+  │ BASE='http://10.28.112.140:15000/mcp'
+  │ … +45 lines
+  └ TOOL create_fsi_host STATUS 200
+    event: message
+    … +46 lines
+
+
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fresh host 的 MCP path 還是不通，而且這次新 host 根本沒落到 ProcSupervisor REST。我要直接對照 ProvisioningServices.CreateHost / McpControlPlaneTools 的 timeout 路徑，確認
+  live 失敗到底是 ask 到哪一步卡住。
+
+• Explored
+  └ Read ProvisioningServices.fs, McpControlPlaneTools.fs
+
+• Ran python - <<'PY'
+  │ import requests, json
+  │ resp=requests.get('http://10.28.112.140:6001/api/proc/nodes', timeout=10).json()
+  │ … +4 lines
+  └ COUNT 1
+    mcp-live-host-g running
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先做一個對照：同一台部署，如果用外部 direct actor StartProc 能成功、但 MCP create_fsi_host 還是 timeout，那問題就縮到 fsharp-devkit 自己的 client/system/timeout 策略，不
+  是 ProcSupervisor 本體。
+
+• Explored
+  └ Read start_procnode_and_dump_info.fsx, ProcSupervisorClient.fs
+
+• Ran cat > /tmp/live_mcp_http_flow_fresh.py <<'PY'
+  │ import json, time, uuid, requests
+  │
+  │ … +55 lines
+  └ SESSION= V-8JK5ohCcT2vvMMN998-A
+    REGISTER= {"agentId":"agent-mcp-live-a4e9863f","displayName":"Live MCP
+    … +44 lines
+    EXEC= An error occurred invoking 'execute_f_sharp_code_routed'.
+    VALUE= An error occurred invoking 'evaluate_f_sharp_expression_routed'.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先做最後一個對照證據：如果外部 direct StartProc 對同一台 live ProcSupervisor 能成功，而 server 內 ProcSupervisorClient 只因 5 秒 timeout 失敗，那修法就該是 timeout/收斂策
+  略，不是再動 runtime。
+
+• Waited for background terminal · dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/start_procnode_and_dump_info.fsx -- --host 10.28.112.140 --supervisor-port
+8110 --proc-id direct-start-$(date +%s) --proc-port 43131
+
+• Ran dotnet fsi /workspace/home/work/PulseTrade.fs/Libs/TestScripts/start_procnode_and_dump_info.fsx -- --host 10.28.112.140 --supervisor-port 8110 --proc-id
+  │ direct-start-$(date +%s) --proc-port 43131
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +12 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+─ Worked for 1m 20s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 新 host 連 direct StartProc 都在 live 上 60 秒 timeout，這已經不是 MCP timeout 了。我先查 ProcSupervisor 的 cluster/sharding 狀態，確認是不是 live cluster 有殘留 member /
+  shard coordinator 卡死。
+
+• Explored
+  └ Search api/cluster|cluster/info|members|proc-nodeCoordinator|ShardCoordinator in Akka.Proc.Supervisor
+
+• Ran python - <<'PY'
+  │ import requests
+  │ for url in ['http://10.28.112.140:6001/api/cluster/info','http://10.28.112.140:6001/api/cluster/members','http://10.28.112.140:6001/health']:
+  │ … +7 lines
+  └ URL http://10.28.112.140:6001/api/cluster/info STATUS 200
+    {"systemName":"proc-system","address":"akka.tcp://proc-system@10.28.112.140:8110","roles":[]}
+    URL http://10.28.112.140:6001/api/cluster/members ERR ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+    URL http://10.28.112.140:6001/health STATUS 200
+    ok
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在看 ProcSupervisor 內部 StartProc 處理路徑，確認它是卡在 shard coordinator、registry actor，還是 child process 啟動後回報不到。这个阶段不再猜 deployment。
+
+• Explored
+  └ Search StartProc|GetProcInfo|ProcNodeReady|ForwardMessage|proc-node in ProcSupervisor.fs
+    Read ProcSupervisor.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 現在關鍵點找到了：GetProcInfo 和 StartProc 都是走 sharding region，不是走 registry；REST /api/proc/nodes 只是 registry snapshot，所以會看起來正常。我要看 procnode 啟動時有
+  沒有真的把 proc-node shard region 在 child node 上啟起來，不然 coordinator 會一直卡 Requested shard homes / updating-state-timeout。
+
+• Explored
+  └ Search ShardRegion|Start\(|ClusterSharding|proc-node|startProcNode|StartDefault in ProcHost.fs
+    Read ProcHost.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把焦點再收斂：現在看起來最可疑的不是 MCP，也不是 Process.Start，而是 child procnode 被加入同一個 cluster 後把 supervisor 的 sharding/ddata 拖髒了。我要直接看
+  buildManagedProcNodeSpec，確認我們是不是其實根本不需要給 child proc --seed/--procnoderole。
+
+• Explored
+  └ Search buildManagedProcNodeSpec|ProcStartSpecBuilder in Akka.Proc.Supervisor
+    Read ProcContracts.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要先做一個最小實驗：同一台 live ProcSupervisor，直接用 custom StartProc 起一個 不帶 --seed/--role 的 procnode。如果這條能穩定成功，就表示我們的 managed procnode builder
+  把 child proc 不必要地拉進 cluster，這才是 fresh host 失敗根因。
+
+• Ran cat > /tmp/start_procnode_no_cluster.fsx <<'EOF'
+  │ #r "nuget: Akka, 1.5.62"
+  │ #r "nuget: Akka.Remote, 1.5.62"
+  │ … +37 lines
+  └
+
+    /tmp/start_procnode_no_cluster.fsx(17,44): error FS0599: Missing qualification after '.'
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 先修這個臨時腳本的 quoting，然後重跑 no-cluster 實驗。這一步只為了判斷 --seed/--role 是否是 fresh host 失敗根因。
+
+• Ran cat > /tmp/start_procnode_no_cluster.fsx <<'EOF'
+  │ #r "nuget: Akka, 1.5.62"
+  │ #r "nuget: Akka.Remote, 1.5.62"
+  │ … +73 lines
+  └ System.FormatException: Unknown token at position 74:
+        hostname = \"127.0.0.1\"
+    … +18 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal · python - <<'PY'
+from pathlib import Path
+p=Path('/tmp/start_procnode_no_cluster.fsx')
+s=p.read_text()
+s=s.replace('    hostname = \\\"127.0.0.1\\\"','    hostname = "127.0.0.1"')
+p.write_text(s)
+print('patched')
+PY
+dotnet fsi /tmp/start_procnode_no_cluster.fsx
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/start_procnode_no_cluster.fsx')
+  │ … +7 lines
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +12 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+─ Worked for 1m 06s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先做最小清场实验：把当前唯一的 live proc mcp-live-host-g 停掉，再试 fresh StartProc。如果这就恢复，问题就落在 stale proc / shard state cleanup；如果还是不行，再继续追
+  sharding 本体。
+
+• Explored
+  └ Search stop|StopProc|/api/proc/nodes/.*/stop|DELETE|restart in ProcRest.fs
+    Read ProcRest.fs
+
+• Ran python - <<'PY'
+  │ import requests, json
+  │ base='http://10.28.112.140:6001'
+  │ … +5 lines
+  └ STOP_STATUS 200
+    {"procId":"mcp-live-host-g","status":"stopped"}
+    NODES_AFTER [{"procId":"mcp-live-host-g","status":"stopped","nodeAddress":"akka.tcp://proc-system@10.28.112.140:34689","probeFailures":0}]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把唯一的 stale proc 停掉了。現在直接重試 fresh create_fsi_host；如果這時通了，根因就是 stale proc / shard state 沒清，接著就要補 orchestrator 的清理與更穩的恢復策略。
+
+• Waited for background terminal · python -u - <<'PY'
+import requests, time, uuid, json
+BASE='http://10.28.112.140:15000/mcp'
+ersion":"1.0"}}}, timeout=20)
+session=resp.headers['Mcp-Session-Id']
+headers={'Content-Type':'application/json','Mcp-Session-Id':session}
+ctr=2
+def call(tool, args, timeout=40):
+    global ctr
+    payload={"jsonrpc":"2.0","id":ctr,"method":"tools/call","params":{"name":tool,"arguments":args}}
+    ctr += 1
+    r=requests.post(BASE, headers=headers, json=payload, timeout=timeout)
+    print('TOOL', tool, 'STATUS', r.status_code, flush=True)
+    print(r.text[:1000], flush=True)
+    return r
+suffix=uuid.uuid4().hex[:8]
+agent=f'fresh-agent-{suffix}'
+host=f'fresh-host-{suffix}'
+sid=f'fresh-session-{suffix}'
+print(agent, host, sid, flush=True)
+call('register_fsi_agent', {'agentId': agent, 'displayName': 'Debug Agent'})
+temname proc-system --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --host 10.28.112.140 --port 0 --seed akka.tcp://proc-system@10.28.112.140:8110
+--procnoderole procnode', 'workingDirectory': '/app'}, timeout=50)
+print('PROCS', requests.get('http://10.28.112.140:6001/api/proc/nodes', timeout=10).text[:4000], flush=True)
+call('create_fsi_session', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'sessionName': 'debug'})
+call('execute_f_sharp_code_routed', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'code': 'let liveValue = 1234'})
+call('evaluate_f_sharp_expression_routed', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'expression': 'liveValue'})
+PY
+
+• Ran python -u - <<'PY'
+  │ import requests, time, uuid, json
+  │ BASE='http://10.28.112.140:15000/mcp'
+  │ … +28 lines
+  └ TOOL create_fsi_host STATUS 200
+    event: message
+    … +17 lines
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 停掉 stale proc 後 fresh create_fsi_host 仍 timeout，而且 ProcSupervisor REST 完全沒新 proc。這說明失敗點就是 StartProc/GetProcInfo 經過 sharding region 本身，不是 stale
+  child state。現在直接對這次時間段抓 log，然後我就修 server 或 ProcSupervisor。
+
+• Ran python - <<'PY'
+  │ import requests
+  │ print(requests.get('http://10.28.112.140:6001/api/proc/nodes', timeout=10).text)
+  │ … +1 lines
+  └ [{"procId":"mcp-live-host-g","status":"stopped","nodeAddress":"akka.tcp://proc-system@10.28.112.140:34689","probeFailures":0},
+    {"procId":"mcp-live-host-a4e9863f","status":"running","pid":557,"fsiSupervisorPath":"akka.tcp://proc-system@10.28.112.140:38187/user/fsi/
+    … +27 lines
+    {"procId":"33e3ae855608498ba06bb38a62f6666e","status":"running","fsiSupervisorPath":"akka.tcp://proc-system@10.28.112.140:40543/user/fsi/
+    supervisor","nodeAddress":"akka.tcp://proc-system@10.28.112.140:40543","probeFailures":0}]
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --since 2m'
+  └ info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+          Request starting HTTP/1.1 GET http://10.28.112.140:15000/mcp - - -
+    … +1099 lines
+    adjusted with configuration settings 'akka.log-dead-letters' and 'akka.log-dead-letters-during-shutdown'. Message content: Status(chunk=0, totalChunks=1, digest={proc-no
+    deCoordinatorState->Google.Protobuf.ByteString,})
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我找到一个关键误用：我之前用 MCP create_fsi_host 传的是 dotnet /app/Akka.Proc.Supervisor.dll ...，但现在正确的部署语义应该是 dotnet exec --runtimeconfig --depsfile /app/
+  Akka.Proc.Supervisor.dll ...。我先按正确参数重测 fresh MCP flow。
+
+• Waited for background terminal · python -u - <<'PY'
+import requests, uuid
+BASE='http://10.28.112.140:15000/mcp'
+ersion":"1.0"}}}, timeout=20)
+session=resp.headers['Mcp-Session-Id']
+headers={'Content-Type':'application/json','Mcp-Session-Id':session}
+ctr=2
+def call(tool, args, timeout=60):
+    global ctr
+    payload={"jsonrpc":"2.0","id":ctr,"method":"tools/call","params":{"name":tool,"arguments":args}}
+    ctr += 1
+    r=requests.post(BASE, headers=headers, json=payload, timeout=timeout)
+    print('TOOL', tool, 'STATUS', r.status_code, flush=True)
+    print(r.text[:1200], flush=True)
+    return r
+suffix=uuid.uuid4().hex[:8]
+agent=f'good-agent-{suffix}'
+host=f'good-host-{suffix}'
+sid=f'good-session-{suffix}'
+args='exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --procid
+' + host + ' --systemname proc-system --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --host 10.28.112.140 --port 0'
+print(agent, host, sid, flush=True)
+call('register_fsi_agent', {'agentId': agent, 'displayName': 'Debug Agent'})
+call('create_fsi_host', {'agentId': agent, 'hostKind': 'net10', 'hostId': host, 'executablePath': 'dotnet', 'arguments': args, 'workingDirectory': '/app'})
+call('create_fsi_session', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'sessionName': 'debug'})
+call('execute_f_sharp_code_routed', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'code': 'let liveValue = 4321'})
+call('evaluate_f_sharp_expression_routed', {'agentId': agent, 'hostId': host, 'sessionId': sid, 'expression': 'liveValue'})
+print('PROCS', requests.get('http://10.28.112.140:6001/api/proc/nodes', timeout=10).text[:4000], flush=True)
+PY
+
+• Ran python -u - <<'PY'
+  │ import requests, uuid
+  │ BASE='http://10.28.112.140:15000/mcp'
+  │ … +28 lines
+  └ TOOL create_fsi_host STATUS 200
+    event: message
+    … +46 lines
+    supervisor","nodeAddress":"akka.tcp://proc-system@10.28.112.140:44459","probeFailures":0},
+    {"procId":"33e3ae855608498ba06bb38a62f6666e","status":"running","fsiSupervisorPath":"akka.tcp://pro
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• fresh create_fsi_host 用對了 exec/runtimeconfig/deps 仍然回 generic error，而且 REST 裡沒有新的 good-host-*。所以這次不是參數格式誤用；我現在直接看這次時間段的真
+  exception，然後就修 FSharp.MCP.DevKit 本身。
+
+• Ran ssh sa@10.28.112.140 'docker logs fsharp-mcp-devkit --since 1m'
+  └ info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+          Request starting HTTP/1.1 POST http://10.28.112.140:15000/mcp - application/json 174
+    … +1189 lines
+    adjusted with configuration settings 'akka.log-dead-letters' and 'akka.log-dead-letters-during-shutdown'. Message content: Status(chunk=0, totalChunks=1, digest={proc-no
+    deCoordinatorState->Google.Protobuf.ByteString,})
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 問題已經收斂了：不是 runtime 壞，而是 fsharp-devkit 還把 GetProcInfo 當成唯一真相來源；但 live 上 sharding 會短暫卡住，而 registry snapshots 其實已經看得到新 host。我要修兩
+  刀：ProcSupervisorClient/ProvisioningServices 改用 ListProcInfo 作 recovery fallback，另外把 routed execute/evaluate 的 timeoutSeconds 也改成真正可省略。
+
+• Explored
+  └ Search timeoutSeconds|DefaultParameterValue|execute_f_sharp_code_routed|evaluate_f_sharp_expression_routed in FSharp.MCP.DevKit.Server
+    Read McpFsiTools.fs, McpExecutionTools.fs, Net10HostBackend.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我准备改两处：ProcSupervisor 查询改用 registry fallback，避免 sharding 短暂超时把已落地的 host 误判失败；McpExecutionTools 的 routed timeoutSeconds 改成真正 CLR optional，
+  避免再被 binder 当必填。改完我会本地测，再在 host 上 build.host.sh 重部署并重测 live MCP。
+
+• Ran cat <<'EOF' >> /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326160750.mcp-agent-iteration.op_log
+  │ [2026-03-26T16:56:00Z] DIAGNOSIS: live create_fsi_host fails because StartProc/GetProcInfo use sharding path and can time out while ProcSupervisor registry already
+  │ contains the new snapshot. Planned fix: add ListProcInfo-based recovery/fallback for CreateHost and HealthCheck; also convert routed timeoutSeconds tool parameters to CLR
+  │ … +2 lines
+  └ (no output)
+
+• Ran cat <<'EOF' >> /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326160750.mcp-agent-iteration.00001.00001.log
+  │ [2026-03-26T16:56:00Z] Implementation plan: (1) make HostProvisioningService poll registry-backed ListProcInfo when sharded GetProcInfo times out, (2) make
+  │ Net10HostBackend.HealthCheck fall back to ListProcInfo on GetProcInfo timeout, (3) change McpExecutionTools routed timeoutSeconds signatures to CLR optional/default
+  │ … +2 lines
+  └ (no output)
+
+• Explored
+  └ Search HostProvisioningService|CreateHost|GetHostHealth|HealthCheck|timeoutSeconds|ExecuteFSharpCodeRouted|EvaluateFSharpExpressionRouted in tests
+    Read ProvisioningServicesTests.fs, McpExecutionToolsTests.fs
+
+─ Worked for 1m 16s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 先修三個已確定問題：CreateHost/GetProcInfo 的 sharding timeout fallback、routed MCP tools 的 timeoutSeconds binder、以及對應測試，修完就本地測，再直接在 host 上 bash
+  build.host.sh 重部署後重測 live MCP。
+
+• Ran printf '%s
+  │ ' '[2026-03-26T17:35:00Z] 主題: 修正 live MCP host 建立與 routed execute binder 問題' '[想法] live deployment 已證明 runtime/procnode/fsi supervisor 可用，剩餘問題收斂為:
+  │ 1) StartProc/GetProcInfo 經 sharding region timeout，但 registry 已有 snapshot；2) routed MCP tools 的 F# optional 參數被 reflection binder 視為必填。' '[執行計畫] 1.
+  │ … +6 lines
+  └ [2026-03-26T17:35:00Z] start 修正 CreateHost/GetProcInfo fallback 與 routed timeout binder
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先改 ProvisioningServices、Net10HostBackend、McpExecutionTools，再補對應測試。這一刀只處理已經在 live log 裡確定的兩個問題，不再擴散。
+
+• Explored
+  └ Read ProvisioningServices.fs, Net10HostBackend.fs, McpExecutionTools.fs, ProvisioningServicesTests.fs, Net10HostBackendTests.fs, McpExecutionToolsTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在在做最小碼修：GetProcInfo fallback 到 ListProcInfo，以及 routed tools 改成真正可省略的 CLR optional timeout。補完就直接跑 targeted tests。
+
+• 補丁有一段對不到，我先重新讀實際檔案片段後分批套。先不做別的。
+
+• Explored
+  └ Search type private FakeProcSupervisorClient\|health check and restart\|LastError = Some\|FakeProcSupervisorClient(fun _ in Net10HostBackendTests.fs
+    Read Net10HostBackendTests.fs
+    Read ProvisioningServices.fs, Net10HostBackend.fs, McpExecutionTools.fs, ProvisioningServicesTests.fs, McpExecutionToolsTests.fs
+
+• Edited 3 files (+54 -12)
+  └ src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs (+16 -1)
+    101
+    102 +    let tryGetProcSnapshot (procSupervisorClient: IProcSupervisorClient) hostId =
+    103 +        task {
+    104 +            try
+    105 +                let! direct = procSupervisorClient.GetProcInfo(hostId)
+    106 +
+    107 +                match direct with
+    108 +                | Some snapshot -> return Some snapshot
+    109 +                | None ->
+    110 +                    let! snapshots = procSupervisorClient.ListProcInfo()
+    111 +                    return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+    112 +            with :? Akka.Actor.AskTimeoutException ->
+    113 +                let! snapshots = procSupervisorClient.ListProcInfo()
+    114 +                return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+    115 +        }
+    116 +
+    117      let createUnsupportedRecord (request: ExecutionRequest) (host: HostRecord) (message: string) =
+        ⋮
+    210              task {
+    196 -                let! snapshot = procSupervisorClient.GetProcInfo(host.HostId)
+    211 +                let! snapshot = tryGetProcSnapshot procSupervisorClient host.HostId
+    212
+
+  └ src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs (+19 -1)
+    52
+    53 +    let tryGetProcSnapshot
+    54 +        (procSupervisorClient: IProcSupervisorClient)
+    55 +        (hostId: string)
+    56 +        : Task<ProcHostSnapshot option> =
+    57 +        task {
+    58 +            try
+    59 +                let! direct = procSupervisorClient.GetProcInfo(hostId)
+    60 +
+    61 +                match direct with
+    62 +                | Some snapshot -> return Some snapshot
+    63 +                | None ->
+    64 +                    let! snapshots = procSupervisorClient.ListProcInfo()
+    65 +                    return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+    66 +            with :? AskTimeoutException ->
+    67 +                let! snapshots = procSupervisorClient.ListProcInfo()
+    68 +                return snapshots |> List.tryFind (fun snapshot -> snapshot.ProcId = hostId)
+    69 +        }
+    70 +
+    71      let rec pollProcSnapshot
+       ⋮
+    80              else
+    63 -                let! snapshotOpt = procSupervisorClient.GetProcInfo(hostId)
+    81 +                let! snapshotOpt = tryGetProcSnapshot procSupervisorClient hostId
+    82
+
+  └ src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs (+19 -10)
+      4  open System.ComponentModel
+      5 +open System.Runtime.InteropServices
+      6  open System.Threading.Tasks
+        ⋮
+     19      static member private resolveTimeout (fsiService: FsiMcpService) timeoutSeconds =
+     19 -        match timeoutSeconds with
+     20 -        | Some seconds -> TimeSpan.FromSeconds(float seconds)
+     21 -        | None -> fsiService.DefaultTimeout
+     20 +        if timeoutSeconds > 0 then
+     21 +            TimeSpan.FromSeconds(float timeoutSeconds)
+     22 +        else
+     23 +            fsiService.DefaultTimeout
+     24
+        ⋮
+     38              [<Description("F# code to execute.")>] code: string,
+     37 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     39 +            [<Optional; DefaultParameterValue(0)>]
+     40 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+     41          ) : Task<string> =
+        ⋮
+     56              [<Description("F# code to execute asynchronously.")>] code: string,
+     54 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     57 +            [<Optional; DefaultParameterValue(0)>]
+     58 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+     59          ) : Task<string> =
+        ⋮
+     73              [<Description("F# expression to evaluate.")>] expression: string,
+     70 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     74 +            [<Optional; DefaultParameterValue(0)>]
+     75 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+     76          ) : Task<string> =
+        ⋮
+     96              [<Description("Directory path to add to the F# search path.")>] path: string,
+     92 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+     97 +            [<Optional; DefaultParameterValue(0)>]
+     98 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+     99          ) : Task<string> =
+        ⋮
+    114              [<Description("Assembly path or assembly name.")>] assemblyPath: string,
+    109 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    115 +            [<Optional; DefaultParameterValue(0)>]
+    116 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+    117          ) : Task<string> =
+        ⋮
+    131              [<Description("Target session id.")>] sessionId: string,
+    125 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    132 +            [<Optional; DefaultParameterValue(0)>]
+    133 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+    134          ) : Task<string> =
+        ⋮
+    148              [<Description("Target session id.")>] sessionId: string,
+    141 -            [<Description("Timeout in seconds (optional, default: 30).")>] ?timeoutSeconds: int
+    149 +            [<Optional; DefaultParameterValue(0)>]
+    150 +            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+    151          ) : Task<string> =
+
+• Edited tests/ProvisioningServicesTests.fs (+49 -2)
+     11
+     12 -type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> Task<ProcHostSnapshot>, ?getFactory: string -> Task<ProcHostSnapshot option>) =
+     12 +type private FakeProcSupervisorClient
+     13 +    (
+     14 +        startFactory: string * ProcHostSpec -> Task<ProcHostSnapshot>,
+     15 +        ?getFactory: string -> Task<ProcHostSnapshot option>,
+     16 +        ?listFactory: unit -> Task<ProcHostSnapshot list>
+     17 +    ) =
+     18      let mutable starts : (string * ProcHostSpec) list = []
+     19      let getFactory = defaultArg getFactory (fun _ -> Task.FromResult(None))
+     20 +    let listFactory = defaultArg listFactory (fun () -> Task.FromResult([]))
+     21
+        ⋮
+     30          member _.GetProcInfo(procId) = getFactory procId
+     25 -        member _.ListProcInfo() = Task.FromResult([])
+     31 +        member _.ListProcInfo() = listFactory ()
+     32          member _.RestartProc(_) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("RestartProc is not used in this test."))
+        ⋮
+    218  [<Fact>]
+    219 +let ``HostProvisioningService falls back to ListProcInfo when GetProcInfo ask times out`` () =
+    220 +    task {
+    221 +        let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
+    222 +        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+    223 +
+    224 +        let spec =
+    225 +            { ExecutablePath = "dotnet"
+    226 +              Arguments = [ "fsi-host.dll"; "--port"; "9041" ]
+    227 +              WorkingDirectory = Some "/srv/fsi"
+    228 +              Role = None
+    229 +              ProbeMessage = None
+    230 +              ProbeCron = None
+    231 +              ProbeIntervalMs = None }
+    232 +
+    233 +        let procClient =
+    234 +            FakeProcSupervisorClient(
+    235 +                (fun _ -> Task.FromException<ProcHostSnapshot>(AskTimeoutException("Timeout after 5.00 seconds"))),
+    236 +                (fun _ -> Task.FromException<ProcHostSnapshot option>(AskTimeoutException("Timeout after 5.00 seconds"))),
+    237 +                (fun () ->
+    238 +                    Task.FromResult(
+    239 +                        [ { ProcId = "host-list-fallback"
+    240 +                            Status = "running"
+    241 +                            ProcessId = Some 9041
+    242 +                            FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9041/user/fsi/supervisor"
+    243 +                            NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9041"
+    244 +                            LastProbeUtc = Some DateTime.UtcNow
+    245 +                            LastProbeOk = Some true
+    246 +                            ProbeFailures = 0
+    247 +                            Spec = Some spec
+    248 +                            LastError = None } ])))
+    249 +
+    250 +        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+    251 +
+    252 +        let! host = provisioning.CreateHost("agent-list-fallback", Net10Host, spec, requestedHostId = "host-list-fallback")
+    253 +
+    254 +        Assert.Equal(Ready, host.Status)
+    255 +        Assert.Equal(Some 9041, host.ProcId)
+    256 +        Assert.Equal(Some "akka.tcp://FsiExecutionSystem@localhost:9041/user/fsi/supervisor", host.Address)
+    257 +    }
+    258 +
+    259 +[<Fact>]
+    260  let ``SessionProvisioningService bootstraps missing session through backend execute`` () =
+
+• Edited tests/McpExecutionToolsTests.fs (+2 -4)
+    36                  "default-session",
+    37 -                "let routedExplicit = 77",
+    38 -                30
+    37 +                "let routedExplicit = 77"
+    38              )
+       ⋮
+    64                  "default-host",
+    66 -                "default-session",
+    67 -                30
+    65 +                "default-session"
+    66              )
+
+• Explored
+  └ Read Net10HostBackendTests.fs
+
+• Deleted tests/Net10HostBackendTests.fs (+0 -344)
+      1 -module Net10HostBackendTests
+      2 -
+      3 -open System
+      4 -open System.Threading.Tasks
+      5 -open Xunit
+      6 -open FSharp.MCP.DevKit.Core
+      7 -open FSharp.MCP.DevKit.Server.Backends
+      8 -open FSharp.MCP.DevKit.Server.ControlPlane
+      9 -open FSharp.MCP.DevKit.Server.Integration
+     10 -
+     11 -type private FakeProcSupervisorClient
+     12 -    (
+     13 -        infoFactory: string -> ProcHostSnapshot option,
+     14 -        ?restartFactory: string -> ProcHostSnapshot
+     15 -    ) =
+     16 -    let mutable restarted : string list = []
+     17 -    let restartFactory =
+     18 -        defaultArg
+     19 -            restartFactory
+     20 -            (fun procId ->
+     21 -                { ProcId = procId
+     22 -                  Status = "running"
+     23 -                  ProcessId = Some 8080
+     24 -                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:8110/user/fsi/supervisor"
+     25 -                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+     26 -                  LastProbeUtc = Some DateTime.UtcNow
+     27 -                  LastProbeOk = Some true
+     28 -                  ProbeFailures = 0
+     29 -                  Spec = None
+     30 -                  LastError = None })
+     31 -
+     32 -    member _.Restarted = List.rev restarted
+     33 -
+     34 -    interface IProcSupervisorClient with
+     35 -        member _.StartProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc is not used in this test."))
+     36 -        member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StopProc is not used in this test."))
+     37 -        member _.GetProcInfo(procId: string) = Task.FromResult(infoFactory procId)
+     38 -        member _.ListProcInfo() = Task.FromResult([])
+     39 -
+     40 -        member _.RestartProc(procId: string) =
+     41 -            restarted <- procId :: restarted
+     42 -            Task.FromResult(restartFactory procId)
+     43 -
+     44 -type private FakeFsiSupervisorClient
+     45 -    (
+     46 -        execFactory: HostRecord * FsiSupervisorExecRequest -> FsiSupervisorExecutionResult,
+     47 -        sessionFactory: HostRecord * string -> FsiSupervisorSessionSnapshot,
+     48 -        resetFactory: HostRecord * string -> FsiSupervisorResetResult,
+     49 -        ?listFactory: HostRecord -> FsiSupervisorSessionSnapshot list
+     50 -    ) =
+     51 -    let mutable executeRequests : (HostRecord * FsiSupervisorExecRequest) list = []
+     52 -    let mutable sessionRequests : (HostRecord * string) list = []
+     53 -    let mutable resetRequests : (HostRecord * string) list = []
+     54 -    let listFactory = defaultArg listFactory (fun _ -> [])
+     55 -
+     56 -    member _.ExecuteRequests = List.rev executeRequests
+     57 -    member _.SessionRequests = List.rev sessionRequests
+     58 -    member _.ResetRequests = List.rev resetRequests
+     59 -
+     60 -    interface IFsiSupervisorClient with
+     61 -        member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+     62 -            executeRequests <- (host, request) :: executeRequests
+     63 -            Task.FromResult(execFactory (host, request))
+     64 -
+     65 -        member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+     66 -            sessionRequests <- (host, sessionId) :: sessionRequests
+     67 -            Task.FromResult(sessionFactory (host, sessionId))
+     68 -
+     69 -        member _.ListSessions(host: HostRecord) = Task.FromResult(listFactory host)
+     70 -
+     71 -        member _.ResetSession(host: HostRecord, sessionId: string) =
+     72 -            resetRequests <- (host, sessionId) :: resetRequests
+     73 -            Task.FromResult(resetFactory (host, sessionId))
+     74 -
+     75 -let private createHostRegistry () =
+     76 -    let registry = InMemoryHostRegistry() :> IHostRegistry
+     77 -    let host =
+     78 -        { HostId = "net10-host-1"
+     79 -          AgentId = "agent-net10"
+     80 -          HostKind = Net10Host
+     81 -          BackendKind = Net10Remote
+     82 -          Status = Ready
+     83 -          Address = Some "akka.tcp://FsiExecutionSystem@localhost:8110/user/fsi/supervisor"
+     84 -          ProcId = Some 8080
+     85 -          CreatedAt = DateTime.UtcNow
+     86 -          LastHealthCheckAt = Some DateTime.UtcNow
+     87 -          LastError = None }
+     88 -
+     89 -    registry.Create(host) |> ignore
+     90 -    registry, host
+     91 -
+     92 -[<Fact>]
+     93 -let ``Net10HostBackend maps nuget and path operations into supervisor execution requests`` () =
+     94 -    task {
+     95 -        let hostRegistry, host = createHostRegistry ()
+     96 -
+     97 -        let fakeFsiClient =
+     98 -            FakeFsiSupervisorClient(
+     99 -                (fun (_, request) ->
+    100 -                    { SessionId = request.SessionId
+    101 -                      RawErrorType = None
+    102 -                      Result =
+    103 -                        { Output = request.Code
+    104 -                          Errors = ""
+    105 -                          IsSuccess = true
+    106 -                          ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+    107 -                          Diagnostics = [||]
+    108 -                          Value = None } }),
+    109 -                (fun (_, sessionId) ->
+    110 -                    { SessionId = sessionId
+    111 -                      Status = "ready"
+    112 -                      Refs = []
+    113 -                      Loads = []
+    114 -                      SearchPaths = []
+    115 -                      Variables = []
+    116 -                      LastCheckpointId = None
+    117 -                      RunningSinceUtc = Some DateTime.UtcNow }),
+    118 -                (fun (_, sessionId) ->
+    119 -                    { SessionId = sessionId
+    120 -                      Existed = true
+    121 -                      Status = "reset" })
+    122 -            )
+    123 -
+    124 -        let fakeProcClient =
+    125 -            FakeProcSupervisorClient(fun _ ->
+    126 -                Some
+    127 -                    { ProcId = host.HostId
+    128 -                      Status = "running"
+    129 -                      ProcessId = host.ProcId
+    130 -                      FsiSupervisorPath = host.Address
+    131 -                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    132 -                      LastProbeUtc = Some DateTime.UtcNow
+    133 -                      LastProbeOk = Some true
+    134 -                      ProbeFailures = 0
+    135 -                      Spec = None
+    136 -                      LastError = None })
+    137 -
+    138 -        let backend =
+    139 -            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    140 -            :> IFsiExecutionBackend
+    141 -
+    142 -        let route =
+    143 -            { AgentId = "agent-net10"
+    144 -              HostId = host.HostId
+    145 -              SessionId = "session-a" }
+    146 -
+    147 -        let! _ =
+    148 -            backend.Execute(
+    149 -                { RequestId = "req-nuget"
+    150 -                  Route = route
+    151 -                  OperationKind = ReferenceNuget
+    152 -                  Payload = "Newtonsoft.Json, 13.0.3"
+    153 -                  Timeout = Some(TimeSpan.FromSeconds 30.0)
+    154 -                  UsePackageTargets = None }
+    155 -            )
+    156 -
+    157 -        let! _ =
+    158 -            backend.Execute(
+    159 -                { RequestId = "req-path"
+    160 -                  Route = route
+    161 -                  OperationKind = AddSearchPath
+    162 -                  Payload = "/workspace/libs"
+    163 -                  Timeout = Some(TimeSpan.FromSeconds 30.0)
+    164 -                  UsePackageTargets = None }
+    165 -            )
+    166 -
+    167 -        let requests = fakeFsiClient.ExecuteRequests
+    168 -        let nugetRequest = requests |> List.find (fun (_, request) -> request.RequestId = "req-nuget") |> snd
+    169 -        let pathRequest = requests |> List.find (fun (_, request) -> request.RequestId = "req-path") |> snd
+    170 -
+    171 -        Assert.Equal("#r \"nuget: Newtonsoft.Json, 13.0.3\"", nugetRequest.Code)
+    172 -        Assert.Equal("#I \"/workspace/libs\"", pathRequest.Code)
+    173 -        Assert.Equal("session-a", nugetRequest.SessionId)
+    174 -    }
+    175 -
+    176 -[<Fact>]
+    177 -let ``Net10HostBackend maps session snapshot into SessionRecord`` () =
+    178 -    task {
+    179 -        let hostRegistry, host = createHostRegistry ()
+    180 -
+    181 -        let fakeFsiClient =
+    182 -            FakeFsiSupervisorClient(
+    183 -                (fun (_, request) ->
+    184 -                    { SessionId = request.SessionId
+    185 -                      RawErrorType = None
+    186 -                      Result = FsiResult.empty }),
+    187 -                (fun (_, sessionId) ->
+    188 -                    { SessionId = sessionId
+    189 -                      Status = "busy"
+    190 -                      Refs = [ "a.dll" ]
+    191 -                      Loads = [ "boot.fsx" ]
+    192 -                      SearchPaths = [ "/tmp" ]
+    193 -                      Variables = [ "value", "int" ]
+    194 -                      LastCheckpointId = Some "cp-1"
+    195 -                      RunningSinceUtc = Some DateTime.UtcNow }),
+    196 -                (fun (_, sessionId) ->
+    197 -                    { SessionId = sessionId
+    198 -                      Existed = true
+    199 -                      Status = "reset" })
+    200 -            )
+    201 -
+    202 -        let fakeProcClient =
+    203 -            FakeProcSupervisorClient(fun _ ->
+    204 -                Some
+    205 -                    { ProcId = host.HostId
+    206 -                      Status = "running"
+    207 -                      ProcessId = host.ProcId
+    208 -                      FsiSupervisorPath = host.Address
+    209 -                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    210 -                      LastProbeUtc = Some DateTime.UtcNow
+    211 -                      LastProbeOk = Some true
+    212 -                      ProbeFailures = 0
+    213 -                      Spec = None
+    214 -                      LastError = None })
+    215 -
+    216 -        let backend =
+    217 -            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    218 -            :> IFsiExecutionBackend
+    219 -
+    220 -        let route =
+    221 -            { AgentId = "agent-net10"
+    222 -              HostId = host.HostId
+    223 -              SessionId = "session-b" }
+    224 -
+    225 -        let! state = backend.GetSessionState(route)
+    226 -
+    227 -        Assert.Equal(SessionBusy, state.Status)
+    228 -        Assert.Contains("a.dll", state.Refs)
+    229 -        Assert.Contains("/tmp", state.SearchPaths)
+    230 -        Assert.Equal(Some "cp-1", state.LastCheckpointId)
+    231 -    }
+    232 -
+    233 -[<Fact>]
+    234 -let ``Net10HostBackend health check and restart delegate to ProcSupervisor`` () =
+    235 -    task {
+    236 -        let hostRegistry, host = createHostRegistry ()
+    237 -
+    238 -        let fakeFsiClient =
+    239 -            FakeFsiSupervisorClient(
+    240 -                (fun (_, request) ->
+    241 -                    { SessionId = request.SessionId
+    242 -                      RawErrorType = None
+    243 -                      Result = FsiResult.empty }),
+    244 -                (fun (_, sessionId) ->
+    245 -                    { SessionId = sessionId
+    246 -                      Status = "ready"
+    247 -                      Refs = []
+    248 -                      Loads = []
+    249 -                      SearchPaths = []
+    250 -                      Variables = []
+    251 -                      LastCheckpointId = None
+    252 -                      RunningSinceUtc = Some DateTime.UtcNow }),
+    253 -                (fun (_, sessionId) ->
+    254 -                    { SessionId = sessionId
+    255 -                      Existed = true
+    256 -                      Status = "reset" })
+    257 -            )
+    258 -
+    259 -        let fakeProcClient =
+    260 -            FakeProcSupervisorClient(fun _ ->
+    261 -                Some
+    262 -                    { ProcId = host.HostId
+    263 -                      Status = "running"
+    264 -                      ProcessId = host.ProcId
+    265 -                      FsiSupervisorPath = host.Address
+    266 -                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    267 -                      LastProbeUtc = Some DateTime.UtcNow
+    268 -                      LastProbeOk = Some true
+    269 -                      ProbeFailures = 0
+    270 -                      Spec = None
+    271 -                      LastError = None })
+    272 -
+    273 -        let backend =
+    274 -            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    275 -            :> IFsiExecutionBackend
+    276 -
+    277 -        do! backend.RestartHost(host)
+    278 -        let! health = backend.HealthCheck(host)
+    279 -
+    280 -        Assert.Contains(host.HostId, fakeProcClient.Restarted)
+    281 -        Assert.True(health.IsAvailable)
+    282 -        Assert.Equal(Some host.HostId, health.HostId)
+    283 -    }
+    284 -
+    285 -[<Fact>]
+    286 -let ``Net10HostBackend reset session delegates to supervisor and returns success record`` () =
+    287 -    task {
+    288 -        let hostRegistry, host = createHostRegistry ()
+    289 -
+    290 -        let fakeFsiClient =
+    291 -            FakeFsiSupervisorClient(
+    292 -                (fun (_, request) ->
+    293 -                    { SessionId = request.SessionId
+    294 -                      RawErrorType = None
+    295 -                      Result = FsiResult.empty }),
+    296 -                (fun (_, sessionId) ->
+    297 -                    { SessionId = sessionId
+    298 -                      Status = "ready"
+    299 -                      Refs = []
+    300 -                      Loads = []
+    301 -                      SearchPaths = []
+    302 -                      Variables = []
+    303 -                      LastCheckpointId = None
+    304 -                      RunningSinceUtc = Some DateTime.UtcNow }),
+    305 -                (fun (_, sessionId) ->
+    306 -                    { SessionId = sessionId
+    307 -                      Existed = true
+    308 -                      Status = "reset" })
+    309 -            )
+    310 -
+    311 -        let fakeProcClient =
+    312 -            FakeProcSupervisorClient(fun _ ->
+    313 -                Some
+    314 -                    { ProcId = host.HostId
+    315 -                      Status = "running"
+    316 -                      ProcessId = host.ProcId
+    317 -                      FsiSupervisorPath = host.Address
+    318 -                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    319 -                      LastProbeUtc = Some DateTime.UtcNow
+    320 -                      LastProbeOk = Some true
+    321 -                      ProbeFailures = 0
+    322 -                      Spec = None
+    323 -                      LastError = None })
+    324 -
+    325 -        let backend =
+    326 -            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    327 -            :> IFsiExecutionBackend
+    328 -
+    329 -        let route =
+    330 -            { AgentId = "agent-net10"
+    331 -              HostId = host.HostId
+    332 -              SessionId = "session-reset" }
+    333 -
+    334 -        let! result = backend.ResetSession(route)
+    335 -
+    336 -        Assert.True(result.Result.IsSuccess)
+    337 -        Assert.Equal("FSI session reset", result.Result.Output)
+    338 -        Assert.Equal(Some "reset", result.Result.Value)
+    339 -        Assert.Equal(route.SessionId, result.SessionId)
+    340 -        let resetRequests = fakeFsiClient.ResetRequests |> List.toArray
+    341 -        Assert.Single(resetRequests) |> ignore
+    342 -        Assert.Equal(host.HostId, fst resetRequests.[0] |> fun value -> value.HostId)
+    343 -        Assert.Equal(route.SessionId, snd resetRequests.[0])
+    344 -    }
+
+• Added tests/Net10HostBackendTests.fs (+403 -0)
+      1 +module Net10HostBackendTests
+      2 +
+      3 +open System
+      4 +open System.Threading.Tasks
+      5 +open Xunit
+      6 +open FSharp.MCP.DevKit.Core
+      7 +open FSharp.MCP.DevKit.Server.Backends
+      8 +open FSharp.MCP.DevKit.Server.ControlPlane
+      9 +open FSharp.MCP.DevKit.Server.Integration
+     10 +
+     11 +type private FakeProcSupervisorClient
+     12 +    (
+     13 +        infoFactory: string -> Task<ProcHostSnapshot option>,
+     14 +        ?listFactory: unit -> Task<ProcHostSnapshot list>,
+     15 +        ?restartFactory: string -> ProcHostSnapshot
+     16 +    ) =
+     17 +    let mutable restarted : string list = []
+     18 +    let listFactory = defaultArg listFactory (fun () -> Task.FromResult([]))
+     19 +
+     20 +    let restartFactory =
+     21 +        defaultArg
+     22 +            restartFactory
+     23 +            (fun procId ->
+     24 +                { ProcId = procId
+     25 +                  Status = "running"
+     26 +                  ProcessId = Some 8080
+     27 +                  FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:8110/user/fsi/supervisor"
+     28 +                  NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+     29 +                  LastProbeUtc = Some DateTime.UtcNow
+     30 +                  LastProbeOk = Some true
+     31 +                  ProbeFailures = 0
+     32 +                  Spec = None
+     33 +                  LastError = None })
+     34 +
+     35 +    member _.Restarted = List.rev restarted
+     36 +
+     37 +    interface IProcSupervisorClient with
+     38 +        member _.StartProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc is not used in this test."))
+     39 +        member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("StopProc is not used in this test."))
+     40 +        member _.GetProcInfo(procId: string) = infoFactory procId
+     41 +        member _.ListProcInfo() = listFactory ()
+     42 +
+     43 +        member _.RestartProc(procId: string) =
+     44 +            restarted <- procId :: restarted
+     45 +            Task.FromResult(restartFactory procId)
+     46 +
+     47 +type private FakeFsiSupervisorClient
+     48 +    (
+     49 +        execFactory: HostRecord * FsiSupervisorExecRequest -> FsiSupervisorExecutionResult,
+     50 +        sessionFactory: HostRecord * string -> FsiSupervisorSessionSnapshot,
+     51 +        resetFactory: HostRecord * string -> FsiSupervisorResetResult,
+     52 +        ?listFactory: HostRecord -> FsiSupervisorSessionSnapshot list
+     53 +    ) =
+     54 +    let mutable executeRequests : (HostRecord * FsiSupervisorExecRequest) list = []
+     55 +    let mutable sessionRequests : (HostRecord * string) list = []
+     56 +    let mutable resetRequests : (HostRecord * string) list = []
+     57 +    let listFactory = defaultArg listFactory (fun _ -> [])
+     58 +
+     59 +    member _.ExecuteRequests = List.rev executeRequests
+     60 +    member _.SessionRequests = List.rev sessionRequests
+     61 +    member _.ResetRequests = List.rev resetRequests
+     62 +
+     63 +    interface IFsiSupervisorClient with
+     64 +        member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+     65 +            executeRequests <- (host, request) :: executeRequests
+     66 +            Task.FromResult(execFactory (host, request))
+     67 +
+     68 +        member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+     69 +            sessionRequests <- (host, sessionId) :: sessionRequests
+     70 +            Task.FromResult(sessionFactory (host, sessionId))
+     71 +
+     72 +        member _.ListSessions(host: HostRecord) = Task.FromResult(listFactory host)
+     73 +
+     74 +        member _.ResetSession(host: HostRecord, sessionId: string) =
+     75 +            resetRequests <- (host, sessionId) :: resetRequests
+     76 +            Task.FromResult(resetFactory (host, sessionId))
+     77 +
+     78 +let private createHostRegistry () =
+     79 +    let registry = InMemoryHostRegistry() :> IHostRegistry
+     80 +    let host =
+     81 +        { HostId = "net10-host-1"
+     82 +          AgentId = "agent-net10"
+     83 +          HostKind = Net10Host
+     84 +          BackendKind = Net10Remote
+     85 +          Status = Ready
+     86 +          Address = Some "akka.tcp://FsiExecutionSystem@localhost:8110/user/fsi/supervisor"
+     87 +          ProcId = Some 8080
+     88 +          CreatedAt = DateTime.UtcNow
+     89 +          LastHealthCheckAt = Some DateTime.UtcNow
+     90 +          LastError = None }
+     91 +
+     92 +    registry.Create(host) |> ignore
+     93 +    registry, host
+     94 +
+     95 +[<Fact>]
+     96 +let ``Net10HostBackend maps nuget and path operations into supervisor execution requests`` () =
+     97 +    task {
+     98 +        let hostRegistry, host = createHostRegistry ()
+     99 +
+    100 +        let fakeFsiClient =
+    101 +            FakeFsiSupervisorClient(
+    102 +                (fun (_, request) ->
+    103 +                    { SessionId = request.SessionId
+    104 +                      RawErrorType = None
+    105 +                      Result =
+    106 +                        { Output = request.Code
+    107 +                          Errors = ""
+    108 +                          IsSuccess = true
+    109 +                          ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+    110 +                          Diagnostics = [||]
+    111 +                          Value = None } }),
+    112 +                (fun (_, sessionId) ->
+    113 +                    { SessionId = sessionId
+    114 +                      Status = "ready"
+    115 +                      Refs = []
+    116 +                      Loads = []
+    117 +                      SearchPaths = []
+    118 +                      Variables = []
+    119 +                      LastCheckpointId = None
+    120 +                      RunningSinceUtc = Some DateTime.UtcNow }),
+    121 +                (fun (_, sessionId) ->
+    122 +                    { SessionId = sessionId
+    123 +                      Existed = true
+    124 +                      Status = "reset" })
+    125 +            )
+    126 +
+    127 +        let fakeProcClient =
+    128 +            FakeProcSupervisorClient(fun _ ->
+    129 +                Task.FromResult(
+    130 +                    Some
+    131 +                        { ProcId = host.HostId
+    132 +                          Status = "running"
+    133 +                          ProcessId = host.ProcId
+    134 +                          FsiSupervisorPath = host.Address
+    135 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    136 +                          LastProbeUtc = Some DateTime.UtcNow
+    137 +                          LastProbeOk = Some true
+    138 +                          ProbeFailures = 0
+    139 +                          Spec = None
+    140 +                          LastError = None }))
+    141 +
+    142 +        let backend =
+    143 +            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    144 +            :> IFsiExecutionBackend
+    145 +
+    146 +        let route =
+    147 +            { AgentId = "agent-net10"
+    148 +              HostId = host.HostId
+    149 +              SessionId = "session-a" }
+    150 +
+    151 +        let! _ =
+    152 +            backend.Execute(
+    153 +                { RequestId = "req-nuget"
+    154 +                  Route = route
+    155 +                  OperationKind = ReferenceNuget
+    156 +                  Payload = "Newtonsoft.Json, 13.0.3"
+    157 +                  Timeout = Some(TimeSpan.FromSeconds 30.0)
+    158 +                  UsePackageTargets = None }
+    159 +            )
+    160 +
+    161 +        let! _ =
+    162 +            backend.Execute(
+    163 +                { RequestId = "req-path"
+    164 +                  Route = route
+    165 +                  OperationKind = AddSearchPath
+    166 +                  Payload = "/workspace/libs"
+    167 +                  Timeout = Some(TimeSpan.FromSeconds 30.0)
+    168 +                  UsePackageTargets = None }
+    169 +            )
+    170 +
+    171 +        let requests = fakeFsiClient.ExecuteRequests
+    172 +        let nugetRequest = requests |> List.find (fun (_, request) -> request.RequestId = "req-nuget") |> snd
+    173 +        let pathRequest = requests |> List.find (fun (_, request) -> request.RequestId = "req-path") |> snd
+    174 +
+    175 +        Assert.Equal("#r \"nuget: Newtonsoft.Json, 13.0.3\"", nugetRequest.Code)
+    176 +        Assert.Equal("#I \"/workspace/libs\"", pathRequest.Code)
+    177 +        Assert.Equal("session-a", nugetRequest.SessionId)
+    178 +    }
+    179 +
+    180 +[<Fact>]
+    181 +let ``Net10HostBackend maps session snapshot into SessionRecord`` () =
+    182 +    task {
+    183 +        let hostRegistry, host = createHostRegistry ()
+    184 +
+    185 +        let fakeFsiClient =
+    186 +            FakeFsiSupervisorClient(
+    187 +                (fun (_, request) ->
+    188 +                    { SessionId = request.SessionId
+    189 +                      RawErrorType = None
+    190 +                      Result = FsiResult.empty }),
+    191 +                (fun (_, sessionId) ->
+    192 +                    { SessionId = sessionId
+    193 +                      Status = "busy"
+    194 +                      Refs = [ "a.dll" ]
+    195 +                      Loads = [ "boot.fsx" ]
+    196 +                      SearchPaths = [ "/tmp" ]
+    197 +                      Variables = [ "value", "int" ]
+    198 +                      LastCheckpointId = Some "cp-1"
+    199 +                      RunningSinceUtc = Some DateTime.UtcNow }),
+    200 +                (fun (_, sessionId) ->
+    201 +                    { SessionId = sessionId
+    202 +                      Existed = true
+    203 +                      Status = "reset" })
+    204 +            )
+    205 +
+    206 +        let fakeProcClient =
+    207 +            FakeProcSupervisorClient(fun _ ->
+    208 +                Task.FromResult(
+    209 +                    Some
+    210 +                        { ProcId = host.HostId
+    211 +                          Status = "running"
+    212 +                          ProcessId = host.ProcId
+    213 +                          FsiSupervisorPath = host.Address
+    214 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    215 +                          LastProbeUtc = Some DateTime.UtcNow
+    216 +                          LastProbeOk = Some true
+    217 +                          ProbeFailures = 0
+    218 +                          Spec = None
+    219 +                          LastError = None }))
+    220 +
+    221 +        let backend =
+    222 +            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    223 +            :> IFsiExecutionBackend
+    224 +
+    225 +        let route =
+    226 +            { AgentId = "agent-net10"
+    227 +              HostId = host.HostId
+    228 +              SessionId = "session-b" }
+    229 +
+    230 +        let! state = backend.GetSessionState(route)
+    231 +
+    232 +        Assert.Equal(SessionBusy, state.Status)
+    233 +        Assert.Contains("a.dll", state.Refs)
+    234 +        Assert.Contains("/tmp", state.SearchPaths)
+    235 +        Assert.Equal(Some "cp-1", state.LastCheckpointId)
+    236 +    }
+    237 +
+    238 +[<Fact>]
+    239 +let ``Net10HostBackend health check and restart delegate to ProcSupervisor`` () =
+    240 +    task {
+    241 +        let hostRegistry, host = createHostRegistry ()
+    242 +
+    243 +        let fakeFsiClient =
+    244 +            FakeFsiSupervisorClient(
+    245 +                (fun (_, request) ->
+    246 +                    { SessionId = request.SessionId
+    247 +                      RawErrorType = None
+    248 +                      Result = FsiResult.empty }),
+    249 +                (fun (_, sessionId) ->
+    250 +                    { SessionId = sessionId
+    251 +                      Status = "ready"
+    252 +                      Refs = []
+    253 +                      Loads = []
+    254 +                      SearchPaths = []
+    255 +                      Variables = []
+    256 +                      LastCheckpointId = None
+    257 +                      RunningSinceUtc = Some DateTime.UtcNow }),
+    258 +                (fun (_, sessionId) ->
+    259 +                    { SessionId = sessionId
+    260 +                      Existed = true
+    261 +                      Status = "reset" })
+    262 +            )
+    263 +
+    264 +        let fakeProcClient =
+    265 +            FakeProcSupervisorClient(fun _ ->
+    266 +                Task.FromResult(
+    267 +                    Some
+    268 +                        { ProcId = host.HostId
+    269 +                          Status = "running"
+    270 +                          ProcessId = host.ProcId
+    271 +                          FsiSupervisorPath = host.Address
+    272 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    273 +                          LastProbeUtc = Some DateTime.UtcNow
+    274 +                          LastProbeOk = Some true
+    275 +                          ProbeFailures = 0
+    276 +                          Spec = None
+    277 +                          LastError = None }))
+    278 +
+    279 +        let backend =
+    280 +            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    281 +            :> IFsiExecutionBackend
+    282 +
+    283 +        do! backend.RestartHost(host)
+    284 +        let! health = backend.HealthCheck(host)
+    285 +
+    286 +        Assert.Contains(host.HostId, fakeProcClient.Restarted)
+    287 +        Assert.True(health.IsAvailable)
+    288 +        Assert.Equal(Some host.HostId, health.HostId)
+    289 +    }
+    290 +
+    291 +[<Fact>]
+    292 +let ``Net10HostBackend health check falls back to ListProcInfo when direct lookup times out`` () =
+    293 +    task {
+    294 +        let hostRegistry, host = createHostRegistry ()
+    295 +
+    296 +        let fakeFsiClient =
+    297 +            FakeFsiSupervisorClient(
+    298 +                (fun (_, request) ->
+    299 +                    { SessionId = request.SessionId
+    300 +                      RawErrorType = None
+    301 +                      Result = FsiResult.empty }),
+    302 +                (fun (_, sessionId) ->
+    303 +                    { SessionId = sessionId
+    304 +                      Status = "ready"
+    305 +                      Refs = []
+    306 +                      Loads = []
+    307 +                      SearchPaths = []
+    308 +                      Variables = []
+    309 +                      LastCheckpointId = None
+    310 +                      RunningSinceUtc = Some DateTime.UtcNow }),
+    311 +                (fun (_, sessionId) ->
+    312 +                    { SessionId = sessionId
+    313 +                      Existed = true
+    314 +                      Status = "reset" })
+    315 +            )
+    316 +
+    317 +        let fakeProcClient =
+    318 +            FakeProcSupervisorClient(
+    319 +                (fun _ -> Task.FromException<ProcHostSnapshot option>(Akka.Actor.AskTimeoutException("Timeout after 5.00 seconds"))),
+    320 +                (fun () ->
+    321 +                    Task.FromResult(
+    322 +                        [ { ProcId = host.HostId
+    323 +                            Status = "running"
+    324 +                            ProcessId = host.ProcId
+    325 +                            FsiSupervisorPath = host.Address
+    326 +                            NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    327 +                            LastProbeUtc = Some DateTime.UtcNow
+    328 +                            LastProbeOk = Some true
+    329 +                            ProbeFailures = 0
+    330 +                            Spec = None
+    331 +                            LastError = Some "healthy via list" } ])))
+    332 +
+    333 +        let backend =
+    334 +            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    335 +            :> IFsiExecutionBackend
+    336 +
+    337 +        let! health = backend.HealthCheck(host)
+    338 +
+    339 +        Assert.True(health.IsAvailable)
+    340 +        Assert.Equal(Some "healthy via list", health.Message)
+    341 +    }
+    342 +
+    343 +[<Fact>]
+    344 +let ``Net10HostBackend reset session delegates to supervisor and returns success record`` () =
+    345 +    task {
+    346 +        let hostRegistry, host = createHostRegistry ()
+    347 +
+    348 +        let fakeFsiClient =
+    349 +            FakeFsiSupervisorClient(
+    350 +                (fun (_, request) ->
+    351 +                    { SessionId = request.SessionId
+    352 +                      RawErrorType = None
+    353 +                      Result = FsiResult.empty }),
+    354 +                (fun (_, sessionId) ->
+    355 +                    { SessionId = sessionId
+    356 +                      Status = "ready"
+    357 +                      Refs = []
+    358 +                      Loads = []
+    359 +                      SearchPaths = []
+    360 +                      Variables = []
+    361 +                      LastCheckpointId = None
+    362 +                      RunningSinceUtc = Some DateTime.UtcNow }),
+    363 +                (fun (_, sessionId) ->
+    364 +                    { SessionId = sessionId
+    365 +                      Existed = true
+    366 +                      Status = "reset" })
+    367 +            )
+    368 +
+    369 +        let fakeProcClient =
+    370 +            FakeProcSupervisorClient(fun _ ->
+    371 +                Task.FromResult(
+    372 +                    Some
+    373 +                        { ProcId = host.HostId
+    374 +                          Status = "running"
+    375 +                          ProcessId = host.ProcId
+    376 +                          FsiSupervisorPath = host.Address
+    377 +                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+    378 +                          LastProbeUtc = Some DateTime.UtcNow
+    379 +                          LastProbeOk = Some true
+    380 +                          ProbeFailures = 0
+    381 +                          Spec = None
+    382 +                          LastError = None }))
+    383 +
+    384 +        let backend =
+    385 +            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+    386 +            :> IFsiExecutionBackend
+    387 +
+    388 +        let route =
+    389 +            { AgentId = "agent-net10"
+    390 +              HostId = host.HostId
+    391 +              SessionId = "session-reset" }
+    392 +
+    393 +        let! result = backend.ResetSession(route)
+    394 +
+    395 +        Assert.True(result.Result.IsSuccess)
+    396 +        Assert.Equal("FSI session reset", result.Result.Output)
+    397 +        Assert.Equal(Some "reset", result.Result.Value)
+    398 +        Assert.Equal(route.SessionId, result.SessionId)
+    399 +        let resetRequests = fakeFsiClient.ResetRequests |> List.toArray
+    400 +        Assert.Single(resetRequests) |> ignore
+    401 +        Assert.Equal(host.HostId, fst resetRequests.[0] |> fun value -> value.HostId)
+    402 +        Assert.Equal(route.SessionId, snd resetRequests.[0])
+    403 +    }
+
+─ Worked for 4m 18s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 碼已補完。現在先跑 targeted tests，確認 fallback 與 routed CLR optional 都綠，再決定要不要小修。
+
+• Waited for background terminal · cd /workspace/home/mcp/FSharp.MCP.DevKit && dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter
+"FullyQualifiedName~ProvisioningServicesTests|FullyQualifiedName~Net10HostBackendTests|FullyQualifiedName~McpExecutionToolsTests" -m:1
+
+• Ran cd /workspace/home/mcp/FSharp.MCP.DevKit && dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --filter "FullyQualifiedName~ProvisioningServicesTests|
+  │ FullyQualifiedName~Net10HostBackendTests|FullyQualifiedName~McpExecutionToolsTests" -m:1
+  └   Determining projects to restore...
+    /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    … +54 lines
+      Run tests: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+      Tests succeeded: '/workspace/home/mcp/FSharp.MCP.DevKit/tests/bin/Debug/net10.0/FSharp.MCP.DevKit.Tests.dll' [net10.0|arm64]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地 targeted tests 已過。接下來我先把這輪診斷與修正補進 DevLog/log，然後直接在 host 跑 build.host.sh 重部署，再用 live MCP fresh host/session 重驗。
+
+• Ran printf '%s
+  │ ' '[2026-03-26T17:43:00Z] local targeted tests passed' '[結論] ProvisioningServices GetProcInfo->ListProcInfo fallback、Net10HostBackend health fallback、
+  │ McpExecutionTools routed CLR optional timeout 均已通過 targeted tests。下一步重部署並驗 live MCP fresh host/session。' | tee -a /workspace/home/mcp/FSharp.MCP.DevKit/
+  │ … +1 lines
+  └ (no output)
+
+• Explored
+  └ Read DevLog.md
+
+• Edited doc/DevLog.md (+25 -0)
+    546  - Conclusion: the previous dgx.11 local package payload was stale; host docker rebuilds needed the corrected local package bits before live address-propagation valid
+         ation meant anything.
+    547 +
+    548 +## 2026-03-26 17:43 UTC MCP Host Provisioning Timeout Recovery
+    549 +
+    550 +- Live deployment diagnostics showed a split between two ProcSupervisor query paths:
+    551 +  - `StartProc` / `GetProcInfo` go through the sharding region and could throw `AskTimeoutException`.
+    552 +  - `ListProcInfo` goes to the registry-backed aggregate view and already showed the new proc snapshots while MCP tools were still returning generic host/probe error
+         s.
+    553 +- Concrete symptom:
+    554 +  - `create_fsi_host` timed out even though `/api/proc/nodes` already contained the new host proc id with `running` status.
+    555 +  - `get_fsi_host_health` also timed out on direct `GetProcInfo`.
+    556 +- Fixes applied in `FSharp.MCP.DevKit`:
+    557 +  - `HostProvisioningService` now resolves host snapshots through:
+    558 +    - `GetProcInfo(hostId)` first
+    559 +    - fallback to `ListProcInfo() |> find ProcId = hostId` on timeout or missing snapshot
+    560 +  - `Net10HostBackend.HealthCheck` uses the same fallback path.
+    561 +- Separate MCP tool-surface fix:
+    562 +  - routed execution tools in `McpExecutionTools` still used F# optional parameters (`?timeoutSeconds`) and the MCP reflection binder treated omitted values as requi
+         red arguments.
+    563 +  - those methods were changed to CLR optional/default-value parameters so the HTTP MCP surface can omit `timeoutSeconds`.
+    564 +- Local verification:
+    565 +  - targeted tests for:
+    566 +    - `ProvisioningServicesTests`
+    567 +    - `Net10HostBackendTests`
+    568 +    - `McpExecutionToolsTests`
+    569 +    all passed after the fallback and binder changes.
+    570 +- Operational conclusion:
+    571 +  - once runtime/procnode execution had been proven healthy, the remaining `create_fsi_host` / `get_fsi_host_health` failures were orchestration-level timeout handli
+         ng defects, not remote FSI capability defects.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這輪修正已落地並寫進 DevLog。先 commit/push，再直接在 host 跑 build.host.sh，避免用未提交狀態部署。
+
+• Ran cd /workspace/home/mcp/FSharp.MCP.DevKit && git status --short && git add src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs src/
+  │ FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs tests/ProvisioningServicesTests.fs tests/
+  │ Net10HostBackendTests.fs tests/McpExecutionToolsTests.fs doc/DevLog.md log/20260326160750.mcp-agent-iteration.00001.00001.log
+  │ … +1 lines
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       a4e4106..cd1e31d  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地修正已推上 branch。現在直接在 host 跑 build.host.sh 重部署；如果 sudo/環境卡住，我就改成分步在 host 執行。
+
+• Waited for background terminal · ssh sa@10.28.112.140 'cd /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit && bash build.host.sh'
+
+• Ran ssh sa@10.28.112.140 'cd /home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit && bash build.host.sh'
+  └ sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+    sudo: a password is required
+    … +132 lines
+    sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper
+    sudo: a password is required
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• build.host.sh 在 host 上卡在 sudo 安裝 service，不是 build 本身。image 已建好，我先直接在 host 上用同樣參數手動替換 fsharp-mcp-devkit container，確保先跑到新 image 再驗
+  live MCP。
+
+• Waited for background terminal · ssh sa@10.28.112.140 '
+set -e
+HOST_IP="${FSDEVKIT_HOST_IP:-$(hostname -I | awk "{print \$1}")}";
+echo HOST_IP=$HOST_IP;
+docker rm -f fsharp-mcp-devkit >/dev/null 2>&1 || true;
+docker run -d --name fsharp-mcp-devkit \
+  --network host \
+  -e ASPNETCORE_URLS=http://0.0.0.0:15000 \
+  -e MCP_ENABLE_STDIO=false \
+  -e FSI_ENABLE_REMOTE_CLIENT=true \
+  -e FSI_ENABLE_PROC_SUPERVISOR=true \
+  -e FSI_PROC_SUPERVISOR_HOST=$HOST_IP \
+  -e FSI_PROC_SUPERVISOR_PORT=8110 \
+  -e FSI_PROC_SUPERVISOR_WEB_HOST=$HOST_IP \
+  -e FSI_PROC_SUPERVISOR_WEB_PORT=6001 \
+  -e FSI_PROC_SUPERVISOR_SYSTEM_NAME=proc-system \
+  -e FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@$HOST_IP:8110/user/proc-supervisor \
+  -v /home/sa/gemini4:/gemini4:ro \
+  -v /home/sa/gemini4/devkit_workspace/:/workspace \
+  fsharp-mcp-devkit:ai-v0.6.2;
+sleep 5;
+docker ps --filter name=^/fsharp-mcp-devkit$;
+'
+
+• Ran ssh sa@10.28.112.140 '
+  │ set -e
+  │ HOST_IP="${FSDEVKIT_HOST_IP:-$(hostname -I | awk "{print \$1}")}";
+  │ … +20 lines
+  └ HOST_IP=10.28.112.140
+    1ba5c0539f13711f3e677c963f8ad7b2da1875e2c5528ec5777436e7097f65ee
+    CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 新 container 沒活著。我先直接抓 docker ps -a 和 docker logs 看為什麼退出，再決定是修碼還是只是啟動參數問題。
+
+• Ran ssh sa@10.28.112.140 'docker ps -a --filter name=^/fsharp-mcp-devkit$ && echo --- && docker logs fsharp-mcp-devkit --tail 200'
+  └ CONTAINER ID   IMAGE                         COMMAND                CREATED         STATUS         PORTS     NAMES
+    537d4942a7af   fsharp-mcp-devkit:ai-v0.6.2   "/app/entrypoint.sh"   4 seconds ago   Up 4 seconds             fsharp-mcp-devkit
+    … +63 lines
+    info: Microsoft.Hosting.Lifetime[0]
+          Content root path: /app
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 容器已用新 image 起來，proc-supervisor 和 ASP.NET 都正常。現在我直接走 live MCP tool path：create_fsi_host、create_fsi_session、routed execute/evaluate，而且刻意省略
+  probeMessage/probeIntervalMs/timeoutSeconds 驗 binder 和 fallback。
+
+• Explored
+  └ Search create_fsi_host|callTool|tools/call|McpClientHarness|JsonRpc|mcp in FSharp.MCP.DevKit
+    List examples
+    Read McpClientHarness.fs, Program.fs
+    Search createHttp|http://10.28.112.140:15000|ListToolsAsync|CallToolTextAsync\( in tests
+    Read McpClientHarness.fs, McpClientTestHelpers.fs, McpClientSmokeTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在直接用 McpClientHarness.createHttpClientAsync 連 live http://10.28.112.140:15000/mcp，用真正的 MCP tool path 驗 create_fsi_host/create_fsi_session/routed execute/eva
+  luate，而且刻意省略 probeMessage/probeIntervalMs/timeoutSeconds。
+
+• Ran cat > /tmp/live_mcp_verify.fsx <<'EOF'
+  │ #I "/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0"
+  │ #I "/workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/net10.0"
+  │ … +117 lines
+  └
+
+    … +7 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我直接改用實際輸出檔 FSharp.MCP.DevKit.dll 重跑 live MCP 驗證腳本，不走別的路。
+
+• Ran perl -0pi -e 's/FSharp\.MCP\.DevKit\.Server\.dll/FSharp.MCP.DevKit.dll/g' /tmp/live_mcp_verify.fsx
+  │ cd /workspace/home/mcp/FSharp.MCP.DevKit && dotnet fsi /tmp/live_mcp_verify.fsx
+  └
+
+    /tmp/live_mcp_verify.fsx(12,24): error FS0039: The namespace 'Core' is not defined.
+
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/live_mcp_verify.fsx')
+  │ … +5 lines
+  └
+
+    /tmp/live_mcp_verify.fsx(43,82): error FS0074: The type referenced through 'Microsoft.Extensions.Logging.ILoggerFactory' is defined in an assembly that is not referenced.
+    You must add a reference to assembly 'Microsoft.Extensions.Logging.Abstractions'.
+
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• FSI 少了 host 端依賴，我直接補輸出目錄裡的 logging assembly 參考，繼續同一支 live MCP 腳本。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/live_mcp_verify.fsx')
+  │ … +7 lines
+  └
+
+    … +7 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+• Explored
+  └ Search Microsoft.Extensions.Logging.Abstractions.dll in FSharp.MCP.DevKit
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/live_mcp_verify.fsx')
+  │ … +5 lines
+  └
+
+    /tmp/live_mcp_verify.fsx(114,9): error FS0750: This construct may only be used within computation expressions
+
+
+• Waited for background terminal
+
+• Waited for background terminal · python - <<'PY'
+from pathlib import Path
+p=Path('/tmp/live_mcp_verify.fsx')
+text=p.read_text()
+text=text.replace('    finally\n        do! (client :> IAsyncDisposable).DisposeAsync().AsTask()\n','    finally\n        (client :>
+IAsyncDisposable).DisposeAsync().AsTask().GetAwaiter().GetResult()\n')
+p.write_text(text)
+PY
+cd /workspace/home/mcp/FSharp.MCP.DevKit && dotnet fsi /tmp/live_mcp_verify.fsx
+
+• Explored
+  └ Read live_mcp_verify.fsx
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/live_mcp_verify.fsx')
+  │ … +6 lines
+  └ HOST={"hostId":"mcp-host-c83bd3c5","agentId":"mcp-live-27e99d42","hostKind":{"Case":"Net10Host"},"backendKind":{"Case":"Net10Remote"},"status":
+    {"Case":"Creating"},"address":"akka.tcp://proc-system@10.28.112.140:46047/user/fsi/
+    … +7 lines
+    VALUE_A=111
+    VALUE_B=222
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• live MCP 核心路徑已通，我再補一刀 get_fsi_host_health 驗證，確認 GetProcInfo -> ListProcInfo fallback 在線上真的生效。
+
+• Ran cat > /tmp/live_mcp_health.fsx <<'EOF'
+  │ #I "/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Debug/net10.0"
+  │ #I "/workspace/home/mcp/csharp-sdk/artifacts/bin/ModelContextProtocol/Debug/net10.0"
+  │ … +19 lines
+  └ {"backendKind":{"Case":"Net10Remote"},"isAvailable":false,"message":"starting","hostId":"mcp-host-c83bd3c5","checkedAt":"2026-03-26T17:05:55.0949566Z"}
+
+• Edited doc/DevLog.md (+18 -0)
+    571    - once runtime/procnode execution had been proven healthy, the remaining `create_fsi_host` / `get_fsi_host_health` failures were orchestration-level timeout handli
+         ng defects, not remote FSI capability defects.
+    572 +
+    573 +## 2026-03-26 18:05 UTC Live MCP Verification After Timeout-Recovery Fix
+    574 +
+    575 +- Deployed the updated server image onto the host by rebuilding the docker image from `/home/sa/gemini4/mcp/docker/FSharp.MCP.DevKit`.
+    576 +  - `build.host.sh` successfully rebuilt the image but still required interactive `sudo` for service reinstall.
+    577 +  - For immediate validation, the running `fsharp-mcp-devkit` container was replaced manually with the same `docker run` arguments as the service definition.
+    578 +- Live MCP verification was performed through `McpClientHarness.createHttpClientAsync` against:
+    579 +  - `http://10.28.112.140:15000/mcp`
+    580 +- Verified behaviors:
+    581 +  - `create_fsi_host` now succeeds even when `probeMessage` / `probeIntervalMs` are omitted.
+    582 +  - `create_fsi_session` succeeds on the new remote host.
+    583 +  - routed execution/evaluation also succeeds when `timeoutSeconds` is omitted from the MCP arguments.
+    584 +  - same-host, multi-session isolation is working through the actual MCP tool path:
+    585 +    - `session-a -> 111`
+    586 +    - `session-b -> 222`
+    587 +  - `get_fsi_host_health` no longer throws a generic timeout error; it returns a normal health payload (`starting` while the host is still converging).
+    588 +- Product conclusion:
+    589 +  - remote host creation, remote session creation, and routed remote execution are now functioning end-to-end through the deployed MCP HTTP surface.
+
+• Ran printf '%s
+  │ ' '[2026-03-26T18:05:00Z] live MCP verification complete' '[結論] 已使用 McpClientHarness HTTP client 直接打 live MCP endpoint，create_fsi_host/create_fsi_session/routed
+  │ execute/evaluate 在省略 probeMessage/probeIntervalMs/timeoutSeconds 的情況下成功；同 host 多 session 隔離驗證為 session-a=111, session-b=222。get_fsi_host_health 不再拋
+  │ … +3 lines
+  └ (no output)
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 最後把這輪的 DevLog/log 補記 commit/push，讓 repo 追溯跟實際修復結果一致。
+
+• Ran cd /workspace/home/mcp/FSharp.MCP.DevKit && git status --short && git add doc/DevLog.md log/20260326160750.mcp-agent-iteration.00001.00001.log
+  │ log/20260326160750.mcp-agent-iteration.op_log && git commit -m "docs: record live MCP host provisioning verification" && git push
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       cd1e31d..9d1162b  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 已繼續做完這一輪。
+
+  我修了三個已確定問題：
+
+  - create_fsi_host / get_fsi_host_health 在 GetProcInfo 或 StartProc 經 sharding timeout 時，改 fallback 到 ListProcInfo 補收斂
+  - routed MCP tools 的 timeoutSeconds 改成 CLR optional/default-value，不再被 binder 當必填
+  - 對應單元測試已補上並通過
+
+  本地驗證：
+
+  - ProvisioningServicesTests
+  - Net10HostBackendTests
+  - McpExecutionToolsTests
+    都通過。修正已推上 branch，最新包含：
+  - cd1e31d fix: harden MCP host provisioning timeout recovery
+  - 9d1162b docs: record live MCP host provisioning verification
+
+  我也直接在 host 上重建了 image。build.host.sh 的 docker build 成功，但 service reinstall 仍卡互動式 sudo，所以這輪我是用和 service 相同參數手動替換 fsharp-mcp-devkit
+  container，然後做 live 驗證。
+
+  live MCP 驗證結果：
+
+  - create_fsi_host：成功，而且省略 probeMessage/probeIntervalMs 也成功
+  - create_fsi_session：成功
+  - execute_f_sharp_code_routed / evaluate_f_sharp_expression_routed：成功，而且省略 timeoutSeconds 也成功
+  - 同 host 多 session 隔離：成功
+      - session-a = 111
+      - session-b = 222
+  - get_fsi_host_health：不再拋 generic timeout，會正常回 health payload
+
+  這輪的實驗與結論已寫進：
+
+  - doc/DevLog.md
+  - log/20260326160750.mcp-agent-iteration.00001.00001.log
+  - log/20260326160750.mcp-agent-iteration.op_log
+
+  還有一個部署面殘留問題：
+
+  - /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh 目前在 host 上仍會卡 sudo 互動，所以自動 service reinstall/start 這段還不夠穩
+  - 但 server/runtime/MCP tool path 本身這輪已驗通
+
+  如果你要，我下一步就收這個部署殘留，把 docker/service 的非互動重部署流程補平。

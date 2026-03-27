@@ -1,0 +1,6 @@
+[2026-03-26 14:28] Started direct actor-level verification against deployed proc-supervisor at akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor.
+[2026-03-26 14:30] Stopped stale proc deploy-startproc-a to remove old shard/coordinator interference.
+[2026-03-26 14:31] Direct StartProc for deploy-host-test-single succeeded and returned fsiSupervisorPath akka.tcp://proc-system@10.28.112.140:43131/user/fsi/supervisor.
+[2026-03-26 14:32] Verified host isolation by writing same variable name in same session id across two different remote hosts and reading back 101/202 respectively.
+[2026-03-26 14:33] Verified session isolation by writing sessionValue in verify-session-a / verify-session-b on same remote host and reading back 111/222 respectively.
+[2026-03-26 14:35] Conclusion: deployed remote host/session isolation is working at direct Akka actor level; prior failures were higher-layer orchestration and timeout noise, not core remote isolation failure.

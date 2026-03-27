@@ -1,0 +1,463 @@
+• 我改用目前本機 NuGet cache 的 Akka 版本重跑，避免假路徑。然后只驗 deployed proc/fsi 版本。
+
+• Explored
+  └ Search configForAssemblies|installForAssemblies|ContractSerialization in FAkka.Fsi.Contracts
+    Read Serialization.fs
+
+• Ran cat >/tmp/verify_live_proc_fsi_after_spawnnone.fsx <<'EOF'
+  │ #r @"/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Release/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r @"/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Release/net10.0/Akka.Proc.Supervisor.dll"
+  │ … +49 lines
+  └
+
+    /tmp/verify_live_proc_fsi_after_spawnnone.fsx(25,72): error FS0597: Successive arguments should be separated by spaces or tupled, and arguments involving function or
+    method applications should be parenthesized
+
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +7 lines
+  └
+
+    … +3 lines
+        'string option'
+
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +7 lines
+  └
+
+    … +3 lines
+        'string option'
+
+
+• Explored
+  └ Read verify_live_proc_fsi_after_spawnnone.fsx
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +9 lines
+  └
+
+    … +2 lines
+       ResetSessionResult
+
+
+• Explored
+  └ Search type .*ListSessions in Contracts.fs
+    Read Contracts.fs
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +5 lines
+  └
+
+    /tmp/verify_live_proc_fsi_after_spawnnone.fsx(45,42): error FS0800: Invalid use of a type name
+
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +5 lines
+  └ System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.
+     ---> System.IO.FileNotFoundException: Could not load file or assembly 'Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed'. The system
+    … +19 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Explored
+  └ Search */lib/netstandard2.0/Newtonsoft.Json.dll in newtonsoft.json
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_proc_fsi_after_spawnnone.fsx')
+  │ … +9 lines
+  └ System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.
+     ---> System.IO.FileNotFoundException: Could not load file or assembly 'Microsoft.Extensions.ObjectPool, Version=6.0.0.0, Culture=neutral,
+    … +19 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "ls /app | grep -E \"^(Akka|FAkka|Newtonsoft|
+  │ Microsoft.Extensions.ObjectPool).*\\.dll$\" | sort"'
+  └ Akka.Cluster.Hosting.dll
+    Akka.Cluster.Sharding.dll
+    … +25 lines
+    Newtonsoft.Json.Bson.dll
+    Newtonsoft.Json.dll
+
+─ Worked for 2m 04s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我改成在部署中的 fsharp-mcp-devkit container 內直接跑 FSI，用 /app/FSharp.MCP.DevKit.runtimeconfig.json + deps.json 當執行上下文，避免本機缺依賴。
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc '\''cat >/tmp/verify_versions.fsx <<"EOF"
+  │ #r @"/app/Akka.dll"
+  │ #r @"/app/Akka.Remote.dll"
+  │ … +46 lines
+  └ bash: -c: line 1: unexpected EOF while looking for matching `''
+    /bin/bash: -c: line 48: unexpected EOF while looking for matching `''
+
+• Ran mkdir -p /workspace/home/mcp/FSharp.MCP.DevKit/tmp && cat >/workspace/home/mcp/FSharp.MCP.DevKit/tmp/verify_versions.fsx <<'EOF'
+  │ #r @"/app/Akka.dll"
+  │ #r @"/app/Akka.Remote.dll"
+  │ … +46 lines
+  └ The application to execute does not exist: '/usr/share/dotnet/sdk/10.0.201/FSharp/fsi.dll'
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "dotnet --list-sdks; find /usr/share/dotnet -path \"*/FSharp/
+  │ fsi.dll\" | head -n 5"'
+  └ 8.0.419 [/root/.dotnet/sdk]
+    10.0.201 [/root/.dotnet/sdk]
+    find: ‘/usr/share/dotnet’: No such file or directory
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "DOTNET_ROLL_FORWARD=Major dotnet exec --runtimeconfig /app/
+  │ FSharp.MCP.DevKit.runtimeconfig.json --depsfile /app/FSharp.MCP.DevKit.deps.json /root/.dotnet/sdk/10.0.201/FSharp/fsi.dll /gemini4/mcp/FSharp.MCP.DevKit/tmp/
+  │ verify_versions.fsx"'
+  └ (no output)
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "set -x; DOTNET_ROLL_FORWARD=Major dotnet exec --runtimeconfig /
+  │ app/FSharp.MCP.DevKit.runtimeconfig.json --depsfile /app/FSharp.MCP.DevKit.deps.json /root/.dotnet/sdk/10.0.201/FSharp/fsi.dll /gemini4/mcp/FSharp.MCP.DevKit/tmp/
+  │ verify_versions.fsx 2>&1"'
+  └ + DOTNET_ROLL_FORWARD=Major
+    + dotnet exec --runtimeconfig /app/FSharp.MCP.DevKit.runtimeconfig.json --depsfile /app/FSharp.MCP.DevKit.deps.json /root/.dotnet/sdk/10.0.201/FSharp/fsi.dll /gemini4/
+    mcp/FSharp.MCP.DevKit/tmp/verify_versions.fsx
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "dotnet fsi /gemini4/mcp/FSharp.MCP.DevKit/tmp/
+  │ verify_versions.fsx 2>&1"'
+  └ System.Reflection.TargetInvocationException: Exception has been thrown by the target of an invocation.
+     ---> System.IO.FileNotFoundException: Could not load file or assembly 'Microsoft.Extensions.ObjectPool, Version=6.0.0.0, Culture=neutral,
+    … +19 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "ls /app/Microsoft.Extensions.ObjectPool*.dll 2>/dev/null ||
+  │ true"'
+  └ (no output)
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'docker exec fsharp-mcp-devkit sh -lc "find /root/.nuget/packages/microsoft.extensions.objectpool
+  │ -path \"*/lib/netstandard2.0/Microsoft.Extensions.ObjectPool.dll\" | tail -n1"'
+  └ find: ‘/root/.nuget/packages/microsoft.extensions.objectpool’: No such file or directory
+
+• Waited for background terminal
+
+• Explored
+  └ Search McpClientHarness|createHttpClientAsync|CallTool in tests
+    Read McpClientHarness.fs
+
+─ Worked for 2m 00s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我改用本機已建好的 FSharp.MCP.DevKit.Server runtime/deps 當 FSI 執行上下文，直接打 deployed MCP。這樣不再被 container 內缺 SDK/組件干擾。
+
+• Ran ls src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.* && cat >/tmp/verify_live_mcp_spawnnone.fsx <<'EOF'
+  │ #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Server.dll"
+  │ open System
+  │ … +33 lines
+  └ src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Analysis.dll
+    src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Analysis.pdb
+    … +18 lines
+    src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.runtimeconfig.json
+    src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.staticwebassets.endpoints.json
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• MCP 驗證改用 python 寫臨時腳本，避開 shell 對 let! 的字元展開。只測 create_fsi_host/session。
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ script = r'''#r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Server.dll"
+  │ … +34 lines
+  └ (no output)
+
+• Ran set +H; python3 - <<'PY'
+  │ from pathlib import Path
+  │ script = r'''#r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Server.dll"
+  │ … +34 lines
+  └ (no output)
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ script = '''#r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.Server.dll"
+  │ … +34 lines
+  └ (no output)
+
+• Explored
+  └ Read verify_live_mcp_spawnnone.fsx
+
+• Ran DOTNET_ROLL_FORWARD=Major dotnet exec --runtimeconfig src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.runtimeconfig.json --depsfile src/
+  │ FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.deps.json /root/.dotnet/sdk/10.0.201/FSharp/fsi.dll /tmp/verify_live_mcp_spawnnone.fsx 2>&1 | cat
+  └ (no output)
+
+• Ran ssh -o BatchMode=yes -o StrictHostKeyChecking=no sa@10.28.112.140 'curl -fsS http://10.28.112.140:6001/api/proc/nodes'
+  └ []
+
+• Ran dotnet fsi --exec /tmp/verify_live_mcp_spawnnone.fsx
+  └
+
+    … +5 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/verify_live_mcp_spawnnone.fsx')
+  │ … +4 lines
+  └
+
+    /tmp/verify_live_mcp_spawnnone.fsx(10,77): error FS0074: The type referenced through 'ModelContextProtocol.Client.McpClientOptions' is defined in an assembly that is not
+    referenced. You must add a reference to assembly 'ModelContextProtocol.Core'.
+
+
+• Ran DOTNET_ROLL_FORWARD=Major dotnet exec --runtimeconfig src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.runtimeconfig.json --depsfile src/
+  │ FSharp.MCP.DevKit.Server/bin/Release/net10.0/FSharp.MCP.DevKit.deps.json /root/.dotnet/sdk/10.0.201/FSharp/fsi.dll --exec /tmp/verify_live_mcp_spawnnone.fsx
+  └ (no output)
+
+• Explored
+  └ Search 15000|createHttpClientAsync|http://|MCP_SERVER|endpoint in tests
+    Read verify_proc_supervisor_getversion.fsx, verify_proc_fsi_versions.fsx
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ src = Path('/workspace/home/work/PulseTrade.fs/Libs/TestScripts/verify_proc_fsi_versions.fsx').read_text()
+  │ … +16 lines
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +4 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Waited for background terminal
+
+─ Worked for 2m 30s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• proc-supervisor 这层已经干净了，spawnnone 也生效了。现在只剩 MCP create_fsi_host。我改用最小 FSI 脚本直接打 deployed /mcp。
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/verify_live_mcp_spawnnone.fsx')
+  │ … +17 lines
+  └ #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/ModelContextProtocol.Core.dll"
+    #r @"/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/bin/Release/net10.0/ModelContextProtocol.dll"
+    … +25 lines
+
+    run.GetAwaiter().GetResult()
+
+• Ran dotnet fsi --exec /tmp/verify_live_mcp_spawnnone.fsx
+  └
+
+    /tmp/verify_live_mcp_spawnnone.fsx(13,82): error FS0074: The type referenced through 'Microsoft.Extensions.Logging.ILoggerFactory' is defined in an assembly that is not
+    referenced. You must add a reference to assembly 'Microsoft.Extensions.Logging.Abstractions'.
+
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/verify_live_mcp_spawnnone.fsx')
+  │ … +10 lines
+  └
+
+    … +5 lines
+     /root/.dotnet/sdk/10.0.201/FSharp/
+
+
+• Explored
+  └ Search */lib/net*/Microsoft.Extensions.DependencyInjection.Abstractions.dll in microsoft.extensions.dependencyinjection.abstractions
+    Search */lib/net*/Microsoft.Extensions.Logging.Abstractions.dll in microsoft.extensions.logging.abstractions
+    Search buildManagedProcNodeSpec|StartProc of|type StartProc|ProcStartSpecBuilder in Akka.Proc.Supervisor
+    Read ProcContracts.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我改成直接 Ask<StartProc> 给部署中的 proc-supervisor。这能把问题切到 proc-supervisor/procnode，不再被 MCP client 干扰。
+
+• Ran cat >/tmp/direct_startproc_live.fsx <<'EOF'
+  │ #r "nuget: Akka, 1.5.63"
+  │ #r "nuget: Akka.Remote, 1.5.63"
+  │ … +45 lines
+  └
+
+    … +11 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Ran python3 - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/direct_startproc_live.fsx')
+  │ … +4 lines
+  └
+
+    … +34 lines
+      lastError = None }
+    PROC deploy-startproc-a status=starting fsi=Some "akka.tcp://proc-system@10.28.112.140:43111/user/fsi/supervisor" err=None
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• proc-supervisor 的 StartProc 已经成功，问题已经不是 lowest layer。我现在起一个临时 F# console，直接用主专案 McpClientHarness 打 deployed /mcp。
+
+• Waited for background terminal · rm -rf /tmp/mcpverify && mkdir -p /tmp/mcpverify && cd /tmp/mcpverify && dotnet new console -lang F# -f net10.0 >/tmp/mcpverify.new.log &&
+cat > mcpverify.fsproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+cat > Program.fs <<'EOF'
+open System
+open System.Threading
+open FSharp.MCP.DevKit.Server
+[<EntryPoint>]
+let main _ =
+    let endpoint = Uri("http://10.28.112.140:15000/mcp")
+    let args pairs = McpClientHarness.arguments pairs
+    let run = task {
+        let! client = McpClientHarness.createHttpClientAsync endpoint Seq.empty None None CancellationToken.None
+        try
+            let! agent = client.CallToolTextAsync("register_fsi_agent", args [ "agentId", box "deploy-verify-agent"; "displayName", box "deploy verify" ])
+            printfn "REGISTER=%s" agent
+            let! host = client.CallToolTextAsync("create_fsi_host", args [ "agentId", box "deploy-verify-agent"; "hostId", box "deploy-host-a"; "hostKind", box "net10";
+"executablePath", box "dotnet"; "arguments", box ""; "workingDirectory", box "/workspace"; "probeIntervalMs", box 1000; "probeMessage", box "" ])
+            printfn "CREATE_HOST=%s" host
+            let! session = client.CallToolTextAsync("create_fsi_session", args [ "agentId", box "deploy-verify-agent"; "hostId", box "deploy-host-a"; "sessionId", box
+"deploy-session-a"; "sessionName", box "deploy session a" ])
+            printfn "CREATE_SESSION=%s" session
+            let! exec1 = client.CallToolTextAsync("execute_f_sharp_code_routed", args [ "agentId", box "deploy-verify-agent"; "hostId", box "deploy-host-a"; "sessionId", box
+"deploy-session-a"; "code", box "let x = 123"; "timeoutSeconds", box 30 ])
+            printfn "EXEC=%s" exec1
+            let! eval1 = client.CallToolTextAsync("evaluate_f_sharp_expression_routed", args [ "agentId", box "deploy-verify-agent"; "hostId", box "deploy-host-a";
+"sessionId", box "deploy-session-a"; "expression", box "x"; "timeoutSeconds", box 30 ])
+            printfn "EVAL=%s" eval1
+        finally
+            do! client.DisposeAsync().AsTask()
+    }
+    run.GetAwaiter().GetResult()
+    0
+EOF
+dotnet run -c Release
+
+• Ran rm -rf /tmp/mcpverify && mkdir -p /tmp/mcpverify && cd /tmp/mcpverify && dotnet new console -lang F# -f net10.0 >/tmp/mcpverify.new.log && cat > mcpverify.fsproj
+  │ <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │ … +42 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj : warning NU1510: PackageReference Microsoft.Extensions.Configuration
+    will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/tmp/mcpverify/mcpverify.fsproj]
+    … +58 lines
+       at Microsoft.FSharp.Control.FSharpAsync.RunSynchronously[T](FSharpAsync`1 computation, FSharpOption`1 timeout, FSharpOption`1 cancellationToken) in D:
+    \a\_work\1\s\src\fsharp\src\FSharp.Core\async.fs:line 1514
+
+• Waited for background terminal · cd /tmp/mcpverify && cat > mcpverify.fsproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>false</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>false</UseMicrosoftTestingPlatformRunner>
+    <GenerateProgramFile>false</GenerateProgramFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+dotnet run -c Release
+
+• Ran cd /tmp/mcpverify && cat > mcpverify.fsproj <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │   <PropertyGroup>
+  │ … +12 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Documentation/FSharp.MCP.DevKit.Documentation.fsproj : warning NU1510: PackageReference
+    System.IO.Compression.ZipFile will not be pruned. Consider removing this package from your dependencies, as it is likely unnecessary. [/tmp/mcpverify/mcpverify.fsproj]
+    … +51 lines
+       at Microsoft.FSharp.Control.FSharpAsync.RunSynchronously[T](FSharpAsync`1 computation, FSharpOption`1 timeout, FSharpOption`1 cancellationToken) in D:
+    \a\_work\1\s\src\fsharp\src\FSharp.Core\async.fs:line 1514
+
+⚠ Heads up, you have less than 10% of your weekly limit left. Run /status for a breakdown.
+
+• Explored
+  └ Search tools/call|jsonrpc|initialize|sessionId|mcp" in csharp-sdk
+
+─ Worked for 1m 12s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• F# 临时控制台被 repo 里的测试平台 props 污染了。我改用最小 C# console，只引用主专案，直接打 deployed /mcp。
+
+• Waited for background terminal · rm -rf /tmp/mcpverifycs && mkdir -p /tmp/mcpverifycs && cd /tmp/mcpverifycs && dotnet new console -lang C# -f net10.0 >/tmp/
+mcpverifycs.new.log && cat > mcpverifycs.csproj <<'EOF'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj" />
+  </ItemGroup>
+</Project>
+EOF
+cat > Program.cs <<'EOF'
+using System;
+using System.Threading;
+using FSharp.MCP.DevKit.Server;
+var endpoint = new Uri("http://10.28.112.140:15000/mcp");
+var client = await McpClientHarness.createHttpClientAsync(endpoint, Array.Empty<(string,string)>(), null, null, CancellationToken.None);
+try
+{
+    var agentArgs = McpClientHarness.arguments(new[] { ("agentId", (object)"deploy-verify-agent"), ("displayName", (object)"deploy verify") });
+    Console.WriteLine("REGISTER=" + await client.CallToolTextAsync("register_fsi_agent", agentArgs));
+    var hostArgs = McpClientHarness.arguments(new[] {
+        ("agentId", (object)"deploy-verify-agent"),
+        ("hostId", (object)"deploy-host-a"),
+        ("hostKind", (object)"net10"),
+        ("executablePath", (object)"dotnet"),
+        ("arguments", (object)""),
+        ("workingDirectory", (object)"/workspace"),
+        ("probeIntervalMs", (object)1000),
+        ("probeMessage", (object)"")
+    });
+    Console.WriteLine("CREATE_HOST=" + await client.CallToolTextAsync("create_fsi_host", hostArgs));
+    var sessionArgs = McpClientHarness.arguments(new[] {
+        ("agentId", (object)"deploy-verify-agent"),
+        ("hostId", (object)"deploy-host-a"),
+        ("sessionId", (object)"deploy-session-a"),
+        ("sessionName", (object)"deploy session a")
+    });
+    Console.WriteLine("CREATE_SESSION=" + await client.CallToolTextAsync("create_fsi_session", sessionArgs));
+    var execArgs = McpClientHarness.arguments(new[] {
+        ("agentId", (object)"deploy-verify-agent"),
+        ("hostId", (object)"deploy-host-a"),
+        ("sessionId", (object)"deploy-session-a"),
+        ("code", (object)"let x = 123"),
+        ("timeoutSeconds", (object)30)
+    });
+    Console.WriteLine("EXEC=" + await client.CallToolTextAsync("execute_f_sharp_code_routed", execArgs));
+    var evalArgs = McpClientHarness.arguments(new[] {
+        ("agentId", (object)"deploy-verify-agent"),
+        ("hostId", (object)"deploy-host-a"),
+        ("sessionId", (object)"deploy-session-a"),
+        ("expression", (object)"x"),
+        ("timeoutSeconds", (object)30)
+    });
+    Console.WriteLine("EVAL=" + await client.CallToolTextAsync("evaluate_f_sharp_expression_routed", evalArgs));
+}
+finally
+{
+    await client.DisposeAsync();
+}
+EOF
+dotnet run -c Release
+
+• Ran rm -rf /tmp/mcpverifycs && mkdir -p /tmp/mcpverifycs && cd /tmp/mcpverifycs && dotnet new console -lang C# -f net10.0 >/tmp/mcpverifycs.new.log && cat >
+  │ mcpverifycs.csproj <<'EOF'
+  │ <Project Sdk="Microsoft.NET.Sdk">
+  │ … +65 lines
+  └ /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Core/FSharp.MCP.DevKit.Core.fsproj : warning NU1701: Package 'NuGet.Common 7.3.0' was restored using
+    '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version
+    … +50 lines
+
+    The build failed. Fix the build errors and run again.

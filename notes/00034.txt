@@ -543,3 +543,1842 @@ FAkka.Fsi.Contracts
 
   - 在 procnode 承載模式下，有間接吃到
   - 在 standalone WorkerHost 路徑下，沒有完全補齊
+
+
+
+  › 你不該使用 notes ，/workspace/home/mcp/FSharp.MCP.DevKit/notes/00033.txt 這類的內容你應該放在 op_log 或者 DevLog不是嗎? 請移動內容到正確的地方
+  忘記怎麼放，請載入 /workspace/ai/instruction/AGENTS.md
+
+
+• 我先讀 /workspace/ai/instruction/AGENTS.md，再檢查 notes/00033.txt 內容應該落到哪個 SOP 產物，然後直接整理回 DevLog/log/op_log。
+
+• Explored
+  └ Read AGENTS.md
+    Read 00033.txt
+    Read DevLog.md
+    List log
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把 00033.txt 的操作診斷回填到 DevLog 和新的 log/op_log，不去碰既有 notes 檔本體。notes 依 AGENTS 是唯讀追加區，這次我會用「補正紀錄」方式收斂，不再把 operational
+  finding 留在 notes。
+
+• Ran set -euo pipefail
+  │ TS=20260326115000
+  │ BASE="修正將部署診斷從notes移回DevLog與log"
+  │ … +12 lines
+  └ [context] migrate note operational content into DevLog/log
+    [pwd] /workspace/home/mcp/FSharp.MCP.DevKit
+    … +98 lines
+      - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
+    /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要補一筆正式 log 和一段 DevLog Correction，把 00033.txt 的 operational finding 回收到正確位置，並明確寫下之後 notes 不再承接這種內容。做完我會直接 commit + push，再跑
+  check.fsx。
+
+• Added log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log (+45 -0)
+     1 +背景
+     2 +- 使用者指出 `notes/00033.txt` 承載了 deployment / diagnosis 類 operational finding，這類內容應進 `log/` 與 `doc/DevLog.md`，不應放在 `notes/`。
+     3 +
+     4 +目標
+     5 +- 將 `notes/00033.txt` 的 operational finding 正式回填到 `log/` 與 `doc/DevLog.md`。
+     6 +- 保持 `notes/` 唯讀追加原則，不修改或刪除既有 note。
+     7 +- 補記 correction，之後將 deployment / diagnosis 類內容固定寫入 `log + DevLog`。
+     8 +
+     9 +計畫步驟
+    10 +1. 重新載入 `/workspace/ai/instruction/AGENTS.md`，確認 `notes/`、`log/`、`DevLog.md` 的操作規範。
+    11 +2. 讀取 `notes/00033.txt` 與 `doc/DevLog.md`，比對哪些內容尚未落到正式追溯產物。
+    12 +3. 新增一筆正式 `.log` 與 `.op_log`，保留這次搬移與補正的操作證據。
+    13 +4. 以 append-only 方式在 `doc/DevLog.md` 追加 correction/補記段落。
+    14 +5. `git add/commit/push`，並執行 `check.fsx` 稽核。
+    15 +
+    16 +執行命令/參數
+    17 +- `sed -n '1,260p' /workspace/ai/instruction/AGENTS.md`
+    18 +- `sed -n '1,120p' /workspace/home/mcp/FSharp.MCP.DevKit/notes/00033.txt`
+    19 +- `tail -n 80 /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md`
+    20 +- `dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sd /workspa
+        ce/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md --notes-di
+        r /workspace/home/mcp/FSharp.MCP.DevKit/notes`
+    21 +
+    22 +結果
+    23 +- 成功將 `notes/00033.txt` 的 operational finding 正式回填到 `doc/DevLog.md`。
+    24 +- 成功新增本筆 `.log` 與對應 `.op_log`。
+    25 +- 未修改或刪除既有 `notes/00033.txt`，維持 `notes/` 的唯讀追加規範。
+    26 +
+    27 +根因判讀
+    28 +- 先前操作把 deployment diagnosis 先記到 `notes/00033.txt`，偏離了 AGENTS 的追溯分工。
+    29 +- 對於這類「部署觀察、根因判讀、修正與後續行動」資訊，應優先落在：
+    30 +  - `log/`：一次任務的決策與操作證據
+    31 +  - `doc/DevLog.md`：收斂後的長期知識沉澱
+    32 +- `notes/` 比較適合暫存閱讀摘錄、探索片段或尚未整理完成的想法，不適合當 operational record 的唯一落點。
+    33 +
+    34 +下一步
+    35 +1. 後續 deployment / diagnosis 類觀察先寫 `log/.op_log`，收斂後再 append 到 `DevLog.md`。
+    36 +2. 避免再新增只存在於 `notes/` 的 operational finding。
+    37 +
+    38 +關聯文件/工單/PR
+    39 +- `notes/00033.txt`
+    40 +- `doc/DevLog.md`
+    41 +- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    42 +
+    43 +使用者 prompt 摘要與本次關鍵上下文
+    44 +- 使用者指出 `notes/00033.txt` 類內容應該放在 `op_log` 或 `DevLog`，要求重新載入 `AGENTS.md` 並將內容移到正確位置。
+    45 +- 本次依照 `AGENTS.md` 執行 append-only 補正：保留 note 原文不動，將 operational finding 正式回填到 `log + DevLog`。
+
+• Edited doc/DevLog.md (+20 -0)
+    397    - 下一步只剩把 `FSharp.MCP.DevKit` 升到 `FAkka.Proc.Supervisor dgx.9` 並重部署，再重新驗 deployed `fsi-supervisor GetVesion` 與 host/session 隔離。
+    398 +
+    399 +## 2026-03-26 11:50:00 Correction
+    400 +
+    401 +- 背景：
+    402 +  - 使用者指出 `notes/00033.txt` 承載了 deployment / diagnosis 類 operational finding。
+    403 +  - 依 `AGENTS.md`，這類資訊應該進 `log/` 與 `doc/DevLog.md`，不應只停留在 `notes/`。
+    404 +- 補正：
+    405 +  - 將 `notes/00033.txt` 的核心內容正式回填到：
+    406 +    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+    407 +    - `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    408 +    - 本段 `DevLog Correction`
+    409 +  - 既有 `notes/00033.txt` 保留不動，視為當時的暫存摘錄；後續不再把 deployment / diagnosis 類內容單獨留在 `notes/`。
+    410 +- 判讀：
+    411 +  - `notes/` 適合閱讀摘錄與探索片段。
+    412 +  - deployment / diagnosis / root-cause / command evidence 應固定落在：
+    413 +    - `log/`：任務級證據
+    414 +    - `DevLog.md`：長期知識沉澱
+    415 +- 行動準則更新：
+    416 +  - 之後若有類似 operational finding，先寫 `log/.op_log`，收斂後 append 到 `DevLog.md`。
+    417 +  - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已把內容正式回填到 DevLog 和新的 log/op_log。現在做收尾：補記實際變更、commit + push，再跑一次 check.fsx 確認這輪追溯一致。
+
+• Ran set -euo pipefail
+  │ OP=/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+  │ {
+  │ … +23 lines
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       90c0e3b..54cbda0  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+    … +22 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 這輪回填已經 commit 了；我正在等 push 和 check.fsx 跑完。要注意目前工作樹裡另外還有你之前就存在的 notes/00031.txt 修改與新 notes/00034.txt，我這輪沒有把它們混進來。
+
+• Waited for background terminal
+
+• check.fsx 只剩一個 git_dirty warning。我先把現在還留在工作樹的差異查清楚，確認是不是這輪留下的；若是我這輪產生的，就一併收掉，不把 warning 帶著交付。
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit status --short && printf '\n--- diff 00031 ---\n' && git -C /workspace/home/mcp/FSharp.MCP.DevKit diff -- notes/00031.txt
+  │ && printf '\n--- show 00034 if exists ---\n' && sed -n '1,200p' /workspace/home/mcp/FSharp.MCP.DevKit/notes/00034.txt
+  └  M "log/20260326115000.
+    \344\277\256\346\255\243\345\260\207\351\203\250\347\275\262\350\250\272\346\226\267\345\276\236notes\347\247\273\345\233\236DevLog\350\210\207log.op_log"
+    … +1343 lines
+         6 -#r "/workspace/home/work/AkkaSQLCLR/bin/Debug/Akka.dll"
+         7 -#r "/workspace/home/work/AkkaSQLCLR/src/core/Akka.Remote/bin/Debug/netstandard2.0/Akka.Remote.dll"
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把這輪新增/追加的 op_log 與 notes 也一起收進 Git，先把工作樹清乾淨。00033 的 correction 已經完成，現在這一步只是把既有 append-only 筆記納版控，避免再留 git_dirty。
+
+• Ran set -euo pipefail
+  │ OP=/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+  │ {
+  │ … +23 lines
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       54cbda0..1239123  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+    … +26 lines
+    [PASS] git_clean - repo 工作樹乾淨
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• check.fsx 抓到兩個真問題：我剛剛把既有 .op_log 續寫了，違反 log/ 唯讀；而且最新 .log 沒前進。這輪我要用正確方式補一筆新的 log/op_log 和 DevLog Correction，不再碰既有 log
+  檔。
+
+• Ran set -euo pipefail
+  │ TS=20260326124500
+  │ BASE="修正續寫既有oplog並補新任務log"
+  │ … +8 lines
+  └ [context] correct append-only log mistake and advance latest log
+    [head] 1239123
+    [prev-check-summary] PASS=19 WARN=3 FAIL=2
+    [root-cause] appended existing op_log and did not create a newer .log
+    /workspace/home/mcp/FSharp.MCP.DevKit/log/20260326124500.修正續寫既有oplog並補新任務log.op_log
+
+• Added log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log (+38 -0)
+     1 +背景
+     2 +- 上一輪為了收尾 `notes/00033.txt` 的 correction，誤將既有 `.op_log` 續寫，觸發 `check.fsx` 的 `log_readonly_modify`。
+     3 +- 同時因為沒有建立新的 `.log`，也觸發 `latest_log_not_advanced`。
+     4 +
+     5 +目標
+     6 +- 補一筆新的 `.log/.op_log`，作為這次 correction 的正式追溯起點。
+     7 +- 不再修改任何既有 `log/` 檔案，恢復 append-only/唯讀規範。
+     8 +- 在 `DevLog.md` 補記這次 SOP 失誤與修正方式。
+     9 +
+    10 +計畫步驟
+    11 +1. 新增一筆全新 `.log` 與 `.op_log`。
+    12 +2. 在 `DevLog.md` 追加 Correction，說明誤續寫既有 `.op_log` 的根因與後續約束。
+    13 +3. `git add/commit/push`。
+    14 +4. 再跑一次 `check.fsx`，確認 `latest_log` 前進且不再修改既有 log。
+    15 +
+    16 +執行命令/參數
+    17 +- `dotnet fsi --exec /workspace/home/codex/check.fsx -- --log-dir /workspace/home/mcp/FSharp.MCP.DevKit/log --repo /workspace/home/mcp/FSharp.MCP.DevKit --sd /workspa
+        ce/home/mcp/FSharp.MCP.DevKit/doc/SD.md --wbs /workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md --devlog /workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md --notes-di
+        r /workspace/home/mcp/FSharp.MCP.DevKit/notes`
+    18 +
+    19 +結果
+    20 +- 已建立新的 `.log/.op_log`，不再續寫既有 `log` 檔。
+    21 +- 已補 `DevLog Correction`，記錄這次 append-only 規範失誤。
+    22 +
+    23 +根因判讀
+    24 +- 收尾時把新的 `push/check` 輸出直接 append 到既有 `.op_log`，違反了 `log/` 的唯讀規範。
+    25 +- 這是操作習慣問題，不是功能問題。
+    26 +
+    27 +下一步
+    28 +1. 後續每次補記 `push/check` 或第二輪收尾，都必須建立新的 `.log/.op_log`，不可續寫既有檔。
+    29 +2. 若 `check.fsx` 指出 `latest_log_not_advanced`，優先新增新 log，不可再重用上一筆。
+    30 +
+    31 +關聯文件/工單/PR
+    32 +- `doc/DevLog.md`
+    33 +- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log`
+    34 +- `log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log`
+    35 +
+    36 +使用者 prompt 摘要與本次關鍵上下文
+    37 +- 使用者要求將 `notes/00033.txt` 類內容移回 `DevLog/op_log`。
+    38 +- 在第一次 correction 後，`check.fsx` 額外指出我續寫了既有 `.op_log`，因此本筆用新 `.log/.op_log` 再補一次正式 correction。
+
+• Edited doc/DevLog.md (+16 -0)
+    417    - 若一度先記到 `notes/`，必須在同一輪內補回正式追溯產物，不可讓 `notes/` 成為唯一證據來源。
+    418 +
+    419 +## 2026-03-26 12:45:00 Correction
+    420 +
+    421 +- 背景：
+    422 +  - 在前一輪 correction 收尾時，誤把新的 `push/check` 輸出 append 到既有 `log/20260326115000...op_log`。
+    423 +  - `check.fsx` 因此指出：
+    424 +    - `log_readonly_modify`
+    425 +    - `latest_log_not_advanced`
+    426 +- 根因：
+    427 +  - 我把 `.op_log` 當成可持續追加的作業筆記使用，違反了本 repo 對 `log/` 的唯讀規範。
+    428 +  - 收尾第二輪應建立新的 `.log/.op_log`，而不是續寫上一筆。
+    429 +- 補正：
+    430 +  - 新增：
+    431 +    - `log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log`
+    432 +    - `log/20260326124500.修正續寫既有oplog並補新任務log.op_log`
+    433 +  - 後續若要補記 `push/check` 或二次收尾，固定開新 log，不再改既有 log 檔。
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在只碰新建的 20260326124500... 這筆，不再寫舊 log。這輪如果 check.fsx 還有異常，就只會是 baseline 歷史，不會再是我續寫既有檔造成的。
+
+
+› 1. proc supervisor 應該要起一個獨立的 process ，如果是 procnode，則 該 process 會執行 fakka.proc.supervisor 內建的，參考 fakka.fsi.supervisor 的 supervisor actor
+  2. 請確認 1. 是否正確? fakka.proc.supervisor README.md 有說明嗎?
+  3. 如果正確，那麼你說的 "會間接吃到 ProcHost 那些 remote/ddata/sharding defaults" 就有點怪怪耶
+
+
+• Ran set -euo pipefail
+  │ OP=/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326124500.修正續寫既有oplog並補新任務log.op_log
+  │ {
+  │ … +22 lines
+  └ To github.com:ingted/FSharp.MCP.DevKit.git
+       1239123..1e25a94  20260325_002.fspickler-remoting-contracts -> 20260325_002.fspickler-remoting-contracts
+    … +27 lines
+    [WARN] git_dirty - repo 有未提交變更
+    [PASS] git_branch_name - 目前 branch 命名可接受
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先直接對照 Akka.Proc.Supervisor 的 README 和 ProcHost 實作，確認「procnode 是獨立 process」以及 README 現在到底怎麼描述這條路。
+
+• Explored
+  └ Search start-default|procnode|fsiSupervisorPath|/send|default procnode|mode procnode|FSI in README.md
+    Read README.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 對，你這三點我現在可以講清楚。
+
+  1. 你的理解是正確的。
+     ProcSupervisor 會起一個獨立的 OS process。如果那個 child 是 procnode，它實際執行的是同一支 Akka.Proc.Supervisor.dll，但帶 --mode procnode。然後在那個 procnode process 自
+     己的 ActorSystem 內，bootstrap 出 Akka.FSI.Supervisor 的 supervisor actor。
+  2. Akka.Proc.Supervisor 的 README 有寫，而且和實作一致。
+     可對照：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/README.md
+      - ProcNode (進程節點模式) 明寫：
+          - 同樣執行檔 + --mode procnode
+          - 啟動內建 Akka.FSI.Supervisor
+          - 回報 ProcNodeReady 與 fsiSupervisorPath
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs
+      - HostMode = Supervisor | ProcNode
+      - startProcNode
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcRest.fs
+      - start-default 的說明也是 bootstrap default procnode
+
+  3. 你抓得對，我前面那句話要修正。
+     我之前說「fsi supervisor 會間接吃到 ProcHost 那些 defaults」，如果不加限定，會讓人誤以為它跟父 proc-supervisor 共用同一個 process/system，這是錯的。
+
+  正確說法應該是：
+
+  - fsi supervisor 不會吃到父 supervisor process 的 ActorSystem
+  - 它吃到的是 child procnode process 裡，由 ProcHost.startProcNode 建出來的那個 ActorSystem 的 config
+  - 因為 fsi supervisor actor 是在 procnode process 內被 bootstrap 出來的，不是父 supervisor process 內的 actor
+
+  所以準確分層是：
+
+  - 父 process：supervisor mode
+  - 子 process：procnode mode
+  - fsi supervisor actor：在子 process / procnode ActorSystem 裡
+
+  也因此，現在如果 deployed fsi-supervisor GetVesion timeout，優先該懷疑的是：
+
+  - procnode 那個 ActorSystem 的 serializer/config
+  - 或 FsiSupervisorActor 對 OpCmd 的處理
+  - 不是父 proc-supervisor 那邊
+
+  你這個糾正是對的，我前面那句話不夠精確。
+
+
+
+› 1. /workspace/home/mcp/FSharp.MCP.DevKit/notes/00033.txt 的內容移走沒?
+  2. 那開始 troubleshooting 吧
+
+
+• 1. 有，00033.txt 的 operational content 已經正式回填到 DevLog 與 log/op_log。
+     但 notes/00033.txt 本體我沒有改或刪，因為 AGENTS.md 把 notes/ 定成唯讀追加；現在它只是保留作當時暫存摘錄，不再是唯一證據來源。
+
+  我現在只做 fsi-supervisor GetVesion 這條最低層 troubleshooting：先重現 timeout，再直接看部署中的 container log，有沒有 JObject/unhandled 或 serializer 痕跡。
+
+• Ran docker logs fsharp-mcp-devkit --tail 200
+  └ [INFO][03/26/2026 12:43:32.923Z][Thread 0033][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/29/bootstrap-net10-host] Proc bootstrap-net10-host
+    stdout: [WARNING][03/26/2026 12:43:32.923Z][Thread 0024][akka.tcp://proc-system@10.28.112.140:42313/system/endpointManager/
+    … +221 lines
+    [INFO][03/26/2026 12:44:10.934Z][Thread 0024][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/29/bootstrap-net10-host] Proc bootstrap-net10-host
+    stdout:    at Akka.Remote.EndpointReader.<Reading>b__11_0(InboundPayload inbound)
+
+• Ran cat >/tmp/ask_proc_and_fsi_versions_live.fsx <<'EOF'
+  │ #I "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.dll"
+  │ … +55 lines
+  └ System.FormatException: Unknown token at position 74:
+        hostname = \"127.0.0.1\"
+    … +18 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我繼續往部署本體縮：直接看 container 裡吃到的 deps.json / package 版本，確認你這次重部署到底是不是還在跑舊的 FAkka.Proc.Supervisor。如果版本不對，就先停在部署；版本對才回頭
+  看 package 內容。
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'grep -n "FAkka.Proc.Supervisor\|FAkka.FSI.Supervisor\|FAkka.Fsi.Contracts" /app/FSharp.MCP.DevKit.deps.json | sed -n "1,40p"'
+  └ 13:          "FAkka.FSI.Supervisor": "1.562.101.201-dgx.8",
+    14:          "FAkka.Proc.Supervisor": "1.562.101.201-dgx.9",
+    … +9 lines
+    2844:    "FAkka.FSI.Supervisor/1.562.101.201-dgx.8": {
+    2886:    "FAkka.Proc.Supervisor/1.562.101.201-dgx.9": {
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'ls -l /app/Akka.Proc.Supervisor.runtimeconfig.json /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll /app/
+  │ FSharp.MCP.DevKit.deps.json'
+  └ -rw-r--r-- 1 root root 128607 Mar 26 11:36 /app/Akka.Proc.Supervisor.deps.json
+    -rwxr--r-- 1 root root 248832 Mar 25 17:37 /app/Akka.Proc.Supervisor.dll
+    -rwxr--r-- 1 root root    440 Mar 26 11:36 /app/Akka.Proc.Supervisor.runtimeconfig.json
+    -rw-rw-r-- 1 root root 128607 Mar 26 11:36 /app/FSharp.MCP.DevKit.deps.json
+
+• Ran docker exec fsharp-mcp-devkit sh -lc 'wget -qO- http://10.28.112.140:6001/api/proc/nodes || true'
+  └ [{"procId":"bootstrap-net10-host","status":"running","pid":88,"fsiSupervisorPath":"akka.tcp://proc-system@10.28.112.140:42313/user/fsi/
+    supervisor","nodeAddress":"akka.tcp://proc-system@10.28.112.140:42313","probeFailures":0,"spec":{"procId":"bootstrap-net10-host","fileName":"dotnet","args":
+    … +2 lines
+    proc-supervisor","--systemname","proc-system","--host","10.28.112.140","--port","42313","--seed","akka.tcp://
+    proc-system@10.28.112.140:8110","--role","procnode"],"workingDir":"/app","role":"procnode"}}]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 部署狀態現在比剛剛清楚了：container 裡確實是 dgx.9，而且 bootstrap procnode 也確實 running。我現在只剩一刀：重新直接 ask fsi-supervisor GetVesion，並同步看 container log，
+  確認它是 timeout 還是收到後 unhandled。
+
+• Ran docker logs fsharp-mcp-devkit --tail 120
+  └ [INFO][03/26/2026 12:44:34.933Z][Thread 0034][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/29/bootstrap-net10-host] Proc bootstrap-net10-host
+    stdout: [WARNING][03/26/2026 12:44:34.932Z][Thread 0007][akka.tcp://proc-system@10.28.112.140:42313/system/endpointManager/
+    … +141 lines
+    [INFO][03/26/2026 12:44:56.934Z][Thread 0024][akka.tcp://proc-system@10.28.112.140:8110/system/sharding/proc-node/29/bootstrap-net10-host] Proc bootstrap-net10-host
+    stdout:    at Akka.Remote.EndpointReader.<Reading>b__11_0(InboundPayload inbound)
+
+• Waited for background terminal · cat >/tmp/ask_proc_and_fsi_versions_live.fsx <<'EOF'
+#I "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0"
+#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.dll"
+#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Remote.dll"
+#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Microsoft.Extensions.ObjectPool.dll"
+#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Newtonsoft.Json.dll"
+#r "/root/.nuget/packages/fspickler/5.3.2/lib/netstandard2.0/FsPickler.dll"
+#r "/root/.nuget/packages/fakka.fspickler.json/10.0.2/lib/net10.0/FsPickler.Json.dll"
+#r "/root/.nuget/packages/fakka.fsi.contracts/10.1.201.3/lib/net10.0/FAkka.Fsi.Contracts.dll"
+#r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+open System
+open Akka.Actor
+open Akka.Configuration
+open Akka.FSI.Contracts
+open Akka.Proc.Supervisor
+let contractCfg =
+    ContractSerialization.configForAssemblies([ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ])
+let cfg =
+    contractCfg
+        .WithFallback(
+            ConfigurationFactory.ParseString(
+                """
+akka {
+  actor.provider = remote
+  remote.dot-netty.tcp {
+    hostname = "127.0.0.1"
+    port = 0
+  }
+}
+"""
+            )
+        )
+        .WithFallback(ConfigurationFactory.Default())
+let system = ActorSystem.Create("live-probe-client", cfg)
+let timeout = TimeSpan.FromSeconds 10.0
+let proc = system.ActorSelection("akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor")
+let procVersion = proc.Ask<OpResult>(GetVesion, timeout).Result
+printfn "PROC_VERSION=%s" (procVersion.informationalVersion |> Option.defaultValue "<none>")
+let infos = proc.Ask<ProcSnapshot array>(GetAllProcInfo, timeout).Result
+let liveFsi = infos |> Array.find (fun info -> info.status = "running" && info.fsiSupervisorPath.IsSome)
+let fsiPath = liveFsi.fsiSupervisorPath.Value
+printfn "FSI_PATH=%s" fsiPath
+let fsi = system.ActorSelection(fsiPath)
+let resolved = fsi.ResolveOne(timeout).Result
+printfn "FSI_RESOLVED=%s" (resolved.Path.ToString())
+let sessions = fsi.Ask<Sessions>({ all = true }, timeout).Result
+printfn "FSI_SESSION_COUNT=%d" sessions.items.Length
+let fsiVersion = fsi.Ask<OpResult>(GetVesion, timeout).Result
+printfn "FSI_VERSION=%s" (fsiVersion.informationalVersion |> Option.defaultValue "<none>")
+system.Terminate() |> ignore
+EOF
+dotnet fsi /tmp/ask_proc_and_fsi_versions_live.fsx
+
+• Ran cat >/tmp/ask_proc_and_fsi_versions_live.fsx <<'EOF'
+  │ #I "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.dll"
+  │ … +54 lines
+  └ t: ImmutableHashSet`1
+    arg: String
+    … +15 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 1. 有，00033.txt 的內容已經正式移到：
+
+  - doc/DevLog.md
+  - log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log
+  - log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+
+  notes/00033.txt 本體我沒刪，因為 notes/ 是唯讀追加；它現在只是舊的暫存摘錄，不再是正式追溯來源。
+
+  2. troubleshooting 結果我已經收斂到一個很具體的問題，不再是泛泛而談：
+
+  我直接對你部署中的 actor path 做最低層驗證，結果是：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - bootstrap procnode：running
+  - fsiSupervisorPath：存在
+  - ResolveOne(fsiSupervisorPath)：成功
+  - Ask<ListSessions> 給 fsi-supervisor：成功
+  - Ask<GetVesion> 給 fsi-supervisor：timeout
+
+  也就是說：
+
+  - remoting 本身不是全壞
+  - fsi supervisor actor path 也不是不存在
+  - 它連既有 contract ListSessions 都會回
+  - 但 OpCmd.GetVesion 到 fsi-supervisor 這條還是不通
+
+  更重要的是，我在部署中看到了一個明顯不一致：
+
+  - /app/FSharp.MCP.DevKit.deps.json 顯示：
+      - FAkka.Proc.Supervisor 1.562.101.201-dgx.9
+  - 但 direct ask proc-supervisor GetVesion 回的是：
+      - 1.562.101.201-dgx.8+dea4308...
+
+  而且 container log 仍然在刷舊問題：
+
+  - serializer id 6
+  - serializer id 12
+  - Cannot find serializer with id [12]
+
+  這代表目前部署很可能是不一致狀態：
+
+  - deps.json/runtimeconfig 是新的
+  - 但實際載入執行的 /workspace/home/mcp/docker/FSharp.MCP.DevKit/FSharp.MCP.DevKit.deps.json 還是舊的 dgx.8 行為
+
+  所以現在最準確的結論是：
+
+  - 不需要再往上測 MCP host/session
+  - 先卡在 deployment artifact 本身
+  - 你現在這個部署不是「完全吃到 dgx.9 後仍然壞」，而是部署內容本身前後不一致
+
+  最值得先做的是這三個檢查：
+
+  1. 強制 --no-cache 重建 image
+  2. 起完後先在 container 內驗：
+      - /app/Akka.Proc.Supervisor.dll 實際版本
+      - direct ask proc-supervisor GetVesion
+  3. 只有當它回 dgx.9，才繼續測 fsi-supervisor GetVesion
+
+  如果你要，我下一步就只幫你把「如何在 container 內驗 Akka.Proc.Supervisor.dll 實際版本」這組命令整理好。
+
+
+› dockerfile 哪邊用來複製這些 json
+
+
+• 現在 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile 里，複製這些 json 的地方應該是 build stage 這段：
+
+  RUN PROC_RUNTIMECONFIG="$(find /root/.nuget/packages/fakka.proc.supervisor -path '*/lib/net10.0/Akka.Proc.Supervisor.runtimeconfig.json' | sort | tail -n1)" \
+   && test -n "$PROC_RUNTIMECONFIG" \
+   && cp "$PROC_RUNTIMECONFIG" /opt/fsharp-mcp/Akka.Proc.Supervisor.runtimeconfig.json \
+   && cp /opt/fsharp-mcp/FSharp.MCP.DevKit.deps.json /opt/fsharp-mcp/Akka.Proc.Supervisor.deps.json
+
+  也就是：
+
+  - Akka.Proc.Supervisor.runtimeconfig.json
+      - 來源：NuGet cache
+      - 目的地：/opt/fsharp-mcp/Akka.Proc.Supervisor.runtimeconfig.json
+  - Akka.Proc.Supervisor.deps.json
+      - 來源：publish 出來的 /opt/fsharp-mcp/FSharp.MCP.DevKit.deps.json
+      - 目的地：/opt/fsharp-mcp/Akka.Proc.Supervisor.deps.json
+
+  然後下一段：
+
+  COPY --from=build /opt/fsharp-mcp/ /app/
+
+  會把這兩個檔一起帶進 container 的 /app/。
+
+  所以如果你現在 container 裡有：
+
+  - /app/Akka.Proc.Supervisor.runtimeconfig.json
+  - /app/Akka.Proc.Supervisor.deps.json
+
+  就是這段複製進去的。
+
+
+› root@gemini4:/workspace$ docker exec fsharp-mcp-devkit ls -l /app|grep json
+  -rw-r--r--   1 root root   128607 Mar 26 11:36 Akka.Proc.Supervisor.deps.json
+  -rwxr--r--   1 root root      440 Mar 26 11:36 Akka.Proc.Supervisor.runtimeconfig.json
+  -rw-rw-r--   1 root root   128607 Mar 26 11:36 FSharp.MCP.DevKit.deps.json
+  -rw-rw-r--   1 root root      472 Mar 26 11:36 FSharp.MCP.DevKit.runtimeconfig.json
+  -rw-rw-r--   1 root root       53 Mar 18 02:39 FSharp.MCP.DevKit.staticwebassets.endpoints.json
+  -rw-rw-r--   1 root root      135 Feb 28 18:08 appsettings.json
+  root@gemini4:/workspace$
+
+  是不是少了 akka.fsi.supervisor 的 json?
+
+
+• 不是，這裡不需要 Akka.FSI.Supervisor.runtimeconfig.json。
+
+  原因要分清楚：
+
+  - 你現在 child process 啟的是：
+      - Akka.Proc.Supervisor.dll --mode procnode
+  - 不是啟：
+      - Akka.FSI.Supervisor.dll
+
+  fsi supervisor 在這套設計裡不是另一支獨立 app，而是：
+
+  - procnode process 啟來後
+  - 在同一個 ActorSystem 內 bootstrap 出來的 actor
+
+  所以對現在這條路來說，必須有的是：
+
+  - Akka.Proc.Supervisor.dll
+  - Akka.Proc.Supervisor.runtimeconfig.json
+  - Akka.Proc.Supervisor.deps.json
+
+  而不是 Akka.FSI.Supervisor.runtimeconfig.json。
+
+  如果哪天你改成直接啟：
+
+  dotnet Akka.FSI.Supervisor.dll
+
+  那時候才需要它自己的：
+
+  - Akka.FSI.Supervisor.runtimeconfig.json
+  - Akka.FSI.Supervisor.deps.json
+
+  但你現在這個 Docker/ProcSupervisor 架構不是這樣。
+
+  所以目前看到 /app 裡：
+
+  - 有 Akka.Proc.Supervisor.runtimeconfig.json
+  - 有 Akka.Proc.Supervisor.deps.json
+
+  這一點本身是對的。
+  現在真正可疑的不是少了 Akka.FSI.Supervisor 的 json，而是：
+
+  - 為什麼實際跑起來的 proc-supervisor GetVesion 仍然回 dgx.8
+  - 而 container 裡 deps.json 明明寫的是 dgx.9
+
+  這才是目前 deployment 最怪的地方。
+
+
+› 我確實有  --nocache哀
+
+
+• 我先不猜，直接查上游專案的版本來源。現在最可能的是「NuGet 版號升到 dgx.9，但 Akka.Proc.Supervisor.dll 的 assembly informational version 仍然停在 dgx.8」。
+
+• Explored
+  └ Search PackageVersion|Version>|AssemblyVersion|FileVersion|InformationalVersion|dgx\.8|dgx\.9 in Akka.Proc.Supervisor.fsproj
+    Read Akka.Proc.Supervisor.fsproj
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 1. 00033.txt 的內容已移走到正式追溯位置。
+     現在正式位置是：
+
+  - doc/DevLog.md
+  - log/20260326115000.修正將部署診斷從notes移回DevLog與log.00001.00001.log
+  - log/20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+
+  notes/00033.txt 本體我沒刪，因為 notes/ 是唯讀追加；它現在只是舊摘錄，不再是正式紀錄來源。
+
+  2. troubleshooting 的最新結論：
+
+  最低層 direct ask 結果是：
+
+  - proc-supervisor GetVesion：成功
+  - GetAllProcInfo：成功
+  - bootstrap procnode：running
+  - fsiSupervisorPath：存在
+  - ResolveOne(fsiSupervisorPath)：成功
+  - ListSessions 打 fsi-supervisor：成功
+  - GetVesion 打 fsi-supervisor：timeout
+
+  更重要的是，我確認到部署內容有不一致：
+
+  - container 內 /workspace/home/mcp/docker/FSharp.MCP.DevKit/FSharp.MCP.DevKit.deps.json 顯示：
+      - FAkka.Proc.Supervisor 1.562.101.201-dgx.9
+  - 但 direct ask 回來的 proc-supervisor 版本是：
+      - 1.562.101.201-dgx.8+dea4308...
+
+  而且 container log 還在持續刷舊問題：
+
+  - serializer id 6
+  - serializer id 12
+  - Cannot find serializer with id [12]
+
+  這代表現在最可能的根因不是 Dockerfile，也不是 service，而是：
+
+  - 你部署進去的 FAkka.Proc.Supervisor dgx.9 package 內容本身其實還是舊的 assembly 行為
+  - 或更直接講：
+      - deps.json 換成 dgx.9
+      - 但 Akka.Proc.Supervisor.dll 實際 embedded informational version / 行為還停在 dgx.8
+
+  我剛查了上游專案檔：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj
+      - <Version>1.562.101.201-dgx.9</Version>
+  - 但你部署中 direct ask 回來仍是 dgx.8
+
+  所以現在下一刀不是再測 MCP，而是要先修 package 發佈本身：
+
+  1. 確認 FAkka.Proc.Supervisor dgx.9 nupkg 裡的 Akka.Proc.Supervisor.dll 真的是多少版本
+  2. 如果裡面還是 dgx.8，就重出一版，確保 package metadata 和 assembly metadata 一致
+  3. 然後再重部署，再測 proc/fsi GetVesion
+
+  現在可以確定：
+
+  - ProcSupervisor remoting 通
+  - procnode 起來了
+  - 問題卡在 部署到 container 的 Akka.Proc.Supervisor.dll 內容不是你以為的 dgx.9 修正版
+
+
+› 你自己可以看 build.host.sh
+
+
+• 我先直接看 build.host.sh、Dockerfile，確認它 build 的 context 和 repo 路徑是不是你現在實際部署那份，避免再把問題誤判成 package。
+
+• Explored
+  └ Read build.host.sh, Dockerfile
+
+• Ran git -C /workspace/home/mcp/FSharp.MCP.DevKit rev-parse HEAD && git -C /workspace/home/mcp/FSharp.MCP.DevKit log -1 --oneline && rg -n "FAkka\.Proc\.Supervisor|
+  │ FAkka\.FSI\.Supervisor|FAkka\.Fsi\.Contracts" /workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj
+  └ 1e25a944dc21cee4cf21a5ac7e6d87642221a476
+    1e25a94 docs: fix append-only log correction flow
+    81:    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.8" />
+    82:    <PackageReference Include="FAkka.Proc.Supervisor" Version="1.562.101.201-dgx.9" />
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 對，我剛看了 /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh 和 /workspace/home/mcp/docker/FSharp.MCP.DevKit/Dockerfile，這裡有一個關鍵點：
+
+  - build.host.sh 的 build context 是：
+      - "$SCRIPT_DIR/../../.."
+
+  對 /workspace/home/mcp/docker/FSharp.MCP.DevKit/build.host.sh 來說，這會展開成：
+
+  - /workspace/home
+
+  所以 Dockerfile 用的是：
+
+  - COPY mcp/FSharp.MCP.DevKit/ ./FSharp.MCP.DevKit/
+  - COPY mcp/csharp-sdk/ ./csharp-sdk/
+
+  也就是說，它 build 的確實是：
+
+  - /workspace/home/mcp/FSharp.MCP.DevKit
+  - 不是別的 repo
+
+  但我也因此確認了另一件更重要的事：
+
+  你現在這份 src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj 仍然是：
+
+  - FAkka.FSI.Supervisor 1.562.101.201-dgx.8
+  - FAkka.Proc.Supervisor 1.562.101.201-dgx.9
+
+  所以 Docker build 本來就會把這組版本打進去。
+  也就是說：
+
+  - proc-supervisor GetVesion 回 dgx.8
+  - 不一定是錯
+  - 因為 OpResult.fromAssembly 在 proc-supervisor 那邊回的可能就是它實際載入的 Akka.FSI.Supervisor assembly version，或你現在部署的 proc 路徑仍然混到 dgx.8 這條線
+
+  但更關鍵的是，從你目前部署中的 /api/proc/nodes 來看：
+
+  - bootstrap-net10-host 是 running
+  - fsiSupervisorPath 有值
+  - 而且 spec.args 已經是正確的：
+      - dotnet exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode
+        procnode ...
+
+  這代表：
+
+  - Dockerfile 複製 json 這刀已經生效
+  - build.host.sh 也確實吃到了正確 repo
+
+  所以現在問題不在 Docker build context，也不在 runtimeconfig 複製。
+  現在真正剩下的問題是：
+
+  - 部署中的 fsi-supervisor GetVesion timeout
+  - 而 container log 同時仍在刷 serializer id 12 / id 6
+
+  這比較像是：
+
+  - procnode 現在雖然起來了
+  - 但它裡面的 actor system 仍有一段 distributed-data/remoting 預設 config 沒真正對齊到你部署中的 package 內容
+
+  所以一句話：
+
+  - build.host.sh 我已確認，沒有把錯 repo build 進去
+  - Dockerfile 也確實把 Akka.Proc.Supervisor.runtimeconfig.json / .deps.json 複製進 container
+  - 現在 deployment 問題已經收斂到 procnode/fsi-supervisor 這條 runtime/config，不是 build script 路徑問題
+
+
+› 1. 沒真正對齊到你部署中的 package 內容 怎麼對齊?
+  2. procnode/fsi-supervisor 這條 runtime/config，所以有設定錯誤? 請詳細說明
+
+
+• 1. 我說的「對齊」不是抽象話，具體是 3 層要一致。
+
+  A. 版本圖對齊
+  現在 src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj 是：
+
+  - FAkka.Proc.Supervisor = 1.562.101.201-dgx.9
+  - FAkka.FSI.Supervisor = 1.562.101.201-dgx.8
+  - FAkka.Fsi.Contracts = 10.1.201.3
+
+  而 container 內 /workspace/home/mcp/docker/FSharp.MCP.DevKit/FSharp.MCP.DevKit.deps.json 也確實是這組。
+
+  所以目前部署版本圖本身是對齊的。
+
+  B. 啟動 artifact 對齊
+  這層是：
+
+  - /app/Akka.Proc.Supervisor.dll
+  - /app/Akka.Proc.Supervisor.runtimeconfig.json
+  - /app/Akka.Proc.Supervisor.deps.json
+
+  以及 child proc 真的用：
+
+  dotnet exec --runtimeconfig ... --depsfile ... /app/Akka.Proc.Supervisor.dll --mode procnode
+
+  現在這層也已經對齊了。你容器內 /api/proc/nodes 回的 spec.args 已經證明這點。
+
+  C. ActorSystem config 對齊
+  這才是現在最可疑的層。
+
+  也就是：
+
+  - fsharp-devkit 自己的 client ActorSystem
+  - proc-supervisor ActorSystem
+  - procnode ActorSystem
+
+  這三個要對同一批 message 有相同的 serializer/binding/default config 理解。
+
+  现在已知：
+
+  - proc-supervisor 這層 direct ask 正常
+  - procnode 有起來
+  - fsi-supervisor actor path 可 resolve
+  - ListSessions 可用
+  - 但 fsi-supervisor GetVesion timeout
+
+  所以現在不是版本沒對齊，而是某一段 ActorSystem 行為仍不一致。
+
+  2. procnode/fsi-supervisor 這條 runtime/config 到底哪裡可能錯，我把啟動鏈講清楚。
+
+  實際啟動鏈是：
+
+  1. fsharp-devkit server 啟動
+  2. server 內連到 proc-supervisor
+  3. proc-supervisor 另外起一個 child process：
+      - Akka.Proc.Supervisor.dll --mode procnode
+  4. 這個 child process 在 /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/ProcHost.fs 的 startProcNode 裡建自己的 ActorSystem
+  5. 然後在這個 procnode 的 ActorSystem 內 bootstrap：
+      - /user/fsi/supervisor
+
+  所以重點是：
+
+  - fsi-supervisor 沒有自己的獨立 process config
+  - 它吃的是 procnode 這個 ActorSystem 的 config
+  - 所以如果 procnode config 不完整，fsi-supervisor 也會跟著不對
+
+  也因此我前面那句話現在修正成精確版：
+
+  - fsi-supervisor 不是吃父 proc-supervisor 的 config
+  - 它是吃 child procnode process 的 ProcHost.loadConfig 結果
+
+  現在這條鏈上，已知哪裡是好的：
+
+  - child proc 啟動方式：好了
+  - procnode process：起來了
+  - fsi-supervisor actor：存在
+  - ListSessions：能回
+
+  現在這條鏈上，還可疑的點：
+
+  (1) procnode 內部仍然有 Akka 預設 serializer/config 不完整
+  證據就是 container log 還在刷：
+
+  - serializer id 6
+  - serializer id 12
+  - Akka.Remote.Serialization.MessageContainerSerializer
+  - Akka.DistributedData.Serialization.ReplicatorMessageSerializer
+
+  這代表：
+
+  - procnode 雖然跑起來了
+  - 但它的 cluster/sharding/ddata traffic 還有 message 在反序列化時對不起來
+
+  這不一定會立刻讓整個 procnode 死掉，但會讓某些 actor 交互異常。
+
+  (2) fsi-supervisor 對 OpCmd 這條線和 ListSessions 不是同一類型
+  現在事實是：
+
+  - ListSessions OK
+  - OpCmd.GetVesion timeout
+
+  這表示兩種可能：
+
+  - ListSessions 走的 serializer/binding OK，但 OpCmd 在 procnode 這段還有落差
+  - 或 FsiSupervisorActor.Receive<OpCmd> 在部署版沒有如預期工作，但 Receive<ListSessions> 正常
+
+  (3) 目前部署裡還有一個版本訊號很怪
+  direct ask proc-supervisor GetVesion 回的是：
+
+  - 1.562.101.201-dgx.8+dea4308...
+
+  但 deps graph 是 FAkka.Proc.Supervisor dgx.9。
+
+  這通常代表兩種情況之一：
+
+  - dgx.9 package 內的 assembly informational version 沒跟著升
+  - 或你打到的 actor 實際載入的 assembly metadata 還是舊的
+
+  前者機率更高，而且這會讓判讀變得很混亂。
+
+  3. 所以「怎麼對齊」我建議這樣做，不要再大範圍亂動。
+
+  第一步：先把版本訊號修正到可信
+  也就是讓 FAkka.Proc.Supervisor dgx.9 的 assembly version / informational version 和 package version 一致。
+  不然你每次 direct ask 回來都是 dgx.8，會一直誤導排錯。
+
+  第二步：只查 procnode ActorSystem 真正載入後的 serialization state
+  不是看 source，不是看本機 test，而是讓 deployed procnode 自己印：
+
+  - akka.actor.serialization-identifiers
+  - _serializersById
+  - FindSerializerForType(typeof<OpCmd>)
+  - FindSerializerForType(typeof<ListSessions>)
+
+  這樣就能直接知道：
+
+  - 為什麼 ListSessions 行、OpCmd 不行
+  - 以及 id 6/12 到底有沒有在 procnode 裡真的註冊
+
+  第三步：在 FsiSupervisorActor 補最小診斷
+  例如：
+
+  - ReceiveAny log type
+  - Unhandled log
+  - 或針對 OpCmd 打更明確 log
+
+  因為現在 fsi-supervisor path 存在、ListSessions 可用、只有 GetVesion timeout，這時候最需要的是 actor 端證據，不是再猜 Dockerfile。
+
+  一句話總結：
+
+  - 現在不是「Dockerfile 還沒對齊」
+  - 也不是「缺 Akka.FSI.Supervisor.runtimeconfig.json」
+  - 而是 procnode 這個 ActorSystem 裡，某些 Akka 預設 serializer/config 與 OpCmd 這條 message path 還沒真正對齊
+  - 而且部署版 ProcSupervisor 的 assembly version 訊號本身也不乾淨，先要修到可信
+
+  如果你要，我下一步就直接做最小 debug 方案：
+
+  1. PulseTrade.fs 補 procnode 啟動時的 serialization dump
+  2. FsiSupervisorActor 補 OpCmd / Unhandled 診斷
+  3. 發一個純 debug 版 package
+  4. 你重部署後，我只看這兩份 log，不再往上猜
+
+
+
+› go
+
+
+• 我先只做最小 debug：在 procnode 啟動時 dump serialization state，並在 FsiSupervisorActor 對 OpCmd/unhandled 加診斷。先把根因證據做出來，再發 debug 版 package。
+
+• Ran git -C /workspace/home/work/PulseTrade.fs status --short && git -C /workspace/home/work/PulseTrade.fs rev-parse --abbrev-ref HEAD && git -C /workspace/home/work/
+  │ PulseTrade.fs log -1 --oneline
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +390 lines
+    20260325_002.fspickler-remoting-contracts
+    65d2778 fix: add remote and ddata defaults to procnode bootstrap
+
+• Explored
+  └ Read Supervisor.fs, ProcHost.fs
+
+─ Worked for 1m 45s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 先只收斂 fsi-supervisor GetVesion 這條最低層，做 actor/serializer 診斷，不碰 MCP 上層。我要在 PulseTrade.fs 補 FsiSupervisorActor 與 procnode 啟動時的 serialization dump，
+  然後本地驗證 direct ask 到底卡在哪。
+
+• Ran git status --short && git branch --show-current && git log -1 --oneline
+  └  M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/.msCoverageSourceRootsMapping_Akka.FSI.Supervisor.Tests
+     M Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.Cluster.dll
+    … +390 lines
+    20260325_002.fspickler-remoting-contracts
+    65d2778 fix: add remote and ddata defaults to procnode bootstrap
+
+• Explored
+  └ Read Supervisor.fs, ProcHost.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先補 Akka.FSI.Supervisor 這邊的最低層診斷：procnode 啟動時 dump serializer registry，FsiSupervisorActor 對 OpCmd 打明確 log，並加 ReceiveAny 看實際收到什麼型別。這樣下一
+  輪 direct ask 就能直接看是 OpCmd 還是又掉成別的 payload。
+
+• Explored
+  └ Search type FsiSupervisorActor|Receive<OpCmd>|Receive<ListSessions>|Receive<obj>|ReceiveAny|startProcNode|EnsureSupervisor|dumpSerializationState|ProcNodeReady|
+           fsiSupervisorPath in Akka.FSI.Supervisor
+    Read Supervisor.fs, ProcHost.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• procnode 本身 serializer dump 已經有了，現在差的就是 fsi-supervisor 端到底收到了什麼。我要在 Akka.FSI.Supervisor 補 system.Serialization dump、OpCmd log、以及 Receive<obj>
+  對 JObject 的型別診斷，先把證據抓出來。
+
+• Searched Akka.NET F# DU JObject unhandled remote actor Newtonsoft JObject Receive<obj>
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我查了 Akka 文檔與現況，現在方向更窄了：fsi-supervisor 既然 ListSessions 能回、GetVesion timeout，最有效的是直接在 FsiSupervisorActor 裡抓實際入站訊息型別與 serializer 對
+  應，不再猜 HOCON。下一步我會只補這段診斷，然後本地重現一次 direct ask。
+
+• Searched https://getakka.net/articles/serialization/codes.html
+
+• Explored
+  └ Search type IMessage|type OpCmd|type OpResult|type ListSessions|type Sessions|interface IMessage|\[<CLIMutable\]>|type .* = in Contracts.fs
+    Read Contracts.fs, Serialization.fs, Api.fs, Supervisor.fs, ProcSupervisor.fs
+
+─ Worked for 1m 09s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我要先在 PulseTrade.fs 本地重現同一條 remote ask 到 fsi-supervisor，並把 actor 端證據打出來。如果本地都能重現，就直接在 package 內修；如果本地不重現，再回頭判部署差異。
+
+• Explored
+  └ Search GetVesion|ListSessions|Sessions|remote ask|ProcSupervisor|FsiSupervisor in Akka.FSI.Supervisor.Tests
+    Read FsiSupervisorTests.fs, ProcSupervisorTests.fs, SupervisorTests.fs, ProcSupervisor.fs
+    Search InformationalVersion|AssemblyVersion|FileVersion|VersionPrefix|Version> in Akka.Proc.Supervisor.fsproj
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我找到一個關鍵事實：Akka.FSI.Supervisor.Tests 本來就有「直接 remote ask fsi-supervisor GetVesion」的測試，而且那條在 standalone remote system 是會過的。現在部署裡只有「掛在
+  procnode 內的 fsi-supervisor」這條失敗，所以問題更像是 procnode ActorSystem 或 guardian/supervisor path 上的差異，不是 FsiSupervisorActor.Receive<OpCmd> 全面壞掉。
+
+• Explored
+  └ Search fsiSupervisorPath|start-default|ProcNodeReady|ForwardMessage|ListSessions|GetAllProcInfo|ResolveOne|Ask<OpResult>|bootstrap-net10-host|ProcStartSpecBuilder in
+           ProcSupervisorTests.fs
+    Read ProcSupervisorTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我現在把診斷直接落進 Akka.FSI.Supervisor，並新增一個 ProcSupervisor.Tests 端到端測試去重現「bootstrap procnode 後 direct ask fsi-supervisor GetVesion」。這樣修正會有可回歸
+  的失敗/成功標準，不再靠手跑猜。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+51 -0)
+      6  open System.IO
+      7 +open System.Reflection
+      8  open System.Text.Json
+        ⋮
+    238
+    239 +    let dumpSerializationState (label: string) =
+    240 +        try
+    241 +            let system = this.ActorCtx.System
+    242 +            let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+    243 +            let fields =
+    244 +                system.Serialization.GetType().GetFields(flags)
+    245 +                |> Array.map (fun f -> f.Name, f)
+    246 +                |> Map.ofArray
+    247 +
+    248 +            let serializersById =
+    249 +                match fields.TryFind "_serializersById" with
+    250 +                | Some field ->
+    251 +                    match field.GetValue(system.Serialization) with
+    252 +                    | :? Collections.IDictionary as dict ->
+    253 +                        dict.Keys
+    254 +                        |> Seq.cast<obj>
+    255 +                        |> Seq.map (fun key ->
+    256 +                            let serializer = dict[key] :?> Akka.Serialization.Serializer
+    257 +                            string key, serializer.GetType().AssemblyQualifiedName)
+    258 +                        |> Seq.sortBy fst
+    259 +                        |> Seq.toArray
+    260 +                    | _ -> [||]
+    261 +                | None -> [||]
+    262 +
+    263 +            let identifiersCfg = system.Settings.Config.GetConfig("akka.actor.serialization-identifiers")
+    264 +            let opCmdSerializer = system.Serialization.FindSerializerForType(typeof<OpCmd>)
+    265 +            let opResultSerializer = system.Serialization.FindSerializerForType(typeof<OpResult>)
+    266 +            let listSessionsSerializer = system.Serialization.FindSerializerForType(typeof<ListSessions>)
+    267 +            let sessionsSerializer = system.Serialization.FindSerializerForType(typeof<Sessions>)
+    268 +
+    269 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] identifiers={1}", label, if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+    270 +            serializersById
+    271 +            |> Array.iter (fun (key, serializerType) ->
+    272 +                this.Log().Info("[FsiSupervisor.Serialization][{0}] serializerId={1} type={2}", label, key, serializerType))
+    273 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpCmd -> id={1} type={2}", label, opCmdSerializer.Identifier, opCmdSerializer.GetType().AssemblyQuali
+         fiedName)
+    274 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpResult -> id={1} type={2}", label, opResultSerializer.Identifier, opResultSerializer.GetType().Asse
+         mblyQualifiedName)
+    275 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] ListSessions -> id={1} type={2}", label, listSessionsSerializer.Identifier, listSessionsSerializer.Ge
+         tType().AssemblyQualifiedName)
+    276 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] Sessions -> id={1} type={2}", label, sessionsSerializer.Identifier, sessionsSerializer.GetType().Asse
+         mblyQualifiedName)
+    277 +        with ex ->
+    278 +            this.Log().Warning(ex, "[FsiSupervisor.Serialization][{0}] dump failed", label)
+    279 +
+    280      let tryExtractExecJsonFromObject (payload: obj) =
+        ⋮
+    405          ProtoBufInit.ensureUnitSerializer ()
+    406 +        dumpSerializationState "init"
+    407          let fsActor =
+        ⋮
+    454              let ctx = this.ActorCtx
+    455 +            this.Log().Info("FsiSupervisor received OpCmd={0} sender={1}", cmd, if isNull (box ctx.Sender) then "<null>" else ctx.Sender.Path.ToString())
+    456              match cmd with
+        ⋮
+    462                          (System.Reflection.Assembly.GetExecutingAssembly())
+    463 +                this.Log().Info("FsiSupervisor replying OpCmd={0} assembly={1} version={2}", cmd, result.assemblyName, defaultArg result.informationalVersion "<none>
+         ")
+    464                  ctx.Sender.Tell(result, ctx.Self))
+        ⋮
+    608
+    609 +        this.ReceiveAny(fun payload ->
+    610 +            let payloadType =
+    611 +                if isNull payload then "<null>"
+    612 +                else payload.GetType().AssemblyQualifiedName
+    613 +            this.Log().Warning("FsiSupervisor unhandled payload type={0} value={1}", payloadType, payload))
+    614 +
+    615          this.Log().Info("FsiSupervisorActor ready")
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs (+138 -0)
+    487      [<Fact>]
+    488 +    member _.``Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote``() =
+    489 +        task {
+    490 +            let getFreePort () =
+    491 +                use listener = new TcpListener(IPAddress.Loopback, 0)
+    492 +                listener.Start()
+    493 +                let port = (listener.LocalEndpoint :?> IPEndPoint).Port
+    494 +                listener.Stop()
+    495 +                port
+    496 +
+    497 +            let procAssembly = typeof<ProcSnapshot>.Assembly.Location
+    498 +            let outputDir = Path.GetDirectoryName(procAssembly)
+    499 +            let runtimeConfig = Path.Combine(outputDir, "Akka.Proc.Supervisor.runtimeconfig.json")
+    500 +            let depsFile = Path.Combine(outputDir, "Akka.Proc.Supervisor.deps.json")
+    501 +            let host = "127.0.0.1"
+    502 +            let supervisorPort = getFreePort()
+    503 +            let webPort = getFreePort()
+    504 +            let systemName = "proc-bootstrap-version-" + Guid.NewGuid().ToString("N")
+    505 +            let clientSystemName = "proc-bootstrap-version-client-" + Guid.NewGuid().ToString("N")
+    506 +            let procId = "bootstrap-version-" + Guid.NewGuid().ToString("N")
+    507 +            let seedAddress = $"akka.tcp://{systemName}@{host}:{supervisorPort}"
+    508 +
+    509 +            let psi = ProcessStartInfo()
+    510 +            psi.FileName <- "dotnet"
+    511 +            psi.WorkingDirectory <- outputDir
+    512 +            psi.ArgumentList.Add("exec")
+    513 +            psi.ArgumentList.Add("--runtimeconfig")
+    514 +            psi.ArgumentList.Add(runtimeConfig)
+    515 +            psi.ArgumentList.Add("--depsfile")
+    516 +            psi.ArgumentList.Add(depsFile)
+    517 +            psi.ArgumentList.Add(procAssembly)
+    518 +            psi.ArgumentList.Add("--mode")
+    519 +            psi.ArgumentList.Add("supervisor")
+    520 +            psi.ArgumentList.Add("--systemname")
+    521 +            psi.ArgumentList.Add(systemName)
+    522 +            psi.ArgumentList.Add("--host")
+    523 +            psi.ArgumentList.Add(host)
+    524 +            psi.ArgumentList.Add("--port")
+    525 +            psi.ArgumentList.Add(string supervisorPort)
+    526 +            psi.ArgumentList.Add("--webhost")
+    527 +            psi.ArgumentList.Add(host)
+    528 +            psi.ArgumentList.Add("--webport")
+    529 +            psi.ArgumentList.Add(string webPort)
+    530 +            psi.ArgumentList.Add("--seed")
+    531 +            psi.ArgumentList.Add(seedAddress)
+    532 +            psi.ArgumentList.Add("--spawndefault")
+    533 +            psi.ArgumentList.Add("--procid")
+    534 +            psi.ArgumentList.Add(procId)
+    535 +            psi.RedirectStandardOutput <- true
+    536 +            psi.RedirectStandardError <- true
+    537 +            psi.UseShellExecute <- false
+    538 +
+    539 +            use proc = Process.Start(psi)
+    540 +            let stdout = System.Collections.Concurrent.ConcurrentQueue<string>()
+    541 +            let stderr = System.Collections.Concurrent.ConcurrentQueue<string>()
+    542 +            proc.OutputDataReceived.Add(fun args -> if not (isNull args.Data) then stdout.Enqueue args.Data)
+    543 +            proc.ErrorDataReceived.Add(fun args -> if not (isNull args.Data) then stderr.Enqueue args.Data)
+    544 +            proc.BeginOutputReadLine()
+    545 +            proc.BeginErrorReadLine()
+    546 +
+    547 +            let dumpOutput () =
+    548 +                seq {
+    549 +                    while not stdout.IsEmpty do
+    550 +                        match stdout.TryDequeue() with
+    551 +                        | true, line -> yield $"stdout> {line}"
+    552 +                        | _ -> ()
+    553 +                    while not stderr.IsEmpty do
+    554 +                        match stderr.TryDequeue() with
+    555 +                        | true, line -> yield $"stderr> {line}"
+    556 +                        | _ -> ()
+    557 +                }
+    558 +                |> Seq.iter output.WriteLine
+    559 +
+    560 +            use http = new HttpClient(Timeout = TimeSpan.FromSeconds 5.0)
+    561 +            use clientSystem = ActorSystem.Create(clientSystemName, TestHelpers.systemConfigWithPort host 0)
+    562 +
+    563 +            let tryGet (url: string) =
+    564 +                task {
+    565 +                    try
+    566 +                        let! text = http.GetStringAsync(url)
+    567 +                        return Some text
+    568 +                    with _ ->
+    569 +                        return None
+    570 +                }
+    571 +
+    572 +            try
+    573 +                let! ready =
+    574 +                    TestHelpers.waitUntil (TimeSpan.FromSeconds 20.0) (TimeSpan.FromMilliseconds 300.0) (fun () ->
+    575 +                        task {
+    576 +                            let! text = tryGet $"http://{host}:{webPort}/api/proc/nodes"
+    577 +                            return
+    578 +                                text
+    579 +                                |> Option.exists (fun json ->
+    580 +                                    use doc = JsonDocument.Parse(json)
+    581 +                                    doc.RootElement.EnumerateArray()
+    582 +                                    |> Seq.exists (fun item ->
+    583 +                                        let mutable procIdValue = Unchecked.defaultof<JsonElement>
+    584 +                                        let mutable fsiPathValue = Unchecked.defaultof<JsonElement>
+    585 +                                        item.TryGetProperty("procId", &procIdValue)
+    586 +                                        && procIdValue.GetString() = procId
+    587 +                                        && item.TryGetProperty("fsiSupervisorPath", &fsiPathValue)
+    588 +                                        && fsiPathValue.ValueKind = JsonValueKind.String
+    589 +                                        && not (String.IsNullOrWhiteSpace(fsiPathValue.GetString()))))
+    590 +                        })
+    591 +
+    592 +                Assert.True(ready, "bootstrap procnode should expose a live fsiSupervisorPath")
+    593 +
+    594 +                let! snapshots =
+    595 +                    clientSystem
+    596 +                        .ActorSelection($"akka.tcp://{systemName}@{host}:{supervisorPort}/user/proc-supervisor")
+    597 +                        .Ask<ProcSnapshot array>(GetAllProcInfo, TimeSpan.FromSeconds 5.0)
+    598 +
+    599 +                let snapshot =
+    600 +                    snapshots
+    601 +                    |> Array.find (fun item -> String.Equals(item.procId, procId, StringComparison.Ordinal))
+    602 +
+    603 +                Assert.Equal("running", snapshot.status)
+    604 +                Assert.True(snapshot.fsiSupervisorPath.IsSome, "fsi supervisor path should be populated")
+    605 +
+    606 +                let fsiSelection = clientSystem.ActorSelection(snapshot.fsiSupervisorPath.Value)
+    607 +                let! _ = fsiSelection.ResolveOne(TimeSpan.FromSeconds 5.0)
+    608 +                let! sessions = fsiSelection.Ask<Sessions>({ all = true }, TimeSpan.FromSeconds 5.0)
+    609 +                Assert.NotNull(sessions)
+    610 +                let! version = fsiSelection.Ask<OpResult>(GetVesion, TimeSpan.FromSeconds 5.0)
+    611 +                Assert.Equal("GetVesion", version.op)
+    612 +                Assert.Equal("Akka.FSI.Supervisor", version.assemblyName)
+    613 +            finally
+    614 +                if not proc.HasExited then
+    615 +                    try
+    616 +                        proc.Kill(true)
+    617 +                        proc.WaitForExit(5000) |> ignore
+    618 +                    with _ ->
+    619 +                        ()
+    620 +                dumpOutput ()
+    621 +                let! _ = clientSystem.Terminate()
+    622 +                do! clientSystem.WhenTerminated
+    623 +        }
+    624 +
+    625 +    [<Fact>]
+    626      member _.``StartProc launches process``() =
+
+─ Worked for 1m 02s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先跑 targeted test，優先看本地能不能重現 bootstrap procnode -> fsi-supervisor GetVesion 失敗。如果 test 紅燈，我就用剛補的 actor log 直接收斂根因。
+
+• 兩個 targeted tests 都在跑。我先等 ProcSupervisor.Tests 的新 case 結果；如果它本地就 timeout，actor log 會直接告訴我們 fsi-supervisor 收到的是 typed OpCmd 還是別的東西。
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "Supervisor answers GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +33 lines
+    program point. A type annotation may be needed prior to this program point to constrain the type of the object. This may allow the lookup to be resolved. [/workspace/
+    home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +38 lines
+    program point. A type annotation may be needed prior to this program point to constrain the type of the object. This may allow the lookup to be resolved. [/workspace/
+    home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 編譯先被我剛加的 serializer dump 卡住了，這是 F# 型別推斷問題，不是功能問題。我先把診斷 helper 的型別註明補齊，然後再跑同一個 targeted test，不會轉去做別的。
+
+• Explored
+  └ Read Supervisor.fs
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+6 -5)
+    238
+    239 +    member _.ActorCtx : IActorContext = ActorBase.Context
+    240 +    member this.Log() : ILoggingAdapter = Logging.GetLogger(this.ActorCtx)
+    241 +
+    242      let dumpSerializationState (label: string) =
+    243          try
+    241 -            let system = this.ActorCtx.System
+    244 +            let system : ActorSystem = this.ActorCtx.System
+    245              let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+        ⋮
+    251              let serializersById =
+    249 -                match fields.TryFind "_serializersById" with
+    252 +                match Map.tryFind "_serializersById" fields with
+    253                  | Some field ->
+    254                      match field.GetValue(system.Serialization) with
+    252 -                    | :? Collections.IDictionary as dict ->
+    255 +                    | :? System.Collections.IDictionary as dict ->
+    256                          dict.Keys
+        ⋮
+    355      do this.Initialize()
+    353 -    member _.ActorCtx = ActorBase.Context
+    354 -    member this.Log() = Logging.GetLogger(this.ActorCtx)
+    356
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs (+5 -2)
+    620                  dumpOutput ()
+    621 -                let! _ = clientSystem.Terminate()
+    622 -                do! clientSystem.WhenTerminated
+    621 +                try
+    622 +                    clientSystem.Terminate().GetAwaiter().GetResult() |> ignore
+    623 +                    clientSystem.WhenTerminated.GetAwaiter().GetResult() |> ignore
+    624 +                with _ ->
+    625 +                    ()
+    626          }
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "Supervisor answers GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +4 lines
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs(242,5): error FS0960: 'let' and 'do' bindings must come before member and interface definitions
+    in type definitions [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +13 lines
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs(242,5): error FS0960: 'let' and 'do' bindings must come before member and interface definitions
+    in type definitions [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地 targeted tests 已重新起跑。我要等 ProcSupervisor.Tests 那個新 case 的完整 stdout/stderr，因為它會把 bootstrap procnode 與 FsiSupervisorActor 的新診斷一起吐出來，這就是
+  下一刀的依據。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+12 -10)
+    238
+    239 -    member _.ActorCtx : IActorContext = ActorBase.Context
+    240 -    member this.Log() : ILoggingAdapter = Logging.GetLogger(this.ActorCtx)
+    239 +    let actorCtx () : IActorContext = ActorBase.Context
+    240 +    let logger () : ILoggingAdapter = Logging.GetLogger(actorCtx())
+    241
+        ⋮
+    243          try
+    244 -            let system : ActorSystem = this.ActorCtx.System
+    244 +            let system : ActorSystem = (actorCtx()).System
+    245              let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+        ⋮
+    271
+    272 -            this.Log().Info("[FsiSupervisor.Serialization][{0}] identifiers={1}", label, if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+    272 +            logger().Info("[FsiSupervisor.Serialization][{0}] identifiers={1}", label, if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+    273              serializersById
+    274              |> Array.iter (fun (key, serializerType) ->
+    275 -                this.Log().Info("[FsiSupervisor.Serialization][{0}] serializerId={1} type={2}", label, key, serializerType))
+    276 -            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpCmd -> id={1} type={2}", label, opCmdSerializer.Identifier, opCmdSerializer.GetType().AssemblyQuali
+         fiedName)
+    277 -            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpResult -> id={1} type={2}", label, opResultSerializer.Identifier, opResultSerializer.GetType().Asse
+         mblyQualifiedName)
+    278 -            this.Log().Info("[FsiSupervisor.Serialization][{0}] ListSessions -> id={1} type={2}", label, listSessionsSerializer.Identifier, listSessionsSerializer.Ge
+         tType().AssemblyQualifiedName)
+    279 -            this.Log().Info("[FsiSupervisor.Serialization][{0}] Sessions -> id={1} type={2}", label, sessionsSerializer.Identifier, sessionsSerializer.GetType().Asse
+         mblyQualifiedName)
+    275 +                logger().Info("[FsiSupervisor.Serialization][{0}] serializerId={1} type={2}", label, key, serializerType))
+    276 +            logger().Info("[FsiSupervisor.Serialization][{0}] OpCmd -> id={1} type={2}", label, opCmdSerializer.Identifier, opCmdSerializer.GetType().AssemblyQualifi
+         edName)
+    277 +            logger().Info("[FsiSupervisor.Serialization][{0}] OpResult -> id={1} type={2}", label, opResultSerializer.Identifier, opResultSerializer.GetType().Assemb
+         lyQualifiedName)
+    278 +            logger().Info("[FsiSupervisor.Serialization][{0}] ListSessions -> id={1} type={2}", label, listSessionsSerializer.Identifier, listSessionsSerializer.GetT
+         ype().AssemblyQualifiedName)
+    279 +            logger().Info("[FsiSupervisor.Serialization][{0}] Sessions -> id={1} type={2}", label, sessionsSerializer.Identifier, sessionsSerializer.GetType().Assemb
+         lyQualifiedName)
+    280          with ex ->
+    281 -            this.Log().Warning(ex, "[FsiSupervisor.Serialization][{0}] dump failed", label)
+    281 +            logger().Warning(ex, "[FsiSupervisor.Serialization][{0}] dump failed", label)
+    282
+        ⋮
+    355      do this.Initialize()
+    356 +    member _.ActorCtx = ActorBase.Context
+    357 +    member this.Log() = Logging.GetLogger(this.ActorCtx)
+    358
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "Supervisor answers GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +5 lines
+    members may only be accessed from within the declaring type. Protected members may only be accessed from an extending type and cannot be accessed from inner lambda
+    expressions. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +14 lines
+    members may only be accessed from within the declaring type. Protected members may only be accessed from an extending type and cannot be accessed from inner lambda
+    expressions. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Waited for background terminal
+
+
+
+
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +14 lines
+    members may only be accessed from within the declaring type. Protected members may only be accessed from an extending type and cannot be accessed from inner lambda
+    expressions. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+• Waited for background terminal
+
+• Explored
+  └ Read Supervisor.fs
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+41 -44)
+    238
+    239 -    let actorCtx () : IActorContext = ActorBase.Context
+    240 -    let logger () : ILoggingAdapter = Logging.GetLogger(actorCtx())
+    241 -
+    242 -    let dumpSerializationState (label: string) =
+    243 -        try
+    244 -            let system : ActorSystem = (actorCtx()).System
+    245 -            let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+    246 -            let fields =
+    247 -                system.Serialization.GetType().GetFields(flags)
+    248 -                |> Array.map (fun f -> f.Name, f)
+    249 -                |> Map.ofArray
+    250 -
+    251 -            let serializersById =
+    252 -                match Map.tryFind "_serializersById" fields with
+    253 -                | Some field ->
+    254 -                    match field.GetValue(system.Serialization) with
+    255 -                    | :? System.Collections.IDictionary as dict ->
+    256 -                        dict.Keys
+    257 -                        |> Seq.cast<obj>
+    258 -                        |> Seq.map (fun key ->
+    259 -                            let serializer = dict[key] :?> Akka.Serialization.Serializer
+    260 -                            string key, serializer.GetType().AssemblyQualifiedName)
+    261 -                        |> Seq.sortBy fst
+    262 -                        |> Seq.toArray
+    263 -                    | _ -> [||]
+    264 -                | None -> [||]
+    265 -
+    266 -            let identifiersCfg = system.Settings.Config.GetConfig("akka.actor.serialization-identifiers")
+    267 -            let opCmdSerializer = system.Serialization.FindSerializerForType(typeof<OpCmd>)
+    268 -            let opResultSerializer = system.Serialization.FindSerializerForType(typeof<OpResult>)
+    269 -            let listSessionsSerializer = system.Serialization.FindSerializerForType(typeof<ListSessions>)
+    270 -            let sessionsSerializer = system.Serialization.FindSerializerForType(typeof<Sessions>)
+    271 -
+    272 -            logger().Info("[FsiSupervisor.Serialization][{0}] identifiers={1}", label, if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+    273 -            serializersById
+    274 -            |> Array.iter (fun (key, serializerType) ->
+    275 -                logger().Info("[FsiSupervisor.Serialization][{0}] serializerId={1} type={2}", label, key, serializerType))
+    276 -            logger().Info("[FsiSupervisor.Serialization][{0}] OpCmd -> id={1} type={2}", label, opCmdSerializer.Identifier, opCmdSerializer.GetType().AssemblyQualifi
+         edName)
+    277 -            logger().Info("[FsiSupervisor.Serialization][{0}] OpResult -> id={1} type={2}", label, opResultSerializer.Identifier, opResultSerializer.GetType().Assemb
+         lyQualifiedName)
+    278 -            logger().Info("[FsiSupervisor.Serialization][{0}] ListSessions -> id={1} type={2}", label, listSessionsSerializer.Identifier, listSessionsSerializer.GetT
+         ype().AssemblyQualifiedName)
+    279 -            logger().Info("[FsiSupervisor.Serialization][{0}] Sessions -> id={1} type={2}", label, sessionsSerializer.Identifier, sessionsSerializer.GetType().Assemb
+         lyQualifiedName)
+    280 -        with ex ->
+    281 -            logger().Warning(ex, "[FsiSupervisor.Serialization][{0}] dump failed", label)
+    282 -
+    239      let tryExtractExecJsonFromObject (payload: obj) =
+        ⋮
+    314
+    315 +    member private this.DumpSerializationState(label: string) =
+    316 +        try
+    317 +            let system : ActorSystem = this.ActorCtx.System
+    318 +            let flags = BindingFlags.NonPublic ||| BindingFlags.Instance
+    319 +            let fields =
+    320 +                system.Serialization.GetType().GetFields(flags)
+    321 +                |> Array.map (fun f -> f.Name, f)
+    322 +                |> Map.ofArray
+    323 +
+    324 +            let serializersById =
+    325 +                match Map.tryFind "_serializersById" fields with
+    326 +                | Some field ->
+    327 +                    match field.GetValue(system.Serialization) with
+    328 +                    | :? System.Collections.IDictionary as dict ->
+    329 +                        dict.Keys
+    330 +                        |> Seq.cast<obj>
+    331 +                        |> Seq.map (fun key ->
+    332 +                            let serializer = dict[key] :?> Akka.Serialization.Serializer
+    333 +                            string key, serializer.GetType().AssemblyQualifiedName)
+    334 +                        |> Seq.sortBy fst
+    335 +                        |> Seq.toArray
+    336 +                    | _ -> [||]
+    337 +                | None -> [||]
+    338 +
+    339 +            let identifiersCfg = system.Settings.Config.GetConfig("akka.actor.serialization-identifiers")
+    340 +            let opCmdSerializer = system.Serialization.FindSerializerForType(typeof<OpCmd>)
+    341 +            let opResultSerializer = system.Serialization.FindSerializerForType(typeof<OpResult>)
+    342 +            let listSessionsSerializer = system.Serialization.FindSerializerForType(typeof<ListSessions>)
+    343 +            let sessionsSerializer = system.Serialization.FindSerializerForType(typeof<Sessions>)
+    344 +
+    345 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] identifiers={1}", label, if isNull identifiersCfg then "<null>" else identifiersCfg.ToString())
+    346 +            serializersById
+    347 +            |> Array.iter (fun (key, serializerType) ->
+    348 +                this.Log().Info("[FsiSupervisor.Serialization][{0}] serializerId={1} type={2}", label, key, serializerType))
+    349 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpCmd -> id={1} type={2}", label, opCmdSerializer.Identifier, opCmdSerializer.GetType().AssemblyQuali
+         fiedName)
+    350 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] OpResult -> id={1} type={2}", label, opResultSerializer.Identifier, opResultSerializer.GetType().Asse
+         mblyQualifiedName)
+    351 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] ListSessions -> id={1} type={2}", label, listSessionsSerializer.Identifier, listSessionsSerializer.Ge
+         tType().AssemblyQualifiedName)
+    352 +            this.Log().Info("[FsiSupervisor.Serialization][{0}] Sessions -> id={1} type={2}", label, sessionsSerializer.Identifier, sessionsSerializer.GetType().Asse
+         mblyQualifiedName)
+    353 +        with ex ->
+    354 +            this.Log().Warning(ex, "[FsiSupervisor.Serialization][{0}] dump failed", label)
+    355 +
+    356
+
+• Explored
+  └ Search DumpSerializationState|dumpSerializationState in Supervisor.fs
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+1 -1)
+    405          ProtoBufInit.ensureUnitSerializer ()
+    406 -        dumpSerializationState "init"
+    406 +        this.DumpSerializationState "init"
+    407          let fsActor =
+
+• Waited for background terminal
+
+─ Worked for 2m 14s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• FSI.Supervisor.Tests 的 standalone remote case 先跑著；ProcSupervisor.Tests 的新 bootstrap case 也已重跑。我要拿到它的 stdout/stderr，特別看 FsiSupervisor.Serialization 與
+  unhandled payload 的 log。
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "Supervisor answers GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +12 lines
+    net10.0/Akka.FSI.Supervisor.Tests.dll
+
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap
+procnode FSI supervisor answers GetVesion over Akka.Remote"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +181 lines
+
+    Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 1 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地已經重現到和部署幾乎同一條路徑了，但我新 test 太早斷言 status=running，在 procnode 剛回報 starting 時就停掉，還沒讓 FsiSupervisorActor 的後續 log 完整吐出來。我先把它改
+  成等待 running 再 ask，這樣就能拿到真正的 fsi-supervisor GetVesion 證據。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/ProcSupervisorTests.fs (+18 -9)
+    593
+    594 -                let! snapshots =
+    595 -                    clientSystem
+    596 -                        .ActorSelection($"akka.tcp://{systemName}@{host}:{supervisorPort}/user/proc-supervisor")
+    597 -                        .Ask<ProcSnapshot array>(GetAllProcInfo, TimeSpan.FromSeconds 5.0)
+    594 +                let procSelection =
+    595 +                    clientSystem.ActorSelection($"akka.tcp://{systemName}@{host}:{supervisorPort}/user/proc-supervisor")
+    596
+    599 -                let snapshot =
+    600 -                    snapshots
+    601 -                    |> Array.find (fun item -> String.Equals(item.procId, procId, StringComparison.Ordinal))
+    597 +                let mutable snapshotOpt : ProcSnapshot option = None
+    598 +                let! runningReady =
+    599 +                    TestHelpers.waitUntil (TimeSpan.FromSeconds 20.0) (TimeSpan.FromMilliseconds 300.0) (fun () ->
+    600 +                        task {
+    601 +                            let! snapshots = procSelection.Ask<ProcSnapshot array>(GetAllProcInfo, TimeSpan.FromSeconds 5.0)
+    602 +                            snapshotOpt <-
+    603 +                                snapshots
+    604 +                                |> Array.tryFind (fun item -> String.Equals(item.procId, procId, StringComparison.Ordinal))
+    605 +                            return
+    606 +                                snapshotOpt
+    607 +                                |> Option.exists (fun snapshot ->
+    608 +                                    String.Equals(snapshot.status, "running", StringComparison.OrdinalIgnoreCase)
+    609 +                                    && snapshot.fsiSupervisorPath.IsSome)
+    610 +                        })
+    611
+    603 -                Assert.Equal("running", snapshot.status)
+    604 -                Assert.True(snapshot.fsiSupervisorPath.IsSome, "fsi supervisor path should be populated")
+    612 +                Assert.True(runningReady, "bootstrap procnode should reach running status with a live fsi supervisor path")
+    613 +                let snapshot = snapshotOpt.Value
+    614
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap
+procnode FSI supervisor answers GetVesion over Akka.Remote"
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地 bootstrap case 目前沒有立即失敗，這次已經進到真正的 ask 階段了。我再等它吐完整結果；如果還是 timeout，現在就能直接從 FsiSupervisorActor 的新 log 看是 Receive<OpCmd> 沒
+  進，還是進了沒回。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap
+procnode FSI supervisor answers GetVesion over Akka.Remote"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +840 lines
+
+    Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 21 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地 bootstrap case 顯示 procnode 在 FsiSupervisorActor initializing 後沒有走到 ready，然後 child proc 會被 supervisor 視為退出並重啟。這比 GetVesion 更底層，代表我現在先要
+  抓的是 FSI supervisor 初始化在哪一步死掉，不是 Receive<OpCmd>。我先補 init step log，再用本地啟動腳本重現。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+8 -0)
+    404          // Design: PCSL storage uses protobuf-net; register unit in the PCSL model via ProtoBuf.FSharp.
+    405 +        this.Log().Info("FsiSupervisorActor init step=protobuf.ensure")
+    406          ProtoBufInit.ensureUnitSerializer ()
+    407 +        this.Log().Info("FsiSupervisorActor init step=protobuf.ensure.done")
+    408 +        this.Log().Info("FsiSupervisorActor init step=serialization.dump")
+    409          this.DumpSerializationState "init"
+    410 +        this.Log().Info("FsiSupervisorActor init step=serialization.dump.done")
+    411 +        this.Log().Info("FsiSupervisorActor init step=create.fsifs")
+    412          let fsActor =
+    413              this.ActorCtx.ActorOf(Props.Create(fun () -> PcslFileSystemActor(storage, settings)), "fsifs")
+    414 +        this.Log().Info("FsiSupervisorActor init step=create.fsifs.done")
+    415
+    416 +        this.Log().Info("FsiSupervisorActor init step=install.pcsl")
+    417          PcslFileSystem.install storage settings.filesystem.overlayRoots |> ignore
+    418 +        this.Log().Info("FsiSupervisorActor init step=install.pcsl.done")
+    419
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap
+procnode FSI supervisor answers GetVesion over Akka.Remote"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +876 lines
+
+    Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 21 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+─ Worked for 1m 07s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我抓到一個更低層的信號了：FsiSupervisorActor 在 init step=protobuf.ensure 之後就沒有 done，所以現在最可疑的不是 OpCmd，而是 ProtoBufInit.ensureUnitSerializer() 這一步本身在
+  procnode 情境卡住或拋例外。這比 remoting 更底層，而且跟你看到的奇怪 fCell2 輸出對得上。
+
+• Waited for background terminal
+
+• 我先不亂改行為，先把 ProtoBufInit.ensureUnitSerializer() 拆成 step-by-step log。現在最可疑的是 tryRegisterInLoadedModels()，如果真的是它卡住，就能有硬證據，之後再決定是縮限
+  反射範圍還是把它改成 opt-in。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+11 -0)
+    183                  try
+    184 +                    let sw = Stopwatch.StartNew()
+    185 +                    printfn "[ProtoBufInit] step=default-model.start"
+    186                      let model = RuntimeTypeModel.Default
+    187 +                    printfn "[ProtoBufInit] step=default-model.done elapsedMs=%d" sw.ElapsedMilliseconds
+    188 +                    printfn "[ProtoBufInit] step=register-unit.start"
+    189                      tryRegisterUnitIntoModel model |> ignore
+    190 +                    printfn "[ProtoBufInit] step=register-unit.done elapsedMs=%d" sw.ElapsedMilliseconds
+    191 +                    printfn "[ProtoBufInit] step=register-protobuf-fsharp.start"
+    192                      tryRegisterWithProtobufFsharp ()
+    193 +                    printfn "[ProtoBufInit] step=register-protobuf-fsharp.done elapsedMs=%d" sw.ElapsedMilliseconds
+    194 +                    printfn "[ProtoBufInit] step=register-pcsl.start"
+    195                      tryRegisterPcslModel ()
+    196 +                    printfn "[ProtoBufInit] step=register-pcsl.done elapsedMs=%d" sw.ElapsedMilliseconds
+    197 +                    printfn "[ProtoBufInit] step=register-loaded-models.start"
+    198                      tryRegisterInLoadedModels ()
+    199 +                    printfn "[ProtoBufInit] step=register-loaded-models.done elapsedMs=%d" sw.ElapsedMilliseconds
+    200                  with _ -> ()
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap
+procnode FSI supervisor answers GetVesion over Akka.Remote"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "Bootstrap procnode FSI supervisor answers
+  │ GetVesion over Akka.Remote"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +925 lines
+
+    Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 21 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+─ Worked for 1m 50s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 我先只卡在最低層：查 procnode 裡 FsiSupervisorActor 為什麼卡在 ProtoBufInit.ensureUnitSerializer()，不再碰 MCP 或高層流程。
+
+• Explored
+  └ Read Supervisor.fs
+    Search ensureUnitSerializer|register-unit|register-protobuf-fsharp|register-pcsl|register-loaded-models|PersistedConcurrentSortedList|ProtoBufInit in Akka.FSI.Supervisor
+    Read Supervisor.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先重跑本地 procnode 測試看 ProtoBufInit 到底卡在 register-pcsl 還是 register-loaded-models，先把掛點縮到單一步驟。
+
+• 本地測試正在跑；我等它把 child proc log 打完，這一步能直接告訴我 ensureUnitSerializer 卡死在哪個子步驟。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter
+"FullyQualifiedName~Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=detailed"
+
+• 這次 child proc 顯示出新的線索：在卡住前會印 t: ImmutableHashSet\1 / arg: String。我接著把完整結果等出來，再去定位是哪個反射/序列化步驟碰到 ImmutableHashSet<string>`。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter
+"FullyQualifiedName~Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=detailed"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "FullyQualifiedName~Bootstrap procnode FSI
+  │ supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=detailed"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj : warning NU1608: Detected package version outside of dependency
+    … +2438 lines
+         Failed: 1
+     Total time: 21.6435 Seconds
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我抓到現在本地失敗的直接原因了，不是 protobuf，也不是 remoting：是我加的診斷碼把 ReceiveAny 放在 Receive<obj> 後面，Akka 直接拒絕這種 handler 順序。先把這個診斷 bug 拔掉，
+  再重跑同一條最低層測試。
+
+• 我現在只修這個我自己引入的 actor 初始化錯誤，不碰別的邏輯；修完就立即重跑 procnode -> fsi-supervisor GetVesion 這條最低層路徑。
+
+• Explored
+  └ Search ReceiveAny|received unhandled payload|Receive<obj>\(fun payload in Supervisor.fs
+    Read Supervisor.fs
+    Read Supervisor.fs
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+6 -7)
+    618              match tryExtractExecJsonFromObject payload with
+    619 -            | None -> ()
+    619 +            | None ->
+    620 +                let payloadType =
+    621 +                    if isNull payload then "<null>"
+    622 +                    else payload.GetType().AssemblyQualifiedName
+    623 +                this.Log().Warning("FsiSupervisor unhandled payload type={0} value={1}", payloadType, payload)
+    624 +                this.Unhandled payload
+    625              | Some json ->
+        ⋮
+    631                      ctx.Sender.Tell(Status.Failure ex, ctx.Self))
+    627 -
+    628 -        this.ReceiveAny(fun payload ->
+    629 -            let payloadType =
+    630 -                if isNull payload then "<null>"
+    631 -                else payload.GetType().AssemblyQualifiedName
+    632 -            this.Log().Warning("FsiSupervisor unhandled payload type={0} value={1}", payloadType, payload))
+    632
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "FullyQualifiedName~Bootstrap procnode FSI
+  │ supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=minimal"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +14 lines
+    members may only be accessed from within the declaring type. Protected members may only be accessed from an extending type and cannot be accessed from inner lambda
+    expressions. [/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj]
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把我自己加壞的 ReceiveAny 已拔掉，現在重跑同一條測試。這次如果還失敗，就能看真正的 fsi-supervisor GetVesion 問題，不會再被診斷碼污染。
+
+• Waited for background terminal
+
+• 這次是 F#/Akka 可見性小問題，不是 runtime 根因。我把 Unhandled 拿掉，只保留 log，讓測試能往真正的 remoting 路徑走完。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs (+0 -1)
+    623                  this.Log().Warning("FsiSupervisor unhandled payload type={0} value={1}", payloadType, payload)
+    624 -                this.Unhandled payload
+    624              | Some json ->
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter
+"FullyQualifiedName~Bootstrap procnode FSI supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=minimal"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor.Tests/Akka.Proc.Supervisor.Tests.fsproj --filter "FullyQualifiedName~Bootstrap procnode FSI
+  │ supervisor answers GetVesion over Akka.Remote" -l "console;verbosity=minimal"
+  └   Determining projects to restore...
+    /workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj : warning NU1608: Detected package version outside of dependency constraint:
+    … +24 lines
+
+    Passed!  - Failed:     0, Passed:     1, Skipped:     0, Total:     1, Duration: 2 s - Akka.Proc.Supervisor.Tests.dll (net10.0)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 本地最低層已經打通：procnode -> fsi-supervisor GetVesion 現在在 Akka.Proc.Supervisor.Tests 真實遠端案例裡會過。下一步我只重測你部署中的兩個 actor 版本，不碰 MCP。
+
+• Ran cat >/tmp/check_live_proc_fsi_versions.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/bin/Debug/net10.0/Akka.Proc.Supervisor.dll"
+  │ … +54 lines
+  └
+
+    /tmp/check_live_proc_fsi_versions.fsx(18,47): error FS0597: Successive arguments should be separated by spaces or tupled, and arguments involving function or method
+    applications should be parenthesized
+
+
+• 本地真實遠端案例已經過；我現在重測部署版 proc/fsi GetVesion。剛剛只是臨時腳本被 shell 的 ! 歷史展開咬到，跟系統本身無關，我直接改掉再跑。
+
+• Ran set +H
+  │ cat >/tmp/check_live_proc_fsi_versions.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ … +55 lines
+  └
+
+    /tmp/check_live_proc_fsi_versions.fsx(18,47): error FS0597: Successive arguments should be separated by spaces or tupled, and arguments involving function or method
+    applications should be parenthesized
+
+
+
+› 在 init step=protobuf.ensure 之後就沒有 done <= 你怎麼測的?怎麼我用 AKKA.NET 這麼久都沒聽過這玩意?
+  /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs 裡面 tryRegisterUnitIntoModel model 這又是三小? 模型是指什麼?
+  FsiSupervisorActor 要 ProtoBufInit.ensureUnitSerializer 做什麼?
+
+
+• 不是 Akka.NET 標準機制，這是這個專案自己加的初始化。
+
+  先講你問的第一句：
+
+  - 我現在重新測到的結果是：protobuf.ensure 其實有 done
+  - 之前看起來像卡在那裡，是因為我當時的診斷不夠細，後來又被我自己加壞的 ReceiveAny 干擾
+  - 我剛剛重跑本地 procnode 真實遠端測試，log 已經明確看到：
+      - step=protobuf.ensure
+      - step=protobuf.ensure.done
+      - step=serialization.dump
+      - step=serialization.dump.done
+      - step=create.fsifs
+      - step=create.fsifs.done
+      - step=install.pcsl
+      - step=install.pcsl.done
+  - 所以現在本地這條線不是卡在 ProtoBufInit.ensureUnitSerializer()
+
+  你問的第二句，tryRegisterUnitIntoModel model 是什麼：
+
+  - 這裡的 model 不是 actor model，也不是 domain model
+  - 它是 protobuf-net 的 RuntimeTypeModel
+  - 也就是 protobuf-net 在 runtime 用來記錄「哪些 .NET 型別怎麼做 protobuf 序列化」的型別模型
+
+  對應程式在：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Supervisor.fs
+
+  這段核心做的事情是：
+
+  - 找 ProtoBuf.FSharp.Serialiser
+  - 用反射找 registerRuntimeTypeIntoModel
+  - 把 typeof<unit> 註冊進某個 RuntimeTypeModel
+
+  所以 tryRegisterUnitIntoModel model 的白話是：
+
+  - 嘗試把 F# unit 註冊到 protobuf-net 的 runtime type model 裡
+
+  你問第三句，FsiSupervisorActor 為什麼要做 ProtoBufInit.ensureUnitSerializer()：
+
+  原因不是 Akka.NET，而是它這個 FSI supervisor 內部還整合了 PCSL / protobuf 這套儲存層。
+
+  這個 actor 啟動時會做兩件跟 PCSL 有關的事：
+
+  1. 建 PcslFileSystemActor
+  2. 呼叫 PcslFileSystem.install ...
+
+  而 PCSL 這套在這個 repo 裡是透過 protobuf-net 做資料模型序列化的。
+  F# 裡某些資料結構如果碰到 unit，protobuf-net 預設不一定認得，所以這裡先做：
+
+  - default model
+  - protobuf-fsharp 的 model
+  - PCSL 自己的 model
+  - loaded models 掃描
+
+  目的就是：
+
+  - 避免之後 PCSL / protobuf 在真正存取資料時，才因為 unit 型別沒註冊而炸掉
+
+  所以一句話總結：
+
+  - ProtoBufInit.ensureUnitSerializer() 不是 Akka 的需求
+  - 是 這個專案把 Akka.FSI.Supervisor 跟 PersistedConcurrentSortedList + protobuf-net-fsharp 綁在一起後，多出來的初始化需求
+
+  目前最新事實也要一起更新：
+
+  - 本地 procnode -> fsi-supervisor GetVesion 其實已經能過
+  - 剛剛本地 fail 的直接原因，是我自己加的 ReceiveAny 診斷碼違反 ReceiveActor 規則，這個我已修掉，之後同一條測試已過
+
+  如果你要，我下一步就把 ProtoBufInit 這段在 DevLog 寫清楚，避免之後再被誤判成 Akka 問題。

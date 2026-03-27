@@ -3,6 +3,7 @@ namespace FSharp.MCP.DevKit.Server
 open System
 open System.ComponentModel
 open System.Runtime.InteropServices
+open System.Text
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Integration
@@ -24,8 +25,37 @@ type McpControlPlaneTools =
         arguments
         |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
         |> Option.map (fun value ->
-            value.Split([| '\n'; '\r' |], StringSplitOptions.RemoveEmptyEntries)
-            |> Array.toList)
+            let tokens = ResizeArray<string>()
+            let current = StringBuilder()
+            let mutable inSingle = false
+            let mutable inDouble = false
+            let mutable escape = false
+
+            let flushToken () =
+                if current.Length > 0 then
+                    tokens.Add(current.ToString())
+                    current.Clear() |> ignore
+
+            for ch in value do
+                if escape then
+                    current.Append(ch) |> ignore
+                    escape <- false
+                elif ch = '\\' && not inSingle then
+                    escape <- true
+                elif ch = '"' && not inSingle then
+                    inDouble <- not inDouble
+                elif ch = '\'' && not inDouble then
+                    inSingle <- not inSingle
+                elif Char.IsWhiteSpace ch && not inSingle && not inDouble then
+                    flushToken ()
+                else
+                    current.Append(ch) |> ignore
+
+            if escape then
+                current.Append('\\') |> ignore
+
+            flushToken ()
+            tokens |> Seq.toList)
         |> Option.defaultValue []
 
     [<McpServerTool(Name = "register_fsi_agent"); Description("Register or update an agent id for explicit routed FSI usage.")>]

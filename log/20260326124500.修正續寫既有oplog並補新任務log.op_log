@@ -39,3 +39,32 @@
  M "log/20260326115000.\344\277\256\346\255\243\345\260\207\351\203\250\347\275\262\350\250\272\346\226\267\345\276\236notes\347\247\273\345\233\236DevLog\350\210\207log.op_log"
 ?? "log/20260326124500.\344\277\256\346\255\243\347\272\214\345\257\253\346\227\242\346\234\211oplog\344\270\246\350\243\234\346\226\260\344\273\273\345\213\231log.00001.00001.log"
 ?? "log/20260326124500.\344\277\256\346\255\243\347\272\214\345\257\253\346\227\242\346\234\211oplog\344\270\246\350\243\234\346\226\260\344\273\273\345\213\231log.op_log"
+SessionId   : 019cfeb7-7b04-78c1-a7c6-c859782d0919
+State file  : /workspace/home/codex/019cfeb7-7b04-78c1-a7c6-c859782d0919.state.json
+Summary     : PASS=21 WARN=3 FAIL=1
+
+[PASS] log_dir_exists - log 目錄存在：/workspace/home/mcp/FSharp.MCP.DevKit/log
+[PASS] op_log_dir_default - .op_log 檢查目錄使用 --log-dir
+[PASS] latest_log_found - 最新 log：/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326124500.修正續寫既有oplog並補新任務log.00001.00001.log @ 2026-03-26T12:40:46.620Z
+[PASS] latest_op_log_found - 最新 op_log：/workspace/home/mcp/FSharp.MCP.DevKit/log/20260326124500.修正續寫既有oplog並補新任務log.op_log @ 2026-03-26T12:41:11.940Z
+[PASS] latest_log_name - 最新 log 檔名符合規範
+[PASS] latest_op_log_name - 最新 op_log 檔名符合規範
+[PASS] latest_log_has_plan - 最新 log 內含 planned steps/計畫步驟
+[PASS] latest_log_required_fields - 最新 log 已覆蓋最低欄位
+[PASS] op_log_after_log - 最新 op_log 時間不早於最新 log，可視為有收尾操作證據
+[PASS] devlog_exists - devlog 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/DevLog.md
+[PASS] devlog_changed - devlog 自上次檢查後已更新，mtime=2026-03-26T12:40:57.632Z
+[PASS] wbs_exists - wbs 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/WBS.md
+[WARN] wbs_unchanged - wbs 自上次檢查後未更新
+[PASS] sd_exists - sd 存在：/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md
+[WARN] sd_unchanged - sd 自上次檢查後未更新
+[FAIL] log_readonly_modify - log 目錄中的既有檔案被修改：20260326115000.修正將部署診斷從notes移回DevLog與log.op_log
+[PASS] devlog_append_only - devlog 以 append-only 方式追加
+[PASS] latest_log_advanced - 與上次檢查相比，最新 log 已前進
+[PASS] latest_op_log_advanced - 與上次檢查相比，最新 op_log 已前進
+[PASS] git_new_commit - HEAD 已更新：1e25a944dc21cee4cf21a5ac7e6d87642221a476 2026-03-26T12:41:11+00:00 docs: fix append-only log correction flow
+[PASS] git_repo - Git repo：/workspace/home/mcp/FSharp.MCP.DevKit
+[PASS] git_branch - 目前 branch：20260325_002.fspickler-remoting-contracts
+[PASS] git_head - 目前 HEAD：1e25a944dc21cee4cf21a5ac7e6d87642221a476 2026-03-26T12:41:11+00:00 docs: fix append-only log correction flow
+[WARN] git_dirty - repo 有未提交變更
+[PASS] git_branch_name - 目前 branch 命名可接受
