@@ -1,0 +1,120 @@
+● DData 仍在 retry 即使 cluster 只剩 1 member。可能有 durable DData (LMDB) 問題，讓我確認：
+
+● Bash(sudo docker exec fsharp-mcp-devkit find /tmp /app /root -name "*.lmdb" -o -name "ddata" -type d 2>/dev/null | head -10)
+  ⎿  (No output)
+
+● Bash(sudo docker exec fsharp-mcp-devkit find / -maxdepth 5 -name "*.lmdb" 2>/dev/null | head -5
+      sudo docker logs fsharp-mcp-devkit 2>&1 | grep -i "lmdb\|durable\|persist" | head -5)
+  ⎿  (No output)
+
+                                                                                                                                                                        06:21 AM claude-sonnet-4-6
+● DData Replicator 的 WriteAggregator 可能在 cluster 縮減後仍有 stuck 狀態。最乾淨的解法是重啟 container 清除所有 in-memory 狀態，然後用正確方式建立兩個 host：
+
+  重啟 container：
+
+● Bash(sudo docker restart fsharp-mcp-devkit && sleep 8 && sudo docker logs fsharp-mcp-devkit 2>&1 | tail -5)
+  ⎿  fsharp-mcp-devkit
+           Server (FSharp.MCP.DevKit 1.0.0.0), Client (claude-code 2.1.85) method 'tools/list' request handler completed in 3.8493ms.
+     info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+           Executed endpoint 'MCP Streamable HTTP | HTTP: POST /mcp/'
+     info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+           Request finished HTTP/1.1 POST http://10.28.112.140:15000/mcp - 200 - text/event-stream 4.3147ms
+  ⎿  (timeout 30s)
+
+● Bash(curl -s http://10.28.112.140:6001/api/proc/nodes | python3 -m json.tool 2>/dev/null)
+  ⎿  Error: Exit code 1
+
+● Bash(sleep 5 && curl -s http://10.28.112.140:6001/api/proc/nodes)
+  ⎿  []
+  ⎿  (timeout 15s)
+
+                                                                                                                                                                        06:21 AM claude-sonnet-4-6
+● Fresh start，0 nodes。現在建立兩個 host，procnode 不傳 --seed，讓它 self-join 成獨立 cluster：
+
+● fsharp-devkit - create_fsi_host (MCP)(agentId: "claude", hostId: "fsihost1", hostKind: "net10", executablePath: "dotnet", arguments: "exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json
+                                       --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --systemname fsi-proc --host 10.28.112.140 --port 0 --supervisor
+                                       akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --procid fsihost1")
+  ⎿  {
+       "hostId": "fsihost1",
+       "agentId": "claude",
+       "hostKind": {
+         "Case": "Net10Host"
+       },
+       "backendKind": {
+         "Case": "Net10Remote"
+       },
+       "status": {
+         "Case": "Creating"
+       },
+       "address": "akka.tcp://fsi-proc@10.28.112.140:34439/user/fsi/supervisor",
+       "procId": 152,
+       "createdAt": "2026-03-27T06:21:55.7543698Z",
+       "lastHealthCheckAt": "2026-03-27T06:21:56.3509116Z",
+       "lastError": null
+     }
+
+                                                                                                                                                                        06:22 AM claude-sonnet-4-6
+● fsihost1 建立成功，address: akka.tcp://fsi-proc@10.28.112.140:34439。現在立刻建立 fsihost2（proc-system cluster 只有 1 member，DData 不受干擾）：
+
+● fsharp-devkit - create_fsi_host (MCP)(agentId: "claude", hostId: "fsihost2", hostKind: "net10", executablePath: "dotnet", arguments: "exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json
+                                       --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --systemname fsi-proc --host 10.28.112.140 --port 0 --supervisor
+                                       akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --procid fsihost2")
+  ⎿  {
+       "hostId": "fsihost2",
+       "agentId": "claude",
+       "hostKind": {
+         "Case": "Net10Host"
+       },
+       "backendKind": {
+         "Case": "Net10Remote"
+       },
+       "status": {
+         "Case": "Creating"
+       },
+       "address": "akka.tcp://fsi-proc@10.28.112.140:36919/user/fsi/supervisor",
+       "procId": 179,
+       "createdAt": "2026-03-27T06:22:01.59114Z",
+       "lastHealthCheckAt": "2026-03-27T06:22:02.1114159Z",
+       "lastError": null
+     }
+
+                                                                                                                                                                        06:22 AM claude-sonnet-4-6
+● 兩個都成功。確認健康狀態：
+
+● fsharp-devkit - get_fsi_host_health (MCP)(hostId: "fsihost1")
+  ⎿  {
+       "backendKind": {
+         "Case": "Net10Remote"
+       },
+       "isAvailable": true,
+       "message": "running",
+       "hostId": "fsihost1",
+       "checkedAt": "2026-03-27T06:22:07.0993903Z"
+     }
+
+● fsharp-devkit - get_fsi_host_health (MCP)(hostId: "fsihost2")
+  ⎿  {
+       "backendKind": {
+         "Case": "Net10Remote"
+       },
+       "isAvailable": true,
+       "message": "running",
+       "hostId": "fsihost2",
+       "checkedAt": "2026-03-27T06:22:07.2535698Z"
+     }
+
+                                                                                                                                                                        06:22 AM claude-sonnet-4-6
+● 兩個 host 都是 isAvailable: true, message: "running"。
+
+  ┌──────────┬───────────┬─────────────────────────────────────────────────────────────┐
+  │   Host   │  Status   │                   FSI Supervisor Address                    │
+  ├──────────┼───────────┼─────────────────────────────────────────────────────────────┤
+  │ fsihost1 │ ✓ running │ akka.tcp://fsi-proc@10.28.112.140:34439/user/fsi/supervisor │
+  ├──────────┼───────────┼─────────────────────────────────────────────────────────────┤
+  │ fsihost2 │ ✓ running │ akka.tcp://fsi-proc@10.28.112.140:36919/user/fsi/supervisor │
+  └──────────┴───────────┴─────────────────────────────────────────────────────────────┘
+
+  根本原因與修正：procnode 原本用 --seed akka.tcp://proc-system@... 加入 supervisor 的 cluster，但 procnode 沒有啟動 DData Replicator，導致 WriteMajority(2/2) 永遠無法成功。改成不傳 --seed（讓 procnode
+  self-join 成獨立 cluster）並用不同的 --systemname fsi-proc，proc-system cluster 始終保持 1 member，DData 操作永遠快速。
+
+✻ Cooked for 12m 29s
