@@ -28,14 +28,33 @@ type McpExecutionTools =
         else
             result.Errors
 
-    [<McpServerTool(Name = "execute_f_sharp_code_routed"); Description("Execute F# code against an explicit agentId/hostId/sessionId route.")>]
+    static member private formatRecordError (fallbackMessage: string) (record: FsiExecutionRecord) =
+        let baseError =
+            if String.IsNullOrWhiteSpace record.Result.Errors then
+                fallbackMessage
+            else
+                record.Result.Errors
+
+        let context =
+            $"[RequestId={record.RequestId}, HostId={record.HostId}, SessionId={record.SessionId}, Backend={record.BackendKind}, ResultId={record.ResultId}]"
+
+        let hint =
+            if baseError.Contains("could not be completed due to earlier error")
+               || baseError.Contains("Faulted") then
+                "\nHint: The session may be in Faulted state. Call reset_fsi_session_routed or create a new session to recover."
+            else
+                ""
+
+        $"{baseError}\n{context}{hint}"
+
+    [<McpServerTool(Name = "execute_f_sharp_code_routed"); Description("Execute F# code against an explicit agentId/hostId/sessionId route. Prefer this for short snippets and quick probes. For long-running or heavy scripts, prefer execute_f_sharp_code_async_routed to avoid synchronous ask/disconnection issues on remote hosts.")>]
     static member ExecuteFSharpCodeRouted
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("F# code to execute.")>] code: string,
+            [<Description("F# code to execute. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
             [<Optional; DefaultParameterValue(0)>]
             [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
@@ -43,17 +62,17 @@ type McpExecutionTools =
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout, requestedRoute = route)
-            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatResultError "Execution failed" record.Result
+            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatRecordError "Execution failed" record
         }
 
-    [<McpServerTool(Name = "execute_f_sharp_code_async_routed"); Description("Enqueue F# code execution against an explicit route and return an async id immediately.")>]
+    [<McpServerTool(Name = "execute_f_sharp_code_async_routed"); Description("Enqueue F# code execution against an explicit route and return an async id immediately. This is the preferred path for long-running or heavy remote scripts. Best flow: 1. Call this tool. 2. Poll resource fsi/async/{asyncId}. 3. When completed, use the same host/session for evaluate_f_sharp_expression_routed if you need to read bindings or values.")>]
     static member ExecuteFSharpCodeAsyncRouted
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("F# code to execute asynchronously.")>] code: string,
+            [<Description("F# code to execute asynchronously. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
             [<Optional; DefaultParameterValue(0)>]
             [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
@@ -63,7 +82,7 @@ type McpExecutionTools =
             return fsiService.EnqueueExecuteCode(code, timeout, requestedRoute = route)
         }
 
-    [<McpServerTool(Name = "evaluate_f_sharp_expression_routed"); Description("Evaluate an F# expression against an explicit route.")>]
+    [<McpServerTool(Name = "evaluate_f_sharp_expression_routed"); Description("Evaluate an F# expression against an explicit route. Common flow for long workloads: first run execute_f_sharp_code_async_routed, wait for completion, then evaluate against the same agentId/hostId/sessionId.")>]
     static member EvaluateFSharpExpressionRouted
         (
             fsiService: FsiMcpService,
@@ -83,17 +102,17 @@ type McpExecutionTools =
                 if record.Result.IsSuccess then
                     record.Result.Value |> Option.defaultValue record.Result.Output
                 else
-                    McpExecutionTools.formatResultError "Expression evaluation failed" record.Result
+                    McpExecutionTools.formatRecordError "Expression evaluation failed" record
         }
 
-    [<McpServerTool(Name = "add_search_path_routed"); Description("Add an F# search path against an explicit route.")>]
+    [<McpServerTool(Name = "add_search_path_routed"); Description("Add an F# search path against an explicit route. The path must exist from the remote host container or process perspective; caller-local container paths may not work.")>]
     static member AddSearchPathRouted
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("Directory path to add to the F# search path.")>] path: string,
+            [<Description("Directory path to add to the F# search path. Use a path visible from the remote host container or process.")>] path: string,
             [<Optional; DefaultParameterValue(0)>]
             [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
@@ -101,17 +120,17 @@ type McpExecutionTools =
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(AddSearchPath, path, timeout = timeout, requestedRoute = route)
-            return if record.Result.IsSuccess then $"Search path added successfully: {path}" else McpExecutionTools.formatResultError "Failed to add search path" record.Result
+            return if record.Result.IsSuccess then $"Search path added successfully: {path}" else McpExecutionTools.formatRecordError "Failed to add search path" record
         }
 
-    [<McpServerTool(Name = "reference_assembly_routed"); Description("Reference an assembly against an explicit route.")>]
+    [<McpServerTool(Name = "reference_assembly_routed"); Description("Reference an assembly against an explicit route. If you pass a file path, it must be visible from the remote host container or process.")>]
     static member ReferenceAssemblyRouted
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("Assembly path or assembly name.")>] assemblyPath: string,
+            [<Description("Assembly path or assembly name. If you pass a path, it must be visible from the remote host container or process.")>] assemblyPath: string,
             [<Optional; DefaultParameterValue(0)>]
             [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =
@@ -119,7 +138,7 @@ type McpExecutionTools =
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(ReferenceAssembly, assemblyPath, timeout = timeout, requestedRoute = route)
-            return if record.Result.IsSuccess then $"Assembly referenced successfully: {assemblyPath}" else McpExecutionTools.formatResultError "Failed to reference assembly" record.Result
+            return if record.Result.IsSuccess then $"Assembly referenced successfully: {assemblyPath}" else McpExecutionTools.formatRecordError "Failed to reference assembly" record
         }
 
     [<McpServerTool(Name = "reset_fsi_session_routed"); Description("Reset a specific session under an explicit route.")>]
@@ -136,7 +155,7 @@ type McpExecutionTools =
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(ResetSession, "", timeout = timeout, requestedRoute = route)
-            return if record.Result.IsSuccess then "FSI session reset successfully" else McpExecutionTools.formatResultError "Failed to reset FSI session" record.Result
+            return if record.Result.IsSuccess then "FSI session reset successfully" else McpExecutionTools.formatRecordError "Failed to reset FSI session" record
         }
 
     [<McpServerTool(Name = "get_fsi_state_routed"); Description("Get FSI state for an explicit agentId/hostId/sessionId route.")>]
@@ -153,5 +172,5 @@ type McpExecutionTools =
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(GetState, "", timeout = timeout, requestedRoute = route)
-            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatResultError "Failed to get FSI state" record.Result
+            return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatRecordError "Failed to get FSI state" record
         }

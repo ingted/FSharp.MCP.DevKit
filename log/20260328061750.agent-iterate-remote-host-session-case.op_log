@@ -17,3 +17,7 @@
 [op] Verifying edited sections before proceeding to any further runtime changes.
 [op] Re-running the real async remote host/session workflow against the deployed MCP server to validate the updated Runbook guidance end to end.
 [op] Preparing a focused commit with Runbook/doc4dev/DevLog/log updates only; excluding unrelated dirty files from the working tree.
+[op] Recording the async-vs-sync rationale in DevLog before continuing the live async run.
+[op] Inspecting MCP tool description attributes to patch agent-facing guidance directly into the tool surface.
+[op] Building FSharp.MCP.DevKit.Server after tool-description updates.
+[op] Preparing a focused commit for MCP tool description guidance.

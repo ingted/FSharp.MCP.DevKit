@@ -665,3 +665,13 @@
     - Runbook 對 container 路徑映射的說明
     - 對長腳本的 async-first agent 指引
   - 同步 routed execute 對長 workload 的穩定性仍是 open product issue，不應再和 volume path mismatch 混為一談。
+  - `async-first` 的意思不是換一個 session，也不是換一個 execution semantics。
+    - sync / async 都是在同一個 remote host、同一個 remote session 中執行
+    - 差別只在 control path：
+      - `execute_f_sharp_code_routed` 會讓 caller 同步等待單次 ask 完成
+      - `execute_f_sharp_code_async_routed` 只負責 enqueue，之後由 `fsi/async/{asyncId}` 輪詢最終狀態
+    - 對 heavy workload 而言，目前已知較脆弱的是「同步等待這條 ask 路徑」，不是 session binding 本身
+    - 所以建議流程才是：
+      1. async execute
+      2. 等完成
+      3. 在同一 session evaluate expression 取值

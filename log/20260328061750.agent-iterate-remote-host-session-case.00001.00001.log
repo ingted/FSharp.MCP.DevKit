@@ -18,3 +18,7 @@
 [analysis] Doc edits completed: Runbook now distinguishes remote path mapping errors from the still-open synchronous long-run routed execution instability; doc4dev issues and DevLog carry the same split.
 [analysis] Running the real coldfar remote-host/session case again, this time through async routed execute, to see whether the documented async-first workflow reaches the final evaluate step successfully on the deployed MCP server.
 [analysis] Async real-case run remains healthy beyond the previous synchronous failure window; preserving this as an explicit experimental result before any further sync-path investigation.
+[analysis] Clarifying why async-first is currently the recommended agent workflow: same session semantics, but a different control path that avoids long synchronous ask/disassociation on heavy remote scripts.
+[analysis] Improving MCP tool descriptions so weaker agents get the right defaults from the tool surface itself: async-first guidance for long remote scripts and explicit path-visibility warnings for remote #I/#r usage.
+[analysis] Patching MCP tool descriptions only; now validating the server still builds cleanly and then recording that the tool surface itself now nudges agents toward async-first and remote-visible paths.
+[analysis] Tool description pass compiled successfully; preparing a narrow commit so the MCP surface itself tells weaker agents to use remote-visible paths and async-first for long workloads.

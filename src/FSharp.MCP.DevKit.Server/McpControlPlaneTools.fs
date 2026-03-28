@@ -18,8 +18,8 @@ type McpControlPlaneTools =
         match hostKind.Trim().ToLowerInvariant() with
         | "netfx" -> NetFxHost
         | "net10" -> Net10Host
-        | "inproc" -> invalidOp "create_fsi_host does not support inproc."
-        | _ -> invalidOp $"Unsupported host kind '{hostKind}'. Expected netfx or net10."
+        | "inproc" -> invalidOp "create_fsi_host does not support inproc. Use net10 or netfx for out-of-process hosts."
+        | _ -> invalidOp $"Unsupported host kind '{hostKind}'. Valid values: netfx, net10."
 
     static member private parseArguments(arguments: string option) =
         arguments
@@ -70,7 +70,7 @@ type McpControlPlaneTools =
         let record = fsiService.RegisterAgent(agentId, ?displayName = displayNameOpt)
         FSharpJson.serialize record
 
-    [<McpServerTool(Name = "create_fsi_host"); Description("Create an out-of-proc FSI host. Only netfx and net10 are supported, and provisioning always goes through ProcSupervisor.")>]
+    [<McpServerTool(Name = "create_fsi_host"); Description("Create an out-of-proc FSI host. Only netfx and net10 are supported, and provisioning always goes through ProcSupervisor. For net10 procnode hosts, the arguments usually need to reference paths visible inside the deployed fsharp-devkit container or host process, not caller-local container paths.")>]
     static member CreateFsiHost
         (
             fsiService: FsiMcpService,
@@ -78,15 +78,15 @@ type McpControlPlaneTools =
             [<Description("Host kind: netfx or net10.")>] hostKind: string,
             [<Description("Executable path for the host process, for example 'dotnet' or a netfx host executable path.")>] executablePath: string,
             [<Optional; DefaultParameterValue(null: string)>]
-            [<Description("Arguments passed to the host process as a single string. Leave empty for none.")>] arguments: string,
+            [<Description("Arguments passed to the host process as a single string. Leave empty for none. For net10 procnode hosts, these usually include dotnet exec --runtimeconfig ... --depsfile ... /app/Akka.Proc.Supervisor.dll --mode procnode ... and must use paths visible inside the deployed fsharp-devkit container or host process.")>] arguments: string,
             [<Optional; DefaultParameterValue(null: string)>]
             [<Description("Optional working directory for the host process.")>] workingDirectory: string,
             [<Optional; DefaultParameterValue(null: string)>]
             [<Description("Optional requested host id. If omitted, a generated id is used.")>] hostId: string,
             [<Optional; DefaultParameterValue(null: string)>]
-            [<Description("Optional probe message used by ProcSupervisor for active health checks. Leave empty to disable probing.")>] probeMessage: string,
+            [<Description("Optional probe message used by ProcSupervisor for active health checks. Leave empty to disable probing. This is not required for host creation; use it after host/session basics are already working.")>] probeMessage: string,
             [<Optional; DefaultParameterValue(0)>]
-            [<Description("Optional probe interval in milliseconds. Use 0 to disable probing.")>] probeIntervalMs: int
+            [<Description("Optional probe interval in milliseconds. Use 0 to disable probing. This is not required for host creation; use it after host/session basics are already working.")>] probeIntervalMs: int
         ) : Task<string> =
         task {
             let parsedHostKind = McpControlPlaneTools.parseHostKind hostKind
@@ -120,7 +120,7 @@ type McpControlPlaneTools =
         ) : string =
         fsiService.ListHosts(agentId) |> FSharpJson.serialize
 
-    [<McpServerTool(Name = "create_fsi_session"); Description("Create or hydrate a session under an existing host.")>]
+    [<McpServerTool(Name = "create_fsi_session"); Description("Create or hydrate a session under an existing host. If later execution faults, create a fresh session before assuming the host itself is broken.")>]
     static member CreateFsiSession
         (
             fsiService: FsiMcpService,

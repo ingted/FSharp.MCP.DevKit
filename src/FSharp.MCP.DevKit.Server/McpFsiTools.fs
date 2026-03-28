@@ -79,6 +79,37 @@ module McpFsiTools =
         |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace(value)))
         |> Option.defaultValue result.Output
 
+    let private formatSessionState (state: SessionRecord) =
+        let joinOrNone values =
+            match values with
+            | [] -> "(none)"
+            | xs -> String.Join(", ", xs)
+
+        let variables =
+            match state.Variables with
+            | [] -> "(none)"
+            | xs -> xs |> List.map fst |> String.concat ", "
+
+        let status =
+            match state.Status with
+            | SessionReady -> "SessionReady"
+            | SessionBusy -> "SessionBusy"
+            | SessionFaulted -> "SessionFaulted"
+            | SessionMissing -> "SessionMissing"
+
+        String.Join(
+            "\n",
+            [| "FSI Session State:"
+               $"- SessionId: {state.SessionId}"
+               $"- HostId: {state.HostId}"
+               $"- AgentId: {state.AgentId}"
+               $"- Status: {status}"
+               $"- Search Paths: {joinOrNone state.SearchPaths}"
+               $"- Referenced Assemblies: {joinOrNone state.Refs}"
+               $"- Loaded Scripts: {joinOrNone state.Loads}"
+               $"- Variables: {variables}" |]
+        )
+
     /// Validates that a file has a supported F# file extension
     let private validateFSharpFileType (filePath: string) =
         let extension = System.IO.Path.GetExtension(filePath).ToLowerInvariant()
@@ -413,7 +444,75 @@ module McpFsiTools =
                 ?usePackageTargets: bool,
                 ?requestedRoute: ExecutionRoute
             ) : Task<FsiExecutionRecord> =
-            executionRouter.RouteAndExecute(createRequest requestedRoute operationKind payload timeout usePackageTargets)
+            task {
+                let request = createRequest requestedRoute operationKind payload timeout usePackageTargets
+                let route = request.Route
+                let host, backend = resolveBackend route
+
+                match operationKind with
+                | GetState ->
+                    let! state = backend.GetSessionState(route)
+                    updateSessionRecord state
+                    agentRegistry.Touch route.AgentId
+
+                    let now = DateTime.UtcNow
+
+                    let record =
+                        BackendAdapters.toExecutionRecord
+                            host.BackendKind
+                            request
+                            now
+                            (Some now)
+                            (Some now)
+                            host.HostId
+                            route.SessionId
+                            (Guid.NewGuid().ToString("N"))
+                            { Output = formatSessionState state
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = None
+                              Diagnostics = [||]
+                              Value = None }
+                            None
+
+                    resultRegistry.Put record
+                    return record
+                | ResetSession ->
+                    let! record = backend.ResetSession(route)
+                    resultRegistry.Put record
+
+                    let! state = backend.GetSessionState(route)
+                    updateSessionRecord state
+                    agentRegistry.Touch route.AgentId
+                    return record
+                | RestartHost ->
+                    do! backend.RestartHost(host)
+                    agentRegistry.Touch route.AgentId
+
+                    let now = DateTime.UtcNow
+                    let record =
+                        BackendAdapters.toExecutionRecord
+                            host.BackendKind
+                            request
+                            now
+                            (Some now)
+                            (Some now)
+                            host.HostId
+                            route.SessionId
+                            (Guid.NewGuid().ToString("N"))
+                            { Output = $"Host '{host.HostId}' restart requested successfully"
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = None
+                              Diagnostics = [||]
+                              Value = None }
+                            None
+
+                    resultRegistry.Put record
+                    return record
+                | _ ->
+                    return! executionRouter.RouteAndExecute(request)
+            }
 
         member _.GetSessionState(?requestedRoute: ExecutionRoute) : Task<SessionRecord> =
             task {
@@ -744,7 +843,7 @@ module McpFsiTools =
                     DateTime.UtcNow
                 )
                 asyncResultCache.TryRemove(asyncId) |> ignore
-                failwith "Failed to enqueue async FSI request"
+                $"ERROR: Failed to enqueue async FSI request. AsyncId={asyncId} was marked as failed."
 
         member this.TryGetAsyncExecution(asyncId: string) =
             match asyncResultCache.TryGetValue(asyncId) with
@@ -805,8 +904,6 @@ module McpFsiTools =
                         else
                             result.Output
 
-                    Console.WriteLine($"FSI Execute: {code}")
-                    Console.WriteLine($"FSI Output: {output}")
                     return output
                 else
                     let baseError =
@@ -816,16 +913,14 @@ module McpFsiTools =
                             result.Errors
 
                     let errorMessage = formatErrorWithResult baseError result
-                    Console.WriteLine($"FSI Execute: {code}")
-                    Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
             }
 
-        [<McpServerTool(Name = "execute_f_sharp_code_async"); Description("Enqueue F# code execution and return an async id immediately. Best flow for agents: 1. Call this tool to get asyncId. 2. Read resource fsi/async/{asyncId}. 3. Poll that resource until isCompleted becomes true.")>]
+        [<McpServerTool(Name = "execute_f_sharp_code_async"); Description("Enqueue F# code execution and return an async id immediately. Best flow for agents: 1. Call this tool to get asyncId. 2. Read resource fsi/async/{asyncId}. 3. Poll that resource until isCompleted becomes true. Prefer this over synchronous execute for long-running or heavy scripts.")>]
         static member ExecuteFSharpCodeAsync
             (
                 fsiService: FsiMcpService,
-                [<Description("F# code to execute asynchronously. After this tool returns asyncId, read resource fsi/async/{asyncId} until isCompleted is true.")>] code: string,
+                [<Description("F# code to execute asynchronously. After this tool returns asyncId, read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, they must be visible from the FSI host process, not just from the caller's container.")>] code: string,
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
@@ -861,8 +956,6 @@ module McpFsiTools =
                         else
                             result.Output
 
-                    Console.WriteLine($"FSI Execute: {code}")
-                    Console.WriteLine($"FSI Output: {output}")
                     return output
                 else
                     // Detailed error reporting
@@ -893,8 +986,6 @@ module McpFsiTools =
                           yield $"=========================" ]
                         |> String.concat "\n"
 
-                    Console.WriteLine($"FSI Execute: {code}")
-                    Console.WriteLine($"FSI Detailed Error: {errorDetails}")
                     return errorDetails
             }
 
@@ -916,8 +1007,6 @@ module McpFsiTools =
 
                 if result.IsSuccess then
                     let valueOrOutput = preferValueOrOutput result
-                    Console.WriteLine($"FSI Evaluate: {expression}")
-                    Console.WriteLine($"FSI Result: {valueOrOutput}")
                     return valueOrOutput
                 else
                     let baseError =
@@ -927,16 +1016,14 @@ module McpFsiTools =
                             result.Errors
 
                     let errorMessage = formatErrorWithResult baseError result
-                    Console.WriteLine($"FSI Evaluate: {expression}")
-                    Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
             }
 
-        [<McpServerTool; Description("Load an F# script file using #load directive")>]
+        [<McpServerTool; Description("Load an F# script file using #load directive. The script path must be visible from the FSI host process; caller-local container paths may not work for remote hosts.")>]
         static member LoadFSharpScript
             (
                 fsiService: FsiMcpService,
-                [<Description("Path to the F# script file to load")>] scriptPath: string,
+                [<Description("Path to the F# script file to load. It must be visible from the FSI host process.")>] scriptPath: string,
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
@@ -950,8 +1037,6 @@ module McpFsiTools =
 
                 if result.IsSuccess then
                     let successMessage = $"Script loaded successfully: {scriptPath}"
-                    Console.WriteLine($"FSI Load Script: {scriptPath}")
-                    Console.WriteLine($"FSI Result: {successMessage}")
                     return successMessage
                 else
                     let baseError =
@@ -961,16 +1046,14 @@ module McpFsiTools =
                             $"Error loading script: {result.Errors}"
 
                     let errorMessage = formatErrorWithResult baseError result
-                    Console.WriteLine($"FSI Load Script: {scriptPath}")
-                    Console.WriteLine($"FSI Error: {errorMessage}")
                     return errorMessage
             }
 
-        [<McpServerTool; Description("Reference a .NET assembly using #r directive")>]
+        [<McpServerTool; Description("Reference a .NET assembly using #r directive. If you pass a file path, it must be visible from the FSI host process.")>]
         static member ReferenceAssembly
             (
                 fsiService: FsiMcpService,
-                [<Description("Path to the assembly or assembly name to reference")>] assemblyPath: string,
+                [<Description("Path to the assembly or assembly name to reference. If you pass a path, it must be visible from the FSI host process.")>] assemblyPath: string,
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
@@ -1025,11 +1108,11 @@ module McpFsiTools =
                     return errorMessage
             }
 
-        [<McpServerTool; Description("Add a directory to the F# search path using #I directive")>]
+        [<McpServerTool; Description("Add a directory to the F# search path using #I directive. The path must be visible from the FSI host process.")>]
         static member AddSearchPath
             (
                 fsiService: FsiMcpService,
-                [<Description("Directory path to add to F# search path")>] path: string,
+                [<Description("Directory path to add to F# search path. It must be visible from the FSI host process.")>] path: string,
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
@@ -1857,10 +1940,11 @@ module McpFsiTools =
 
                                 return
                                     sprintf
-                                        "Found %d occurrence(s) of '%s' in %s:%s\n%s"
+                                        "Found %d occurrence(s) of '%s' in %s (showing first %d)%s\n%s"
                                         matches.Length
                                         searchPattern
                                         filePath
+                                        limitedMatches.Length
                                         moreMsg
                                         result
                             else
