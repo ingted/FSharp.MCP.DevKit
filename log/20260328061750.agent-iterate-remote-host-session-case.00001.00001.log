@@ -1,0 +1,20 @@
+2026-03-28T06:17:50Z topic
+針對真實 agent 指令案例重跑 remote host/session 流程，分辨問題屬於 Runbook/volume-path 指引不足，或屬於程式缺陷。
+
+2026-03-28T06:17:50Z thoughts
+先只看 doc4dev、notes/00044+、Runbook，再用 live MCP endpoint 重演指定案例。若只是 mount/path 與操作順序問題，就優先補 Runbook；若路徑修正後仍失敗，再修程式。
+
+2026-03-28T06:17:50Z plan
+1. 閱讀 doc4dev 及 notes/00044+，整理已知痛點。
+2. 檢查 Runbook 現況，找出缺漏的 agent 指引。
+3. 用 live MCP endpoint 重跑 create host -> create session -> execute first 76 lines -> evaluate value。
+4. 若失敗，抓真 exception/回傳內容並定位在 Runbook 或程式層。
+5. 修正對應文件或程式，補測試與 DevLog。
+[plan] Focus on live remote long-running ExecCode timeout. Hypothesis: FsiWorker blocks actor thread during EvalInteraction, starving remoting heartbeats. Next: inspect FsiWorker, patch to offload heavy eval off actor thread, add regression test, update DevLog/logs.
+[analysis] Root cause on live case is still remote disassociation during long CPU-bound ExecCode; applying conservative transport failure-detector tuning on procnode and McpClientSystem before rerun.
+[analysis] Async routed execution stays healthy past prior sync timeout window; documenting exact remote container path mapping and async-first guidance for long scripts, and marking sync long remote execute as still-open issue.
+[analysis] Recording deployed long-script findings: sync routed remote execute still times out/disassociates on the real coldfar case; async routed execute remains responsive well past the prior failure window and is now the recommended agent path for long remote scripts.
+[analysis] Editing operator docs now: clarify host path translation rules, async-first guidance for long remote scripts, and mark sync long remote execute as an open product issue rather than a mount-path problem.
+[analysis] Doc edits completed: Runbook now distinguishes remote path mapping errors from the still-open synchronous long-run routed execution instability; doc4dev issues and DevLog carry the same split.
+[analysis] Running the real coldfar remote-host/session case again, this time through async routed execute, to see whether the documented async-first workflow reaches the final evaluate step successfully on the deployed MCP server.
+[analysis] Async real-case run remains healthy beyond the previous synchronous failure window; preserving this as an explicit experimental result before any further sync-path investigation.

@@ -1,0 +1,19 @@
+2026-03-28T06:17:50Z begin
+開始本輪 remote host/session 真實案例重演與分流診斷。
+[op] Begin Akka.FSI.Supervisor long-running remote exec fix iteration.
+[op] Patched FsiWorker to run ExecCode on TaskCreationOptions.LongRunning via ReceiveAsync; running Akka.FSI.Supervisor.Tests.
+[op] Existing FsiSuperviseeTests hit AskTimeout after async FsiWorker change; inspecting test and supervisor/session actor interaction.
+[op] Akka.FSI.Supervisor.Tests passed after async long-running exec fix. Next: bump PCSL/FAkka package versions, push NuGet, update fsharp-devkit refs, rebuild deployment, rerun real remote script case.
+[op] PulseTrade tests passed. Packing release nupkgs for FAkka.FSI.Supervisor dgx.14 and FAkka.Proc.Supervisor dgx.18; PCSL.IFileSystem already at 10.0.201 and unchanged.
+[op] fsharp-devkit server restored and built against local release packages; restoring test project next.
+[op] Preparing host-side docker rebuild of fsharp-devkit with updated FAkka packages and rerun of real remote script case.
+[op] Host docker build succeeded. Stopping current fsharp-mcp-devkit container so systemd restarts it on the new image tag.
+[op] New deployment is up. Re-running the real remote host/session script case against MCP to verify long-running exec no longer times out/disassociates.
+[op] Real remote script is in execute_f_sharp_code_routed phase; monitoring deployed container logs for remoting disassociation or heartbeat starvation.
+[op] Tuning remote transport failure detector tolerances for long-running remote FSI execution, then rebuilding and redeploying host image for rerun.
+[op] Updating Runbook and doc4dev issues to steer agents toward translated paths and async routed execution for long remote scripts.
+[op] Updating Runbook, doc4dev issues, and DevLog to document remote path translation (/workspace/home -> /gemini4) and async-first guidance for long remote scripts, while keeping sync long remote execute marked as open.
+[op] Patching Runbook, doc4dev issue notes, and DevLog with the exact remote workflow for the coldfar case and the current limitation that synchronous long routed execution is still unstable.
+[op] Verifying edited sections before proceeding to any further runtime changes.
+[op] Re-running the real async remote host/session workflow against the deployed MCP server to validate the updated Runbook guidance end to end.
+[op] Preparing a focused commit with Runbook/doc4dev/DevLog/log updates only; excluding unrelated dirty files from the working tree.

@@ -587,3 +587,81 @@
   - `get_fsi_host_health` no longer throws a generic timeout error; it returns a normal health payload (`starting` while the host is still converging).
 - Product conclusion:
   - remote host creation, remote session creation, and routed remote execution are now functioning end-to-end through the deployed MCP HTTP surface.
+
+## 2026-03-28 Issue File Reconciliation
+
+- 將 `doc4dev/20260328_issues.md` 由單次 review 快照更新為帶狀態註記的文件。
+- 已確認修正者，補 `NOTE`：
+  - Net10HostBackend 的 stale Reset/GetState 訊息
+  - routed execution 錯誤上下文補強
+  - ProvisioningServices polling 加入 bounded recovery
+  - ListFsiResults 的 hostId/sessionId 訊息已改善
+- 已確認仍 open 者，保留 `NOTE`：
+  - `invalidOp` 濫用
+  - `Console.WriteLine` 殘留
+  - `/healthz` 只報 process 狀態
+  - `FSI_PROC_SUPERVISOR_TIMEOUT` 硬編碼
+  - actorSystem terminate ignore
+  - SearchInFile 20 筆截斷提示不夠醒目
+- 新增 ISSUE-017：remote host 看到的 volume path 與 agent container path 不同，導致 `#I` / `#r` 非 NuGet DLL 解析失敗。這是今天實際重現到的主要 agent 使用痛點，性質偏 Runbook/操作指引，而非核心 runtime failure。
+
+## 2026-03-28 Severity-First Fixes
+
+- 不再接受 `doc4dev/20260328_issues.md` 中的模糊狀態字眼，開始按 P0/P1 直接落實修正。
+- `FsiMcpService.ExecuteOperation` 現在對 `GetState` / `ResetSession` / `RestartHost` 做 direct dispatch：
+  - 不再透過 `ExecutionRouter -> backend.Execute` 的假路徑繞一圈再拿 unsupported record。
+  - `GetFsiState(Routed)` 會回真正的 session state 字串。
+  - `ResetFsiSession(Routed)` 會呼叫 backend reset，然後同步刷新 session registry。
+- `ExecutionRouter.RouteAndExecute` 新增 faulted session 前置攔截：
+  - 若 session registry 已知 `SessionFaulted`，對一般執行型 operation 直接回清楚、可行動的錯誤。
+  - 錯誤內含 `PreviousFailedResultId`，避免再等 upstream 回那句模糊的 `Operation could not be completed due to earlier error`。
+- `Program.fs` 補上：
+  - `akka.server.conf` 缺失時的空 fallback，不再直接 `ReadAllText` 崩掉。
+  - `FSI_PROC_SUPERVISOR_TIMEOUT` / `--proc-supervisor-timeout-seconds` 支援。
+  - application stopping 時 `actorSystem.Terminate().GetAwaiter().GetResult()`，不再直接 ignore。
+- `search_in_file` 現在在第一行就標示總數與顯示筆數，例如 `Found N occurrence(s) ... (showing first 20)`。
+- 驗證：
+  - `dotnet test tests/FSharp.MCP.DevKit.Tests.fsproj -f net10.0 --no-restore --filter "FullyQualifiedName~McpExecutionToolsTests|FullyQualifiedName~McpSurfaceTests|FullyQualifiedName~FsiMcpServiceTests|FullyQualifiedName~SmokeRegressionTests" -m:1`
+  - 通過。
+
+## 2026-03-28 Remote Evaluate Troubleshooting Start
+- Focus narrowed to a product bug after mount/path mismatch was corrected: remote `execute_f_sharp_code_routed` can report success while subsequent `evaluate_f_sharp_expression_routed` in the same session does not see earlier bindings.
+- Current hypothesis: the net10 remote backend/supervisor path is dispatching `EvaluateExpression` through the same interaction API as `ExecuteCode`, or otherwise not preserving evaluation semantics the same way the in-proc backend does.
+- Next action: inspect `Net10HostBackend`, `FsiSupervisorClient`, and `Akka.FSI.Supervisor` message handling before touching MCP surface or docs again.
+
+## 2026-03-28 Real Agent Workflow Re-test Against Deployed Container
+
+- 背景：
+  - 重新以真正的 agent 使用情境驗證：
+    - 建 remote host
+    - 建 remote session
+    - 執行 `generate_real_charts.inspect_930k_vs_30k.fsx` 前 76 行
+    - 再 evaluate `cfar.Cfarta...c`
+  - 目標是判斷這是產品 bug，還是單純 container volume / path 問題。
+- 實驗步驟：
+  - 先釐清 deployed `gemini4` container 與 `fsharp-devkit` container 的 volume 對應：
+    - agent 常看到 `/workspace/home/...`
+    - remote host 實際可見的是 `/gemini4/...`
+  - 將腳本中的 `#I` / `#r` 路徑改寫成 remote container 可見路徑。
+  - 之後分別驗證：
+    - sync routed execute
+    - async routed execute
+    - 後續 evaluate
+- 結果：
+  - volume/path mismatch 已確認是第一個主要 agent 使用痛點。
+  - 只要直接把 agent container 路徑原樣送進 remote host，會表現成：
+    - search path 不存在
+    - 非 NuGet DLL 找不到
+    - session faulted
+  - 這不是 runtime capability failure，而是部署路徑映射缺少明確操作指引。
+  - 修正路徑後，remote host/session 本身仍可用。
+  - 但長時間 workload 若走 `execute_f_sharp_code_routed`，在 live deployment 仍可能出現：
+    - `AskTimeoutException`
+    - `EndpointDisassociatedException`
+  - 同一批 workload 改走 `execute_f_sharp_code_async_routed` 後，`fsi/async/{asyncId}` 輪詢保持健康，後續 evaluate 路徑明顯較穩。
+- 結論：
+  - `fsharp-devkit` 的 remote host/session capability 本身仍成立。
+  - 真正需要補強的是：
+    - Runbook 對 container 路徑映射的說明
+    - 對長腳本的 async-first agent 指引
+  - 同步 routed execute 對長 workload 的穩定性仍是 open product issue，不應再和 volume path mismatch 混為一談。
