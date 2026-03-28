@@ -22,3 +22,10 @@
 [analysis] Improving MCP tool descriptions so weaker agents get the right defaults from the tool surface itself: async-first guidance for long remote scripts and explicit path-visibility warnings for remote #I/#r usage.
 [analysis] Patching MCP tool descriptions only; now validating the server still builds cleanly and then recording that the tool surface itself now nudges agents toward async-first and remote-visible paths.
 [analysis] Tool description pass compiled successfully; preparing a narrow commit so the MCP surface itself tells weaker agents to use remote-visible paths and async-first for long workloads.
+[analysis] Starting doc hygiene + E2E scenario work: inventory stale doc markdowns, inspect gemini CLI execution notes, then author a path-aware remote-host/session scenario document and validate it with a single Gemini CLI run.
+[2026-03-28T00:00:00Z] topic=doc-archive-and-e2e-scenario plan=archive stale docs, add E2EScenarioTest.md, run one-shot gemini validation, stop on first gemini failure
+[2026-03-28T00:00:00Z] progress=collecting current doc guidance, scenario requirements, and gemini CLI usage before editing docs/archive and single-shot validation
+[2026-03-28T00:00:00Z] progress=archiving stale planning/design docs under doc/archived before writing agent-facing E2E scenario instructions
+[2026-03-28T00:00:00Z] progress=authored doc/E2EScenarioTest.md with path-rewrite rules, async-first guidance, and pure HTTP fallback sequence
+[2026-03-28T00:00:00Z] progress=starting single-shot gemini validation against doc/E2EScenarioTest.md; will stop immediately on first failure
+[2026-03-28T00:00:00Z] result=single-shot gemini validation aborted by upstream model capacity exhaustion (HTTP 429 MODEL_CAPACITY_EXHAUSTED for gemini-3.1-pro-preview); no second attempt performed by design

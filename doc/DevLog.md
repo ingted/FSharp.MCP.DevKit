@@ -675,3 +675,50 @@
       1. async execute
       2. 等完成
       3. 在同一 session evaluate expression 取值
+
+## 2026-03-28 Doc Hygiene And Agent-Facing E2E Scenario Guide
+
+- 將與目前專案現況偏離過大的舊規劃/分析文件移至 `doc/archived/`：
+  - `Action.md`
+  - `BA.md`
+  - `Ideation.md`
+  - `Policy.md`
+  - `Requirement.md`
+  - `SA.md`
+  - `SD.md`
+  - `Test.md`
+- 保留在 `doc/` 根目錄的文件收斂為目前仍直接服務開發/部署/追溯的內容：
+  - `Deployment.md`
+  - `DevLog.md`
+  - `Runbook.md`
+  - `WBS.md`
+- 新增 `doc/E2EScenarioTest.md`，專門給其他 LLM Agent 執行真實 remote FSI 案例。內容明確規定：
+  - 讀取 `generate_real_charts.inspect_930k_vs_30k.fsx` 的第 1~76 行後，只能修改「送入 MCP 的字串內容」，不可修改原始 `.fsx`
+  - 移除 `#if INTERACTIVE` / `#endif`
+  - 將 `#I "/workspace/home/..."` 改為 remote host container 可見的 `/gemini4/...`
+  - 在送入片段前先設定 `SHARFTRADE_PCSL_ROOT=/gemini4/vhdx/cFar_pcsl2/cFar2`
+  - 對此長 workload 採 async-first：`execute_f_sharp_code_async_routed -> poll fsi/async/{asyncId} -> evaluate_f_sharp_expression_routed`
+  - 若 agent 的 MCP tool call 無法使用，改以純 HTTP MCP JSON-RPC 依序完成 `initialize -> notifications/initialized -> tools/call -> resources/read`
+- 這份文件的目的不是重複 Runbook，而是提供單一、可照抄、可替換 host/session/script-path 的 E2E 操作劇本，避免其他 agent 再把路徑/mount 問題誤判成 runtime bug。
+
+## 2026-03-28 Single-Shot Gemini CLI Validation Attempt
+
+- 依使用者要求，參考 `notes/gemini_exec.txt`，以單次 headless 模式驗證 Gemini CLI 是否能讀取 `doc/E2EScenarioTest.md` 並完成遠端 host/session 任務。
+- 實際使用指令重點：
+  - `gemini -m gemini-3.1-pro-preview --approval-mode yolo -p "<prompt>"`
+  - 已確認 `gemini mcp list` 顯示 `fsharp-devkit` server connected。
+- 驗證策略：
+  - 只執行一次。
+  - 若失敗，依使用者要求立即停止，不做第二次嘗試或 prompt 微調。
+- 實際結果：
+  - Gemini CLI 尚未開始執行 scenario，就在模型呼叫階段收到：
+    - `HTTP 429`
+    - `MODEL_CAPACITY_EXHAUSTED`
+    - `No capacity available for model gemini-3.1-pro-preview on the server`
+- 判讀：
+  - 這次失敗不能拿來判斷 `E2EScenarioTest.md` 是否不夠清楚。
+  - 也不能拿來判斷 prompt 是否設計不良。
+  - 根因是 Gemini 服務端當下無法提供指定模型容量。
+- 後續原則：
+  - 這次依要求立即停止，不再追打 Gemini。
+  - 若要進一步區分「md 問題」還是「prompt 問題」，需等模型容量恢復後再做下一次、仍然單次且可歸因的驗證。

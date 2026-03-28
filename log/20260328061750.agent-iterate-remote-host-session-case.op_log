@@ -21,3 +21,10 @@
 [op] Inspecting MCP tool description attributes to patch agent-facing guidance directly into the tool surface.
 [op] Building FSharp.MCP.DevKit.Server after tool-description updates.
 [op] Preparing a focused commit for MCP tool description guidance.
+[op] Inspecting doc directory and Gemini execution notes before moving stale docs and drafting E2EScenarioTest.md.
+[2026-03-28T00:00:00Z] op=start doc hygiene + E2E scenario authoring + single gemini validation (fail-fast)
+[2026-03-28T00:00:00Z] op=inspect AGENTS guidance + scenario source script + gemini/mcp setup
+[2026-03-28T00:00:00Z] op=move outdated doc/*.md into doc/archived (Action/BA/Ideation/Policy/Requirement/SA/SD/Test)
+[2026-03-28T00:00:00Z] op=write doc/E2EScenarioTest.md and preserve original fsx by transforming only transmitted snippet content
+[2026-03-28T00:00:00Z] op=run gemini -m gemini-3.1-pro-preview once with fail-fast prompt grounded on doc/E2EScenarioTest.md
+[2026-03-28T00:00:00Z] conclusion=gemini run stopped after first failure; root cause is upstream model capacity, not E2EScenarioTest.md nor prompt quality
