@@ -1896,3 +1896,103 @@ cd /workspace/home/mcp/FSharp.MCP.DevKit && dotnet fsi /tmp/live_mcp_verify.fsx
   - 但 server/runtime/MCP tool path 本身這輪已驗通
 
   如果你要，我下一步就收這個部署殘留，把 docker/service 的非互動重部署流程補平。
+
+
+
+● Also fix the Block 1 DLL list note — the correct minimal set for CFar init doesn't include Akka.* separately (they're loaded as deps of SharFTrade.Exp.2025.dll):
+
+  Read 1 file (ctrl+o to expand)
+
+● The Block 1 list looks correct (experiment file matches minus optional extras). Now poll again:
+
+  Read 1 file (ctrl+o to expand)
+
+● The QuoteBar minKey encoding is date-encoded (YYYYMMDDHHMI), not minutes-since-epoch. My Block 3 definition was different but that won't affect CFar() init. Still
+  waiting...
+
+● Let me try a sync probe to check if the session is still busy with the async or if it already finished:
+
+● Session accepted sync immediately — async Block 3 already completed/failed. Check variables:
+
+● allKeyPair is not in scope — Block 2 opens may not have exposed it. Let me probe what's available from FAkkaChartMod2:
+
+● SharFTrade.Exp.2025 is missing from loaded assemblies! Let me search the full list:
+
+● Assembly list truncated. Let me do a targeted search for SharFTrade assembly name:
+
+● Still truncated. Let me directly test if SharFTrade.Exp.2025 is loaded and if CFar type is accessible:
+
+● SharFTrade.Exp.2025 is nowhere in the S-section. The assembly might have a different internal name. Let me check:
+
+● Bash(dotnet-ilspy /workspace/home/work/sharftrade7/實驗/SharFTrade.Exp/bin/net10.0/SharFTrade.Exp.2025.dll 2>/dev/null | head -5 || strings /workspace/home/work/sharft…)
+  ⎿  (No output)
+
+● Bash(dotnet --version && dotnet script /dev/null 2>/dev/null || python3 -c "
+      import struct, sys…)
+  ⎿  /bin/bash: line 12: dotnet: command not found
+     program
+     cannot
+     … +2 lines (ctrl+o to expand)
+
+● Bash(python3 -c "
+      import re…)
+  ⎿  'RSiSRUiURf'
+     'w0x1y2z3'
+     'fegfheiejekelkmknkokpkqkrksktkukvkwkxkykzk'
+     … +27 lines (ctrl+o to expand)
+
+● open CFar works. Let me now directly test allKeyPair:
+
+● Argu version conflict: FSI host has 6.2.5.0, but FriceSeries9.FAkkaChartMod2 needs 10.0.103.2. Let me try an assembly redirect handler, and also check the directory to
+  understand allKeyPair structure as a fallback:
+
+  Read 2 files (ctrl+o to expand)
+
+● Now let me try the assembly redirect approach to resolve the Argu version conflict:
+
+● The redirect doesn't work for version mismatches with already-loaded assemblies. Let me find the allKeyPair definition source to replicate it manually:
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Found it: allKeyPair = Seq.concat [keyPairsTA; keyPairsTA4Hk] |> Seq.distinct. Let me find the full definitions of keyPairsTA and keyPairsTA4Hk:
+
+  Searched for 3 patterns (ctrl+o to expand)
+
+● Let me see the full FAnalytica.fs context including es, eshk and imports:
+
+  Read 1 file (ctrl+o to expand)
+
+● FAnalytica.fs defines keyPairsTA and keyPairsTA4Hk — both already accessible from open FAkka.Trading.FAnalytica which IS loaded. I can build allKeyPair manually. Let me
+  first see the rest of keyPairsTA to confirm the
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ 我更新了fsharp-devkit image 與  container 中的  fakka.argu，同樣的測試你再試一次，希望不要再有 Could not load file or assembly 'Argu, Version=10.0.103.2, Culture=neutral,
+PublicKeyToken=null'. The located assembly's manifest definition does not match the asse
+     mbly reference. (0x80131040)
+
+● MCP server is still reconnecting after the container restart. Let me wait a moment and try again:
+
+● Bash(curl -s --max-time 5 http://10.28.112.140:15000/mcp 2>&1 | head -3)
+  ⎿  {
+       "error": {
+         "code": -32000,
+     … +5 lines (ctrl+o to expand)
+
+● Server is back up. The tools need to reconnect — let me try directly:
+
+● The MCP server is running (HTTP 200) but the tools are not re-registered in this session. You'll need to restart the Claude Code session to reconnect the MCP server tools.
+  Run:
+
+  /exit
+
+  Then reopen Claude Code in this directory. The fsharp-devkit tools will reconnect automatically on startup.
+
+  Alternatively, if you're in an IDE or the web app, close and reopen the conversation.
+
+❯ 我更新了fsharp-devkit image 與  container 中的  fakka.argu，同樣的測試你再試一次，希望不要再有 Could not load file or assembly 'Argu, Version=10.0.103.2, Culture=neutral,
+PublicKeyToken=null'. The located assembly's manifest definition does not match the asse
+     mbly reference. (0x80131040)
+
+● fsharp-devkit - list_fsi_hosts (MCP)(agentId: "claude")
+  ⎿  []
+  ⎿  You've hit your limit · resets 9pm (UTC)
