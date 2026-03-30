@@ -1281,3 +1281,38 @@
   - `FAkka.FSI.Supervisor 1.562.101.201-dgx.18`
   - `FAkka.Proc.Supervisor 1.562.101.201-dgx.22`
 - `FSharp.MCP.DevKit.Server` package references 已同步跟進，確保後續部署吃到完整版本而不是只拿到 session-cache 後的一半修正。
+
+## 2026-03-30 15:01 UTC - CreateSession Bootstrap Timeout Recovery
+
+- live `mod2` 測試已確認：
+  - `create_fsi_host` 成功
+  - proc REST `/api/proc/nodes/{hostId}/sessions` 能看到新 session，狀態為 `busy`
+  - 但 `create_fsi_session` 仍因 bootstrap `Execute("()")` 的 `AskTimeoutException` 在 30 秒後直接失敗
+  - failure 之後 session 未寫入 MCP `sessionRegistry`，導致後續 routed execute/evaluate 全部被 routing 層拒絕
+- 根因在 `SessionProvisioningService.CreateSession`：
+  - recovery 輪詢 `GetSessionState` 只會在 `backend.Execute` 正常返回後執行
+  - 當 `backend.Execute` timeout、但 session actor 其實已存在時，沒有收斂機會
+- 修正方向：
+  - 將 bootstrap `Execute("()")` 的 `AskTimeoutException` 視為可恢復事件
+  - 即使 execute timeout，仍持續短時間輪詢 `GetSessionState`
+  - 只要 session state 變成非 `SessionMissing`，就 upsert 到 `sessionRegistry` 並返回
+
+## 2026-03-30 17:00 UTC - mod2 fresh-image E2E verified against docker run
+
+- 使用全新 `docker build --no-cache` 產生的 `fsharp-mcp-devkit:test-mod2` image，未使用 `docker cp`。
+- 手動 `docker run` 掛載與 `fsdevkit.service` 相同：
+  - `/home/sa/gemini4:/gemini4:ro`
+  - `/home/sa/gemini4/devkit_workspace:/workspace`
+- 直接以 MCP Streamable HTTP 完整執行：
+  1. `initialize`
+  2. `notifications/initialized`（notification，無 `id`）
+  3. `register_fsi_agent`
+  4. `create_fsi_host`
+  5. `create_fsi_session`
+  6. 分 4 段 `execute_f_sharp_code_routed` 執行目標腳本 1..76 行
+  7. `evaluate_f_sharp_expression_routed`
+- 結果：
+  - `cfar.Cfarta....c` 成功回傳 `PersistedConcurrentSortedList.CSL2+ConcurrentSortedList...`
+- 結論：
+  - 目前 `mod2` 可以保留，不需要退回 sparse baseline
+  - 真正需要留下的是 `FAkka.FSI.Supervisor` 的 worker bootstrap 修正

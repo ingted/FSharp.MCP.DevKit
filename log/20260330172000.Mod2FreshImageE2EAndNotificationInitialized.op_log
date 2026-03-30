@@ -1,0 +1,21 @@
+2026-03-30T16:59Z start
+- verify clean docker build output
+- stop/remove old container
+- run fresh `fsharp-mcp-devkit:test-mod2`
+
+2026-03-30T17:01Z checks
+- healthz ok
+- proc supervisor health ok
+- proc node created for `codex-mod2-host-*`
+
+2026-03-30T17:01Z-17:09Z MCP E2E
+- initialize
+- notifications/initialized (no `id`)
+- register_fsi_agent
+- create_fsi_host
+- create_fsi_session
+- execute_f_sharp_code_routed x4
+- evaluate_f_sharp_expression_routed
+
+2026-03-30T17:09Z result
+- returned `PersistedConcurrentSortedList.CSL2+ConcurrentSortedList...`

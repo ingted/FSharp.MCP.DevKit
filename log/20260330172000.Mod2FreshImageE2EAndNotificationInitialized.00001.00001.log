@@ -1,0 +1,24 @@
+主題: 使用 fresh docker image 驗證 mod2 E2E 與 notifications/initialized
+
+想法:
+- 若 clean image + fresh container 仍能完成 1..76 行與 cfar evaluate，則 mod2 應維持並修 issue，不應回退到 sparse baseline。
+- 一併確認 `notifications/initialized` 是否需額外 server 實作，或只是 client 呼叫形狀問題。
+
+執行計畫:
+1. clean docker build
+2. fresh docker run
+3. MCP Streamable HTTP:
+   - initialize
+   - notifications/initialized
+   - register/create host/create session
+   - 分次 execute routed
+   - evaluate routed
+
+結果:
+- `notifications/initialized` 成功，正確形式為 notification，無 `id`
+- fresh image E2E 成功
+- `cfar.Cfarta....c` 成功取值
+
+結論:
+- mod2 現在可保留
+- `notifications/initialized` 不需額外 server code；文件/範例要明寫正確用法

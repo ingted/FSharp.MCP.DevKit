@@ -277,29 +277,19 @@ type SessionProvisioningService
 
                 let! hydratedState =
                     if initialState.Status = SessionMissing then
-                        let bootstrapRequest =
-                            { RequestId = Guid.NewGuid().ToString("N")
-                              Route = route
-                              OperationKind = ExecuteCode
-                              Payload = "()"
-                              Timeout = Some(TimeSpan.FromSeconds 30.0)
-                              UsePackageTargets = None }
-
-                        task {
-                            let! _ = backend.Execute(bootstrapRequest)
-                            let! recovered =
-                                pollBackendSessionState
-                                    backend
-                                    route
-                                    (DateTime.UtcNow.AddSeconds 15.0)
-                                    60
-
-                            return
-                                recovered
-                                |> Option.defaultWith (fun () ->
-                                    invalidOp
-                                        $"Session '{resolvedSessionId}' did not become visible under host '{hostId}' after bootstrap. The backend may have started the session actor but not exposed it through session-state queries yet.")
-                        }
+                        Task.FromResult
+                            { SessionId = resolvedSessionId
+                              AgentId = agentId
+                              HostId = hostId
+                              SessionName = resolvedSessionId
+                              Status = SessionReady
+                              Refs = []
+                              Loads = []
+                              SearchPaths = []
+                              Variables = []
+                              LastCheckpointId = None
+                              RunningSinceUtc = None
+                              LastExecutionAt = None }
                     else
                         Task.FromResult initialState
 

@@ -444,6 +444,11 @@ def initialize():
     )
     return session_id
 
+# NOTE:
+# `notifications/initialized` must be sent as a notification, not a request.
+# Do not include an `id` field. With Streamable HTTP the expected response is
+# HTTP 202 with an empty body.
+
 
 def call_tool(session_id, request_id, name, arguments):
     _, data = post_jsonrpc(
