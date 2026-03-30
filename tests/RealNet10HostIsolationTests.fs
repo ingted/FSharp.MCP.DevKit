@@ -381,3 +381,55 @@ type RealNet10HostIsolationTests() =
                 Assert.True(sessionsA |> List.exists (fun session -> session.SessionId = sessionId && session.Status = SessionReady))
                 Assert.True(sessionsB |> List.exists (fun session -> session.SessionId = sessionId && session.Status = SessionReady))
             })
+
+    [<Fact>]
+    member _.``Real out-of-proc net10 host executes multi-interaction batches``() =
+        RealNet10HostIsolationTests.withRealNet10Service (fun service procClient systemName supervisorPort ->
+            task {
+                let agentId = "real-batch-agent"
+                let hostId = "real-batch-host"
+                let sessionId = "batch-session"
+
+                let _ = McpControlPlaneTools.RegisterFsiAgent(service, agentId, "Real Batch Agent")
+
+                let! _ =
+                    McpControlPlaneTools.CreateFsiHost(
+                        service,
+                        agentId,
+                        "net10",
+                        "dotnet",
+                        RealNet10HostIsolationTests.createProcNodeArguments
+                            hostId
+                            systemName
+                            supervisorPort
+                            (RealNet10HostIsolationTests.getFreePort ()),
+                        RealNet10HostIsolationTests.ServerOutputDir,
+                        hostId,
+                        "PING",
+                        1000
+                    )
+
+                let! _ = RealNet10HostIsolationTests.waitForHostReady procClient hostId
+
+                let! _ =
+                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                        McpControlPlaneTools.CreateFsiSession(service, agentId, hostId, sessionId, "Batch Session"))
+
+                let! defineResult =
+                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                        McpExecutionTools.ExecuteFSharpCodeRouted(
+                            service,
+                            agentId,
+                            hostId,
+                            sessionId,
+                            "let firstValue = 1;;\nlet secondValue = 2",
+                            30
+                        ))
+
+                let! value =
+                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                        McpExecutionTools.EvaluateFSharpExpressionRouted(service, agentId, hostId, sessionId, "secondValue", 30))
+
+                Assert.DoesNotContain("Execution failed", defineResult)
+                Assert.Equal("2", value)
+            })

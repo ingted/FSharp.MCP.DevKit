@@ -60,7 +60,7 @@ module private McpClientSmokeScenarioCatalog =
             let! asyncId =
                 callText client "execute_f_sharp_code_async" [ "code", box "let asyncSmoke = 9"; "timeoutSeconds", box 30 ]
 
-            let! status = waitForAsyncStatus client (asyncId.Trim())
+            let! status = waitForAsyncStatusViaTool client (asyncId.Trim())
             let! result =
                 callJson<FsiExecutionRecord option>
                     client
@@ -156,7 +156,7 @@ module private McpClientSmokeScenarioCatalog =
                       "materialization", box "" ]
 
             Assert.True(existsResponse.IsSuccess)
-            Assert.Equal("true", existsResponse.Output)
+            Assert.Equal("true", existsResponse.Output.ToLowerInvariant())
         }
 
     let fsharpResultQueryScenario (client: McpClientSession) =

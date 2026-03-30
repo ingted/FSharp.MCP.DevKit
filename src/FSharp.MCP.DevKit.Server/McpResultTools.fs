@@ -23,7 +23,10 @@ module private McpResultToolParsing =
         match value |> Option.map (fun item -> item.Trim().ToLowerInvariant()) with
         | Some "fsharp"
         | Some "fsharpcode" -> FSharpCode
-        | _ -> BuiltIn
+        | Some "builtin"
+        | Some ""
+        | None -> BuiltIn
+        | Some other -> invalidOp $"Unknown language '{other}'. Valid values: builtIn, fsharpCode."
 
     let parseKind (value: string) =
         match value.Trim().ToLowerInvariant() with
@@ -35,7 +38,7 @@ module private McpResultToolParsing =
         | "diff"
         | "compare" -> Diff
         | "groupby" -> GroupBy
-        | other -> invalidOp $"Unsupported result query kind '{other}'."
+        | other -> invalidOp $"Unsupported result query kind '{other}'. Valid values: filter, map, exists, forall, zip, diff, groupby."
 
     let parseMaterialization (value: string option) =
         match value |> Option.map (fun item -> item.Trim().ToLowerInvariant()) with
@@ -80,7 +83,7 @@ type McpResultTools =
         | None, None ->
             fsiService.ListAgentResults(agentId)
             |> FSharpJson.serialize
-        | _ -> invalidOp "hostId and sessionId must be provided together."
+        | _ -> invalidOp "Both hostId and sessionId must be provided together, or both must be omitted for an unfiltered query."
 
     [<McpServerTool(Name = "query_fsi_results"); Description("Run a built-in result query over one or two result id sets. Best flow for agents: 1. Collect result ids from execution or list_fsi_results. 2. Call query_fsi_results. 3. If materialization is enabled, reuse the returned produced result id in later queries.")>]
     static member QueryFsiResults

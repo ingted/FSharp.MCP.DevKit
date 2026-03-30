@@ -23,6 +23,43 @@ module private FsiResultAdapter =
     let ofCompilerDiagnostics (diagnostics: FSharpDiagnostic array) =
         diagnostics |> Array.map FsiDiagnostic.ofCompilerDiagnostic
 
+module private InteractionBatch =
+    let split (code: string) =
+        let normalized =
+            if isNull code then
+                String.Empty
+            else
+                code.Replace("\r\n", "\n").Replace('\r', '\n')
+
+        let chunks = ResizeArray<string>()
+        let current = ResizeArray<string>()
+
+        let flush () =
+            let chunk =
+                current
+                |> Seq.toArray
+                |> String.concat "\n"
+                |> fun value ->
+                    let trimmed = value.Trim()
+                    if trimmed.EndsWith(";;", StringComparison.Ordinal) then
+                        trimmed.Substring(0, trimmed.Length - 2).TrimEnd()
+                    else
+                        trimmed
+
+            current.Clear()
+
+            if not (String.IsNullOrWhiteSpace chunk) then
+                chunks.Add(chunk)
+
+        for line in normalized.Split('\n') do
+            current.Add(line)
+
+            if line.TrimEnd().EndsWith(";;", StringComparison.Ordinal) then
+                flush ()
+
+        flush ()
+        chunks |> Seq.toList
+
 type AsyncFsiResultCache = ConcurrentDictionary<string, FsiResult option>
 
 type AsyncFsiResultDto =
@@ -246,41 +283,35 @@ type FsiService(config: FsiConfig) =
             let startTime = DateTime.Now
 
             try
-                let _, checkResults, _ = session.ParseAndCheckInteraction(code)
-                let diagnostics = checkResults.Diagnostics
+                let diagnostics = ResizeArray<FSharpDiagnostic>()
+                let chunks = InteractionBatch.split code
+                let mutable hasErrors = false
 
-                let hasErrors =
-                    diagnostics
-                    |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
+                for chunk in chunks do
+                    if not hasErrors then
+                        let _, checkResults, _ = session.ParseAndCheckInteraction(chunk)
+                        diagnostics.AddRange(checkResults.Diagnostics)
 
-                if hasErrors then
-                    let (output, errors) = this.GetAndClearOutput()
+                        hasErrors <-
+                            checkResults.Diagnostics
+                            |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
 
-                    { Output = output
-                      Errors = errors
-                      IsSuccess = false
-                      Value = None
-                      ExecutionTime =
-                        if config.CaptureTimings then
-                            Some(DateTime.Now - startTime)
-                        else
-                            None
-                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
-                else
-                    session.EvalInteraction(code)
-                    let (output, errors) = this.GetAndClearOutput()
-                    let success = String.IsNullOrEmpty(errors) && not hasErrors
+                        if not hasErrors then
+                            session.EvalInteraction(chunk)
 
-                    { Output = output
-                      Errors = errors
-                      IsSuccess = success
-                      Value = None
-                      ExecutionTime =
-                        if config.CaptureTimings then
-                            Some(DateTime.Now - startTime)
-                        else
-                            None
-                      Diagnostics = diagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
+                let (output, errors) = this.GetAndClearOutput()
+                let success = String.IsNullOrEmpty(errors) && not hasErrors
+
+                { Output = output
+                  Errors = errors
+                  IsSuccess = success
+                  Value = None
+                  ExecutionTime =
+                    if config.CaptureTimings then
+                        Some(DateTime.Now - startTime)
+                    else
+                        None
+                  Diagnostics = diagnostics.ToArray() |> FsiResultAdapter.ofCompilerDiagnostics }
             with ex ->
                 let (output, errors) = this.GetAndClearOutput()
 

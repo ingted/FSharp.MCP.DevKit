@@ -71,3 +71,26 @@ let ``Fsi async status resource reflects async tool completion`` () =
         Assert.Equal(Some "default-session", status.SessionId)
         Assert.True(status.Result.IsSome)
     }
+
+[<Fact>]
+let ``get_async_status tool matches async resource status`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! asyncId = FSharpInteractiveTools.ExecuteFSharpCodeAsync(service, "let toolAsyncValue = 55", 30)
+        let! _ = waitForCompletion service asyncId
+        let resource = FSharp.MCP.DevKit.Server.Program.FsiResources(service)
+        let resourceJson = resource.AsyncStatus(asyncId)
+        let! toolJson = FSharpInteractiveTools.GetAsyncStatus(service, asyncId)
+        let resourceStatus = FSharpJson.deserialize<AsyncFsiStatusDto> resourceJson
+        let toolStatus = FSharpJson.deserialize<AsyncFsiStatusDto> toolJson
+
+        Assert.Equal(resourceStatus.AsyncId, toolStatus.AsyncId)
+        Assert.Equal(resourceStatus.Exists, toolStatus.Exists)
+        Assert.Equal(resourceStatus.IsCompleted, toolStatus.IsCompleted)
+        Assert.Equal(resourceStatus.ResultId, toolStatus.ResultId)
+        Assert.Equal(resourceStatus.AgentId, toolStatus.AgentId)
+        Assert.Equal(resourceStatus.HostId, toolStatus.HostId)
+        Assert.Equal(resourceStatus.SessionId, toolStatus.SessionId)
+    }

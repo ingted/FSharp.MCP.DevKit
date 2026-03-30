@@ -21,6 +21,29 @@ let withClient testBody =
 let waitForAsyncStatus (client: McpClientSession) (asyncId: string) =
     client.WaitForAsyncStatusAsync(asyncId)
 
+let waitForAsyncStatusViaTool (client: McpClientSession) (asyncId: string) =
+    task {
+        let mutable attempt = 0
+        let! initial =
+            client.CallToolJsonAsync<AsyncFsiStatusDto>(
+                "get_async_status",
+                McpClientHarness.arguments [ "asyncId", box asyncId ]
+            )
+        let mutable status = initial
+
+        while not status.IsCompleted && attempt < 60 do
+            do! Task.Delay(100)
+            attempt <- attempt + 1
+            let! next =
+                client.CallToolJsonAsync<AsyncFsiStatusDto>(
+                    "get_async_status",
+                    McpClientHarness.arguments [ "asyncId", box asyncId ]
+                )
+            status <- next
+
+        return status
+    }
+
 let parseJson<'T> (json: string) = FSharpJson.deserialize<'T> json
 
 let assertContains (expected: string) (values: seq<string>) =

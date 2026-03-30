@@ -65,14 +65,14 @@ type McpExecutionTools =
             return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatRecordError "Execution failed" record
         }
 
-    [<McpServerTool(Name = "execute_f_sharp_code_async_routed"); Description("Enqueue F# code execution against an explicit route and return an async id immediately. This is the preferred path for long-running or heavy remote scripts. Best flow: 1. Call this tool. 2. Poll resource fsi/async/{asyncId}. 3. When completed, use the same host/session for evaluate_f_sharp_expression_routed if you need to read bindings or values.")>]
+    [<McpServerTool(Name = "execute_f_sharp_code_async_routed"); Description("Enqueue F# code execution against an explicit route and return an async id immediately. This is the preferred path for long-running or heavy remote scripts. Best flow: 1. Call this tool. 2. Poll get_async_status or resource fsi/async/{asyncId}. 3. When completed, use the same host/session for evaluate_f_sharp_expression_routed if you need to read bindings or values.")>]
     static member ExecuteFSharpCodeAsyncRouted
         (
             fsiService: FsiMcpService,
             [<Description("Owning agent id.")>] agentId: string,
             [<Description("Target host id.")>] hostId: string,
             [<Description("Target session id.")>] sessionId: string,
-            [<Description("F# code to execute asynchronously. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
+            [<Description("F# code to execute asynchronously. After this tool returns asyncId, poll get_async_status or read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
             [<Optional; DefaultParameterValue(0)>]
             [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
         ) : Task<string> =

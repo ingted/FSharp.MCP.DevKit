@@ -52,6 +52,22 @@ let ``InProcBackend reset clears session state`` () =
     }
 
 [<Fact>]
+let ``InProcBackend executes multi-interaction batches separated by terminators`` () =
+    task {
+        let backend = InProcBackend() :> IFsiExecutionBackend
+        let routeA = route "agent-a" "default-host" "session-batch"
+
+        let! defineResult =
+            backend.Execute(request routeA ExecuteCode "let firstValue = 1;;\nlet secondValue = 2")
+
+        let! evalSecond = backend.Execute(request routeA EvaluateExpression "secondValue")
+
+        Assert.True(defineResult.Result.IsSuccess)
+        Assert.True(evalSecond.Result.IsSuccess)
+        Assert.Equal(Some "2", evalSecond.Result.Value)
+    }
+
+[<Fact>]
 let ``InProcBackend returns execution metadata and session state`` () =
     task {
         let backend = InProcBackend() :> IFsiExecutionBackend

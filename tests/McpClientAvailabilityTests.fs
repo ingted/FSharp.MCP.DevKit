@@ -19,6 +19,7 @@ type McpClientAvailabilityTests() =
 
                 assertContains "execute_f_sharp_code" toolNames
                 assertContains "execute_f_sharp_code_async" toolNames
+                assertContains "get_async_status" toolNames
                 assertContains "register_fsi_agent" toolNames
                 assertContains "ensure_fsi_route" toolNames
                 assertContains "query_fsi_results" toolNames

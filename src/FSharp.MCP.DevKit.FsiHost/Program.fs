@@ -1,6 +1,5 @@
 open System
 open System.IO
-open System.ServiceProcess
 open System.Threading
 open Akka.Actor
 open Akka.Configuration
@@ -114,27 +113,6 @@ let createRuntime () =
 let stopRuntime (runtime: FsiHostRuntime) =
     runtime.ActorSystem.Terminate().GetAwaiter().GetResult()
 
-type FsiHostWindowsService(serviceName: string) =
-    inherit ServiceBase()
-
-    let mutable runtime : FsiHostRuntime option = None
-
-    do
-        base.ServiceName <- serviceName
-        base.AutoLog <- true
-        base.CanStop <- true
-        base.CanPauseAndContinue <- false
-
-    override _.OnStart(_args: string array) =
-        runtime <- Some(createRuntime ())
-
-    override _.OnStop() =
-        match runtime with
-        | Some value ->
-            stopRuntime value
-            runtime <- None
-        | None -> ()
-
 let runConsole (serviceName: string) =
     use shutdownEvent = new ManualResetEvent(false)
     let runtime = createRuntime ()
@@ -151,13 +129,4 @@ let runConsole (serviceName: string) =
 [<EntryPoint>]
 let main argv =
     let serviceName = getServiceName argv
-
-    let runAsService =
-        (not Environment.UserInteractive)
-        || (argv |> Array.exists (fun arg -> arg.Equals("--service", StringComparison.OrdinalIgnoreCase)))
-
-    if runAsService then
-        ServiceBase.Run([| new FsiHostWindowsService(serviceName) :> ServiceBase |])
-        0
-    else
-        runConsole serviceName
+    runConsole serviceName

@@ -73,9 +73,10 @@ type HostProvisioningService
         (hostId: string)
         (deadlineUtc: DateTime)
         (isAcceptable: ProcHostSnapshot -> bool)
+        (remainingAttempts: int)
         : Task<ProcHostSnapshot option> =
         task {
-            if DateTime.UtcNow >= deadlineUtc then
+            if DateTime.UtcNow >= deadlineUtc || remainingAttempts <= 0 then
                 return None
             else
                 let! snapshotOpt = tryGetProcSnapshot procSupervisorClient hostId
@@ -85,7 +86,7 @@ type HostProvisioningService
                     return Some snapshot
                 | _ ->
                     do! Task.Delay 250
-                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc isAcceptable
+                    return! pollProcSnapshot procSupervisorClient hostId deadlineUtc isAcceptable (remainingAttempts - 1)
         }
 
     let snapshotHasUsableRemoteAddress hostKind (snapshot: ProcHostSnapshot) =
@@ -141,6 +142,7 @@ type HostProvisioningService
                                     hostId
                                     (DateTime.UtcNow.AddSeconds 15.0)
                                     (fun snapshot -> not (String.IsNullOrWhiteSpace snapshot.Status))
+                                    60
 
                             match recovered with
                             | Some snapshot -> return snapshot
@@ -159,6 +161,7 @@ type HostProvisioningService
                                     hostId
                                     (DateTime.UtcNow.AddSeconds 15.0)
                                     (snapshotHasUsableRemoteAddress hostKind)
+                                    60
 
                             return recovered |> Option.defaultValue snapshot
                         }
@@ -196,6 +199,38 @@ type SessionProvisioningService
         | Some _ -> sessionRegistry.Update record
         | None -> sessionRegistry.Create record |> ignore
 
+    let tryGetBackendSessionState
+        (backend: IFsiExecutionBackend)
+        (route: ExecutionRoute)
+        : Task<SessionRecord option> =
+        task {
+            try
+                let! state = backend.GetSessionState(route)
+                return Some state
+            with
+            | :? AskTimeoutException
+            | :? InvalidOperationException -> return None
+        }
+
+    let rec pollBackendSessionState
+        (backend: IFsiExecutionBackend)
+        (route: ExecutionRoute)
+        (deadlineUtc: DateTime)
+        (remainingAttempts: int)
+        : Task<SessionRecord option> =
+        task {
+            if DateTime.UtcNow >= deadlineUtc || remainingAttempts <= 0 then
+                return None
+            else
+                let! stateOpt = tryGetBackendSessionState backend route
+
+                match stateOpt with
+                | Some state when state.Status <> SessionMissing -> return Some state
+                | _ ->
+                    do! Task.Delay 250
+                    return! pollBackendSessionState backend route deadlineUtc (remainingAttempts - 1)
+        }
+
     member _.CreateSession
         (
             agentId: string,
@@ -222,7 +257,23 @@ type SessionProvisioningService
                       SessionId = resolvedSessionId }
 
                 let backend = backendSelector.Resolve(host.BackendKind)
-                let! initialState = backend.GetSessionState(route)
+                let! initialStateOpt = tryGetBackendSessionState backend route
+
+                let initialState =
+                    initialStateOpt
+                    |> Option.defaultValue
+                        { SessionId = resolvedSessionId
+                          AgentId = agentId
+                          HostId = hostId
+                          SessionName = resolvedSessionId
+                          Status = SessionMissing
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = None
+                          LastExecutionAt = None }
 
                 let! hydratedState =
                     if initialState.Status = SessionMissing then
@@ -236,7 +287,18 @@ type SessionProvisioningService
 
                         task {
                             let! _ = backend.Execute(bootstrapRequest)
-                            return! backend.GetSessionState(route)
+                            let! recovered =
+                                pollBackendSessionState
+                                    backend
+                                    route
+                                    (DateTime.UtcNow.AddSeconds 15.0)
+                                    60
+
+                            return
+                                recovered
+                                |> Option.defaultWith (fun () ->
+                                    invalidOp
+                                        $"Session '{resolvedSessionId}' did not become visible under host '{hostId}' after bootstrap. The backend may have started the session actor but not exposed it through session-state queries yet.")
                         }
                     else
                         Task.FromResult initialState

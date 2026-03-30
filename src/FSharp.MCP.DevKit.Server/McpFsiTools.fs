@@ -916,11 +916,11 @@ module McpFsiTools =
                     return errorMessage
             }
 
-        [<McpServerTool(Name = "execute_f_sharp_code_async"); Description("Enqueue F# code execution and return an async id immediately. Best flow for agents: 1. Call this tool to get asyncId. 2. Read resource fsi/async/{asyncId}. 3. Poll that resource until isCompleted becomes true. Prefer this over synchronous execute for long-running or heavy scripts.")>]
+        [<McpServerTool(Name = "execute_f_sharp_code_async"); Description("Enqueue F# code execution and return an async id immediately. Best flow for agents: 1. Call this tool to get asyncId. 2. Poll get_async_status or read resource fsi/async/{asyncId}. 3. Continue until isCompleted becomes true. Prefer this over synchronous execute for long-running or heavy scripts.")>]
         static member ExecuteFSharpCodeAsync
             (
                 fsiService: FsiMcpService,
-                [<Description("F# code to execute asynchronously. After this tool returns asyncId, read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, they must be visible from the FSI host process, not just from the caller's container.")>] code: string,
+                [<Description("F# code to execute asynchronously. After this tool returns asyncId, poll get_async_status or read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, they must be visible from the FSI host process, not just from the caller's container.")>] code: string,
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
@@ -931,6 +931,17 @@ module McpFsiTools =
 
                 let asyncId = fsiService.EnqueueExecuteCode(code, timeout)
                 return asyncId
+            }
+
+        [<McpServerTool(Name = "get_async_status"); Description("Get async FSI execution status by asyncId. Use this when your client cannot directly call resources/read for fsi/async/{asyncId}. Works for async jobs created by both execute_f_sharp_code_async and execute_f_sharp_code_async_routed.")>]
+        static member GetAsyncStatus
+            (
+                fsiService: FsiMcpService,
+                [<Description("Async job id returned by execute_f_sharp_code_async or execute_f_sharp_code_async_routed.")>] asyncId: string
+            ) : Task<string> =
+            task {
+                let status = fsiService.GetAsyncExecutionStatus(asyncId)
+                return FSharpJson.serialize status
             }
 
         [<McpServerTool; Description("Execute F# code in FSI and return the result with detailed error information")>]

@@ -51,7 +51,7 @@ type FsiResources(fsiService: FsiMcpService) =
         Title = "FSI Async Status",
         MimeType = "application/json",
         UriTemplate = "fsi/async/{asyncId}")>]
-    [<Description("Read async FSI execution status by asyncId. Best flow for agents: 1. Call execute_f_sharp_code_async to get asyncId. 2. Read fsi/async/{asyncId}. 3. Poll until isCompleted is true.")>]
+    [<Description("Read async FSI execution status by asyncId. Best flow for agents: 1. Call execute_f_sharp_code_async or execute_f_sharp_code_async_routed to get asyncId. 2. Read fsi/async/{asyncId} or call get_async_status. 3. Poll until isCompleted is true.")>]
     member _.AsyncStatus(asyncId: string) =
         let status = fsiService.GetAsyncExecutionStatus(asyncId)
         FSharpJson.serialize status
@@ -95,11 +95,28 @@ let getProcSupervisorPath (argv: string array) =
 
 let getAkkaClientConfig () =
     let configPath = IO.Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
-    let configContent = IO.File.ReadAllText(configPath)
+    let configContent =
+        if IO.File.Exists(configPath) then
+            IO.File.ReadAllText(configPath)
+        else
+            ""
+
     let contractConfig =
         ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly; typeof<ProcStartSpec>.Assembly ]
 
     contractConfig.WithFallback(ConfigurationFactory.ParseString(configContent))
+
+let getProcSupervisorTimeoutSeconds (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("FSI_PROC_SUPERVISOR_TIMEOUT")
+    let argValue = tryGetCommandLineValue "--proc-supervisor-timeout-seconds" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace envValue) then Some envValue ]
+    |> List.choose id
+    |> List.tryPick (fun value ->
+        match Double.TryParse value with
+        | true, parsed when parsed > 0.0 -> Some parsed
+        | _ -> None)
+    |> Option.defaultValue 60.0
 
 let getEnableProcSupervisor () =
     let value = Environment.GetEnvironmentVariable("FSI_ENABLE_PROC_SUPERVISOR")
@@ -138,6 +155,7 @@ let main argv =
 
     let enableProcSupervisor = getEnableProcSupervisor ()
     let procSupervisorPath = getProcSupervisorPath argv
+    let procSupervisorTimeoutSeconds = getProcSupervisorTimeoutSeconds argv
 
     if enableRemoteClient || enableProcSupervisor then
         builder.Services.AddSingleton<ActorSystem>(fun _ ->
@@ -148,7 +166,8 @@ let main argv =
     if enableProcSupervisor then
         builder.Services.AddSingleton<IProcSupervisorClient>(fun serviceProvider ->
             let actorSystem = serviceProvider.GetRequiredService<ActorSystem>()
-            ProcSupervisorClient(actorSystem, procSupervisorPath, TimeSpan.FromSeconds(60.0)) :> IProcSupervisorClient)
+            ProcSupervisorClient(actorSystem, procSupervisorPath, TimeSpan.FromSeconds(procSupervisorTimeoutSeconds))
+            :> IProcSupervisorClient)
         |> ignore
 
         builder.Services.AddSingleton<IFsiSupervisorClient>(fun serviceProvider ->
@@ -225,6 +244,7 @@ let main argv =
                    remoteClient = if enableRemoteClient then "enabled" else "disabled"
                    procSupervisor = if enableProcSupervisor then "enabled" else "disabled"
                    procSupervisorPath = procSupervisorPath
+                   procSupervisorTimeoutSeconds = procSupervisorTimeoutSeconds
                    isWindowsService = isWindowsService
                    serviceName = serviceName |}))
     )
@@ -232,7 +252,7 @@ let main argv =
 
     if enableRemoteClient || enableProcSupervisor then
         let actorSystem = host.Services.GetRequiredService<ActorSystem>()
-        host.Lifetime.ApplicationStopping.Register(fun () -> actorSystem.Terminate() |> ignore)
+        host.Lifetime.ApplicationStopping.Register(fun () -> actorSystem.Terminate().GetAwaiter().GetResult())
         |> ignore
 
     // Run the host

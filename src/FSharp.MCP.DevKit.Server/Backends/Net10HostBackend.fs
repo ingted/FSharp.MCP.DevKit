@@ -30,7 +30,7 @@ type Net10HostBackend
 
     let requireHost (hostId: string) =
         hostRegistry.TryGet hostId
-        |> Option.defaultWith (fun () -> invalidOp $"Host '{hostId}' was not found.")
+        |> Option.defaultWith (fun () -> invalidOp $"Host '{hostId}' was not found. Use list_fsi_hosts to see available hosts.")
 
     let toSessionRecord (route: ExecutionRoute) (snapshot: FsiSupervisorSessionSnapshot) =
         { SessionId = snapshot.SessionId
@@ -94,10 +94,10 @@ type Net10HostBackend
                   Loads = []
                   Timeout = request.Timeout
                   CaptureStdout = Some true }
-        | GetState -> Error "GetState is handled via GetSessionState."
-        | ResetSession -> Error "ResetSession is not implemented for Net10HostBackend yet."
-        | RestartHost -> Error "RestartHost is handled via ProcSupervisor."
-        | ResultQuery -> Error "ResultQuery is not implemented for Net10HostBackend yet."
+        | GetState -> Error "GetState is dispatched via IFsiExecutionBackend.GetSessionState, not through Execute."
+        | ResetSession -> Error "ResetSession is dispatched via IFsiExecutionBackend.ResetSession, not through Execute."
+        | RestartHost -> Error "RestartHost is dispatched via IFsiExecutionBackend.RestartHost, not through Execute."
+        | ResultQuery -> Error "ResultQuery is dispatched via IResultRegistry, not through Execute."
 
     let tryGetProcSnapshot (procSupervisorClient: IProcSupervisorClient) hostId =
         task {

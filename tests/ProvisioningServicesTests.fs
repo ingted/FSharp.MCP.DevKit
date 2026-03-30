@@ -346,3 +346,160 @@ let ``SessionProvisioningService bootstraps missing session through backend exec
         Assert.Equal("session-c", stored.SessionId)
         Assert.Contains(fakeBackend.ExecuteRequests, fun request -> request.OperationKind = ExecuteCode && request.Payload = "()")
     }
+
+[<Fact>]
+let ``SessionProvisioningService polls backend state until bootstrapped session becomes visible`` () =
+    task {
+        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+        let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
+        let now = DateTime.UtcNow
+
+        hostRegistry.Create(
+            { HostId = "host-delayed"
+              AgentId = "agent-delayed"
+              HostKind = Net10Host
+              BackendKind = Net10Remote
+              Status = Ready
+              Address = Some "akka.tcp://FsiExecutionSystem@localhost:9030/user/fsi/supervisor"
+              ProcId = Some 9030
+              CreatedAt = now
+              LastHealthCheckAt = Some now
+              LastError = None }
+        )
+        |> ignore
+
+        let mutable lookupCount = 0
+
+        let backend =
+            FakeSessionProvisioningBackend(
+                (fun route ->
+                    lookupCount <- lookupCount + 1
+
+                    if lookupCount < 4 then
+                        { SessionId = route.SessionId
+                          AgentId = route.AgentId
+                          HostId = route.HostId
+                          SessionName = route.SessionId
+                          Status = SessionMissing
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = None
+                          LastExecutionAt = None }
+                    else
+                        { SessionId = route.SessionId
+                          AgentId = route.AgentId
+                          HostId = route.HostId
+                          SessionName = route.SessionId
+                          Status = SessionReady
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = [ "ready", "true" ]
+                          LastCheckpointId = None
+                          RunningSinceUtc = Some DateTime.UtcNow
+                          LastExecutionAt = Some DateTime.UtcNow }),
+                (fun request ->
+                    { ResultId = "result-delayed"
+                      RequestId = request.RequestId
+                      AgentId = request.Route.AgentId
+                      BackendKind = Net10Remote
+                      HostId = request.Route.HostId
+                      SessionId = request.Route.SessionId
+                      OperationKind = request.OperationKind
+                      SubmittedAt = DateTime.UtcNow
+                      StartedAt = Some DateTime.UtcNow
+                      CompletedAt = Some DateTime.UtcNow
+                      RawErrorType = None
+                      Result =
+                        { Output = ""
+                          Errors = ""
+                          IsSuccess = true
+                          ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                          Diagnostics = [||]
+                          Value = None } })
+            )
+            :> IFsiExecutionBackend
+
+        let selector = BackendSelector([ backend ])
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+
+        let! session =
+            provisioning.CreateSession("agent-delayed", "host-delayed", sessionId = "session-delayed")
+
+        Assert.Equal(SessionReady, session.Status)
+        Assert.True(lookupCount >= 4)
+        Assert.Equal(Some("true"), session.Variables |> List.tryFind (fun (name, _) -> name = "ready") |> Option.map snd)
+        Assert.True(sessionRegistry.TryGet("host-delayed", "session-delayed").IsSome)
+    }
+
+[<Fact>]
+let ``SessionProvisioningService fails clearly when bootstrapped session never becomes visible`` () =
+    task {
+        let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
+        let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
+        let now = DateTime.UtcNow
+
+        hostRegistry.Create(
+            { HostId = "host-missing"
+              AgentId = "agent-missing"
+              HostKind = Net10Host
+              BackendKind = Net10Remote
+              Status = Ready
+              Address = Some "akka.tcp://FsiExecutionSystem@localhost:9040/user/fsi/supervisor"
+              ProcId = Some 9040
+              CreatedAt = now
+              LastHealthCheckAt = Some now
+              LastError = None }
+        )
+        |> ignore
+
+        let backend =
+            FakeSessionProvisioningBackend(
+                (fun route ->
+                    { SessionId = route.SessionId
+                      AgentId = route.AgentId
+                      HostId = route.HostId
+                      SessionName = route.SessionId
+                      Status = SessionMissing
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = None
+                      LastExecutionAt = None }),
+                (fun request ->
+                    { ResultId = "result-missing"
+                      RequestId = request.RequestId
+                      AgentId = request.Route.AgentId
+                      BackendKind = Net10Remote
+                      HostId = request.Route.HostId
+                      SessionId = request.Route.SessionId
+                      OperationKind = request.OperationKind
+                      SubmittedAt = DateTime.UtcNow
+                      StartedAt = Some DateTime.UtcNow
+                      CompletedAt = Some DateTime.UtcNow
+                      RawErrorType = None
+                      Result =
+                        { Output = ""
+                          Errors = ""
+                          IsSuccess = true
+                          ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                          Diagnostics = [||]
+                          Value = None } })
+            )
+            :> IFsiExecutionBackend
+
+        let selector = BackendSelector([ backend ])
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+
+        let! ex =
+            Assert.ThrowsAsync<InvalidOperationException>(fun () ->
+                provisioning.CreateSession("agent-missing", "host-missing", sessionId = "session-missing") :> Task)
+
+        Assert.Contains("did not become visible", ex.Message)
+        Assert.True(sessionRegistry.TryGet("host-missing", "session-missing").IsNone)
+    }
