@@ -1,0 +1,68 @@
+
+❯ /workspace/home/mcp/FSharp.MCP.DevKit/notes/00023.txt
+
+• 我要把真实 net10 host 启动参数钉死，所以再看一下 Akka.Proc.Supervisor 的 procnode CLI，确认 procId/systemName/supervisor/seed/host/port 哪些是必填。
+
+• 我要補一個真實 out-of-proc integration test：起一個本地 proc-supervisor，再用 FsiMcpService + real Proc/Fsi clients 建兩個 net10 host，各自同名 session 執行不同 F#
+code，直
+  接驗 host 隔離。
+
+依賴的 package FAkka.Proc.Supervisor / FAkka.FSI.Supervisor 的程式碼在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj
+以及 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj
+
+你真的可以多看看 log 或 notes 裡面的紀錄 或者
+
+  Read 1 file (ctrl+o to expand)
+
+● This is very informative. Let me continue reading to find the key part about what Codex knew about session types.
+
+  Read 1 file (ctrl+o to expand)
+
+● Now I see the key insight. Let me check how the FSharp.MCP.DevKit's create_fsi_host relates to this and search for the "in-process" vs "out-of-process" session distinction
+  that previous Codex sessions understood.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Now I understand the full picture. The execute_f_sharp_code (non-routed) tool uses the in-process backend (InProcBackend) which runs FSI directly within the MCP server
+  process. This avoids all the /app/ DLL conflict issues because the FSI session lives in the same process and can resolve DLLs properly from #I paths.
+
+  The user is pointing out I should have used the non-routed tools (execute_f_sharp_code) which go through the in-process backend, since they explicitly handle #r via
+  FsiService directly — no Akka ProcSupervisor, no /app/ DLL conflicts.
+
+  But wait — the user explicitly asked for "remote fsi host (out-of-process的)". Let me re-read their original request more carefully... They asked for out-of-process. The
+  DLL loading issue is inherent to the out-of-process architecture.
+
+  Let me check the notes for the actual solution that worked previously:
+
+  Searched for 4 patterns, read 1 file (ctrl+o to expand)
+
+● I see — the notes show the same pattern: Codex also hit the DynamicObj.dll wall on out-of-process host and kept burning sessions. The user then interrupted and switched to
+  code review work instead.
+
+  Now let me search for how Codex successfully ran this script in other notes:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Let me check notes/00046 which seems to be the successful Codex run:
+
+  Read 1 file (ctrl+o to expand)
+
+● That file ends exactly where the session was created — it was the same failed session. Let me check if there's a successful run in other notes:
+
+  Searched for 6 patterns, read 2 files (ctrl+o to expand)
+
+● OK 我現在理解了完整脈絡。讓我直接回答你。
+
+  問題分析：
+
+  從 notes/00042 和 00046/00048 看，這個相同的測試跑了至少三輪，每輪都卡在 DLL 載入。核心問題鏈是：
+
+  1. Out-of-process host 的 DLL resolution 衝突 — FSI host process 在 /app/ 下，#r "DynamicObj.dll" 會先解析到 /app/DynamicObj.dll（host 自帶版本），而非 #I
+  指定的目標目錄。Plotly.NET.dll 也一樣。
+  2. Argu 版本衝突 — 00042 紀錄顯示 FSI host 已載入 Argu 6.2.5.0，但 FriceSeries9.FAkkaChartMod2 需要 10.0.103.2。你後來更新了 container 中的 FAkka.Argu 但又碰到 session
+  重連問題。
+  3. 你說「從頭到尾沒看過我送 net10 參數」 — 我確實送了 hostKind: "net10"，但我現在理解你的意思可能是：我一直只在用 out-of-process 的 net10 host，卻沒有試過 in-process
+  的路徑。 InProcBackend 直接在 MCP server process 內跑 FsiService，#r 的解析不會受 /app/ 影響。
+
+  我的盲點： 我不確定 in-process 的路徑是否能解決這個 DLL 載入問題。你能告訴我 Codex 之前成功的做法是用 in-process session 還是其他方式嗎？或者你說的「net10
+  參數」是指在某個不同的 tool 或 context 中？

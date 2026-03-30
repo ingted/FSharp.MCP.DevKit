@@ -1,0 +1,1209 @@
+› 現在開始，先單測/單修 FAkka.FSI.Supervisor 那邊的問題:
+  1. 確認不是 akka 把 actor timeout kill了或者 Passivation 造成
+  2. fsisupervisor spawn 出 fsiworker 照理來說不應該被 actor 在 receive<xxxx>(fun xx yy -> body) 的 body 處理，而是用一個 queue 接收 key * ExecCodeJson ，另外排一個 deterministic 的機制完成排進去的
+  ExecCodeJson (以上僅建議，就算 consumption 端要求 blocking 執行，那也可以挑出 key 來取 task 判斷是否 finish 之類)
+
+
+• Context compacted
+
+• 先把 FAkka.FSI.Supervisor 這條執行鏈重新收斂成兩件事：一是確認 Akka timeout/passivation 有沒有真的介入，二是檢查 FsiSupervisor -> FsiWorker 現在的排程模型是否把長任務卡在 actor receive 路徑上。我會先
+  讀 Supervisor/FsiWorker/tests 和相關 HOCON，再決定是補診斷還是直接改成 queue/task 驅動。
+
+• Updated Plan
+  └ □ Inspect FSI supervisor execution flow, timeout/passivation settings, and existing tests
+    □ Implement targeted fix in FAkka.FSI.Supervisor for long-running Exec handling
+    □ Add/adjust regression tests and run focused verification
+    □ Document findings in DevLog/logs if code changes land
+
+• 先讀 Akka.FSI.Supervisor 的執行路徑與測試，特別看 Supervisor.fs、FsiWorker.fs、HOCON/config、以及現有測試怎麼假設 long-running behavior。
+
+• Explored
+  └ Read Supervisor.fs, FsiWorker.fs
+    Search passivat|ReceiveTimeout|Context.SetReceiveTimeout|Ask<|ExecCode|ExecCodeJson|FsiWorker|LongRunning|queue|Mailbox|stash in Akka.FSI.Supervisor
+    Search Akka.FSI.Supervisor|fsi/supervisor|passivat|ReceiveTimeout|idle|timeout|shard|cluster|worker in Akka.FSI.Supervisor
+
+─ Worked for 1m 24s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 先把兩個假設拆開驗證：一是目前沒有看到 passivation/ReceiveTimeout 的設定，我會把 supervisor/worker 的 message flow 和現有 responsiveness test 對上；二是你提的 queue 模型，我先看現在是否已經靠
+  ReceiveAsync + LongRunning task 避開 body 直接 blocking，再決定要不要進一步改成顯式 queue。
+
+• Explored
+  └ Read Supervisor.fs, SupervisorTests.fs, SupervisorSettings.fs, FsiSession.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先补最关键的可归因测试：证明 caller 的 ask timeout 不会把 session actor 杀掉，也没有任何 receive timeout/passivation 在背后收掉 worker。然后我再决定要不要动成显式 queue；如果 current model 已经满
+  足“actor 线程不直接跑重活，但 mailbox 受控串行”，就不会为了改而改。
+
+• Explored
+  └ Search idleRestartMs|execMs|startupMs|ReceiveTimeout|GracefulStop|PostStop|ResetSession in Akka.FSI.Supervisor
+    Read SupervisorTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先补两类最小回归：一类证明 ask timeout 不会取消正在跑的 session；另一类证明目前根本没有把 idleRestartMs 接成 ReceiveTimeout/passivation。代码上我会顺手把 FsiWorker 当前为什么用 ReceiveAsync +
+  LongRunning task 而不是立即切成 queue 的取舍写清楚，避免之后再误判。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/FsiWorker.fs (+9 -0)
+    363      member this.Initialize() =
+    364 +        // Design:
+    365 +        // - ExecCode is evaluated on a dedicated long-running task so the actor thread itself
+    366 +        //   is not performing the heavy FSI work.
+    367 +        // - We intentionally keep the ReceiveAsync handler awaiting that task instead of
+    368 +        //   immediately queueing-and-returning. This preserves current lifecycle semantics:
+    369 +        //   session reset/stop will wait for the in-flight execution rather than disposing
+    370 +        //   the FSI session underneath a still-running evaluation task.
+    371 +        // - A true actor-side queue is possible, but it needs coordinated shutdown/cancel
+    372 +        //   behavior across ResetSession/GracefulStop before it is safe to adopt.
+    373          this.ReceiveAsync<ExecCode>(fun msg ->
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs (+90 -0)
+     84
+     85 +    let withSystemFromConfigAsync (config: Config) (f: Akka.Actor.ActorSystem -> Async<'T>) : Async<'T> =
+     86 +        async {
+     87 +            let system = Akka.Actor.ActorSystem.Create("fsi-tests-" + Guid.NewGuid().ToString("N"), config)
+     88 +            let! outcome = f system |> Async.Catch
+     89 +            do! system.Terminate() |> Async.AwaitTask |> Async.Ignore
+     90 +            do! system.WhenTerminated |> Async.AwaitTask |> Async.Ignore
+     91 +
+     92 +            match outcome with
+     93 +            | Choice1Of2 v -> return v
+     94 +            | Choice2Of2 ex -> return raise ex
+     95 +        }
+     96 +
+     97      let withSupervisorUsing (storageFactory: unit -> 'storage when 'storage :> IPcslStorage) (f: ActorSystem -> IActorRef -> 'storage -> Async<unit>) =
+        ⋮
+    104
+    105 +    let withSupervisorUsingConfig
+    106 +        (config: Config)
+    107 +        (storageFactory: unit -> 'storage when 'storage :> IPcslStorage)
+    108 +        (f: ActorSystem -> IActorRef -> 'storage -> Async<unit>)
+    109 +        =
+    110 +        withSystemFromConfigAsync config (fun system ->
+    111 +            async {
+    112 +                let storage = storageFactory()
+    113 +                let supervisor = AkkaFsiBootstrap.EnsureSupervisorWithStorage(system, storage :> IPcslStorage)
+    114 +                return! f system supervisor storage
+    115 +            })
+    116 +
+    117      let ask<'T> (actor: IActorRef) (message: obj) =
+        ⋮
+    290
+    291 +            testAsync "Caller ask timeout does not cancel in-flight session execution" {
+    292 +                do!
+    293 +                    withSupervisorUsing (fun () -> RecordingStorage()) (fun _ supervisor _ ->
+    294 +                        async {
+    295 +                            let exec =
+    296 +                                mkExec
+    297 +                                    "req-timeout-survives"
+    298 +                                    "alpha"
+    299 +                                    """
+    300 +open System.Diagnostics
+    301 +let sw = Stopwatch.StartNew()
+    302 +while sw.ElapsedMilliseconds < 1200L do
+    303 +    ()
+    304 +let survivedTimeout = 42
+    305 +"""
+    306 +
+    307 +                            let! timedOut =
+    308 +                                async {
+    309 +                                    try
+    310 +                                        let! _ =
+    311 +                                            supervisor.Ask<ExecResult>(exec, TimeSpan.FromMilliseconds 100.0)
+    312 +                                            |> Async.AwaitTask
+    313 +                                        return false
+    314 +                                    with
+    315 +                                    | :? AskTimeoutException -> return true
+    316 +                                }
+    317 +
+    318 +                            Expect.isTrue timedOut "Short ask timeout should fire at caller side"
+    319 +
+    320 +                            do! Async.Sleep 1500
+    321 +
+    322 +                            let! followUp =
+    323 +                                ask<ExecResult>
+    324 +                                    supervisor
+    325 +                                    (mkExec "req-timeout-survives-read" "alpha" "survivedTimeout")
+    326 +
+    327 +                            Expect.isTrue followUp.ok "Execution should keep running after caller ask timeout"
+    328 +                            Expect.equal followUp.resultJson (Some "42") "Completed execution should preserve its binding"
+    329 +                        })
+    330 +            }
+    331 +
+    332 +            testAsync "idleRestartMs is not wired to ReceiveTimeout or passivation" {
+    333 +                let customConfig =
+    334 +                    ConfigurationFactory.ParseString(
+    335 +                        """
+    336 +                        akka.fsi.timeouts.idle-restart-ms = 100
+    337 +                        """
+    338 +                    ).WithFallback(testConfig)
+    339 +
+    340 +                do!
+    341 +                    withSupervisorUsingConfig customConfig (fun () -> RecordingStorage()) (fun _ supervisor _ ->
+    342 +                        async {
+    343 +                            let exec = mkExec "req-no-passivation" "alpha" "let stillHere = 7\nstillHere"
+    344 +                            let! _ = ask<ExecResult> supervisor exec
+    345 +
+    346 +                            do! Async.Sleep 500
+    347 +
+    348 +                            let infoRequest: GetSessionInfo = { session = "alpha" }
+    349 +                            let! info = ask<SessionInfo> supervisor infoRequest
+    350 +                            Expect.equal info.status "ready" "Session should still exist after idleRestartMs elapses"
+    351 +                            Expect.isTrue
+    352 +                                (info.variables |> List.exists (fun (name, _) -> name = "stillHere"))
+    353 +                                "Bindings should still be present because no passivation/receive-timeout is wired"
+    354 +                        })
+    355 +            }
+    356 +
+    357              testAsync "ExecCode returns result, captures value and auto commits" {
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先跑 Akka.FSI.Supervisor.Tests 的聚焦回归，验证两件事：ask timeout 只是 caller 侧超时，不会杀掉实际执行；以及 idleRestartMs 目前确实没接成任何 receive-timeout/passivation 机制。
+
+• 测试在跑。我先盯结果；如果新的 passivation/timeout 回归绿了，再决定是否还要动执行模型本身。当前代码上我没有把 worker 改成显式 queue，因为那会引入 reset/stop 与背景 FSI task 的竞态，先把归因证据补全更
+  稳。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter
+"FullyQualifiedName~Caller_ask_timeout_does_not_cancel_in_flight_session_execution|FullyQualifiedName~idleRestartMs_is_not_wired_to_ReceiveTimeout_or_passivation|
+FullyQualifiedName~Remote_GetVesion_stays_responsive_during_long_running_ExecCode"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter
+  │ "FullyQualifiedName~Caller_ask_timeout_does_not_cancel_in_flight_session_execution|FullyQualifiedName~idleRestartMs_is_not_wired_to_ReceiveTimeout_or_passivation|
+  │ FullyQualifiedName~Remote_GetVesion_stays_responsive_during_long_running_ExecCode"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +13 lines
+    PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/bin/Debug/net10.0/Akka.FSI.Supervisor.Tests.dll
+
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +20 lines
+
+    Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 11 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 全量测试有 2 个失败，我先把明细抓出来，不盲改。看起来不是 build 问题，而是我新加的回归里至少一项断言跟现状不一致。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=detailed"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=detailed"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +55 lines
+    Test Run Failed.
+     Total time: 11.0684 Seconds
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 新的失败不是行为错，而是我在测试里抓错了 exception 型别。AskTimeoutException 已经发生了，这反而说明 caller 侧 timeout 确实出现；我把测试改成按结果捕获，不再绑死具体 exception 类型。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs (+13 -7)
+    308                                  async {
+    309 -                                    try
+    310 -                                        let! _ =
+    311 -                                            supervisor.Ask<ExecResult>(exec, TimeSpan.FromMilliseconds 100.0)
+    312 -                                            |> Async.AwaitTask
+    313 -                                        return false
+    314 -                                    with
+    315 -                                    | :? AskTimeoutException -> return true
+    309 +                                    let! outcome =
+    310 +                                        async {
+    311 +                                            let! _ =
+    312 +                                                supervisor.Ask<ExecResult>(exec, TimeSpan.FromMilliseconds 100.0)
+    313 +                                                |> Async.AwaitTask
+    314 +                                            return ()
+    315 +                                        }
+    316 +                                        |> Async.Catch
+    317 +
+    318 +                                    match outcome with
+    319 +                                    | Choice1Of2 () -> return false
+    320 +                                    | Choice2Of2 ex ->
+    321 +                                        return ex.Message.Contains("Timeout after", StringComparison.OrdinalIgnoreCase)
+    322                                  }
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我重跑全套 Akka.FSI.Supervisor.Tests。如果这次绿了，就能非常明确地说：目前没有任何 ReceiveTimeout/passivation 证据，caller 侧 ask timeout 也不会把 in-flight session execution 杀掉。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=minimal"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=minimal"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +10 lines
+
+    Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 11 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 测试已经把两件事钉死了：AskTimeout 只是 caller 侧超时，不会取消 in-flight execution；而 idleRestartMs 现在根本没接到任何 Akka receive-timeout/passivation。接下来我补一份最小追溯，把“当前不改成显式
+  queue”的原因也写清楚，避免之后又绕回来。
+
+• Ran date -u +%Y%m%d%H%M%S
+  └ 20260330050142
+
+• Explored
+  └ List log
+    Read DevLog.md
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把这轮结论落到追溯里：当前证据只支持“没有 Akka receive-timeout/passivation 在杀 worker；ask timeout 也只是 caller 侧 timeout”，并把“为什么暂不改成显式 queue”写成工程取舍，不再混成根因。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/doc/DevLog.md (+53 -0)
+    274    - 已成功 push 到 NuGet
+    275 +
+    276 +## 2026-03-30 - 單測確認非 Akka passivation/timeout 根因
+    277 +
+    278 +### 背景
+    279 +
+    280 +- 針對 remote `CFar` 長時間初始化案例，先排除「是不是 Akka 把 `FsiWorkerActor` timeout/passivate 掉」。
+    281 +- 同時檢查目前 `FsiWorkerActor` 的執行模型是否真的是在 actor receive body 上直接做 heavy work。
+    282 +
+    283 +### 發現
+    284 +
+    285 +- `Akka.FSI.Supervisor` 目前沒有任何：
+    286 +  - `ReceiveTimeout`
+    287 +  - `Context.SetReceiveTimeout`
+    288 +  - sharding entity passivation
+    289 +  對 `FsiSupervisorActor` / `FsiWorkerActor` 生效。
+    290 +- `idleRestartMs` 雖然存在於 `SupervisorSettings`，但目前僅是 config 欄位，沒有接到 actor lifecycle 行為。
+    291 +- `FsiWorkerActor` 的 `ExecCode` 目前是：
+    292 +  - `ReceiveAsync<ExecCode>`
+    293 +  - 內部把 `ExecuteExec` 丟到 `TaskCreationOptions.LongRunning`
+    294 +  - actor thread 本身不直接跑 heavy FSI work
+    295 +  - 但 mailbox 會等待該 task 完成後才繼續處理下一個 message
+    296 +
+    297 +### 驗證
+    298 +
+    299 +- 新增測試：
+    300 +  - `Caller ask timeout does not cancel in-flight session execution`
+    301 +    - caller 以極短 ask timeout 發 `ExecCode`
+    302 +    - ask timeout 後等待一段時間，再讀回同一 session binding
+    303 +    - 結果證明 execution 仍持續並完成
+    304 +  - `idleRestartMs is not wired to ReceiveTimeout or passivation`
+    305 +    - 把 `idleRestartMs` 壓到 `100ms`
+    306 +    - session 仍在 `500ms` 後保持存在且 binding 還在
+    307 +- `dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj`
+    308 +  - 通過
+    309 +
+    310 +### 結論
+    311 +
+    312 +- 目前沒有證據顯示：
+    313 +  - Akka timeout kill 了 `FsiWorkerActor`
+    314 +  - passivation 移除了 session actor
+    315 +- caller 側 ask timeout 只代表 caller 沒等到 reply，不會取消已在執行中的 FSI work。
+    316 +
+    317 +### 為何這輪先不改成顯式 queue
+    318 +
+    319 +- 顯式 queue 的方向本身合理，但如果 actor 在排入 background task 後立刻回到 mailbox：
+    320 +  - `ResetSession`
+    321 +  - `GracefulStop`
+    322 +  可能在 task 尚未完成時先 dispose FSI session
+    323 +- 目前 `ReceiveAsync + await LongRunning task` 的設計，雖然讓 mailbox 對該 session 保持串行，但可保證 reset/stop 不會在 in-flight evaluation 中途把 session dispose 掉。
+    324 +- 因此這輪先做的是：
+    325 +  - 把非 passivation/timeout 的根因釐清
+    326 +  - 保留目前 lifecycle 安全性
+    327 +  - queue redesign 留待後續專門處理 shutdown/cancel semantics 時再做
+
+• Added /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330050142.ActorTimeoutPassivation排查.00001.00001.log (+20 -0)
+     1 +主題: 排查 Akka.FSI.Supervisor 長任務是否被 Akka timeout kill 或 passivation
+     2 +
+     3 +想法:
+     4 +- 先排除 actor lifecycle 誤判，再決定是否要把 FsiWorker 改成顯式 queue。
+     5 +- 如果 ask timeout 只是 caller 側 timeout，且 idleRestartMs 沒接任何 lifecycle，則目前根因不在 Akka passivation/timeout。
+     6 +
+     7 +執行計畫:
+     8 +1. 檢查 FsiSupervisor/FsiWorker 與 settings 中是否有 ReceiveTimeout/passivation 線索。
+     9 +2. 新增測試驗證 ask timeout 不會取消 in-flight execution。
+    10 +3. 新增測試驗證 idleRestartMs 目前未接到任何實際 restart/passivation 行為。
+    11 +4. 補充對現行 ReceiveAsync + LongRunning 模型的工程取捨說明。
+    12 +
+    13 +結論:
+    14 +- 沒有 ReceiveTimeout/SetReceiveTimeout/passivation 線索。
+    15 +- caller ask timeout 不會取消正在執行的 session work。
+    16 +- idleRestartMs 目前是未接線的 config 欄位，不是實際 actor lifecycle 機制。
+    17 +- 這輪先不改成顯式 queue，因為 reset/stop 與背景 FSI task 的 dispose/cancel semantics 尚未補齊。
+    18 +
+    19 +附註:
+    20 +- 目前 mailbox 對單一 session 仍是串行等待，這是刻意保留的 lifecycle 安全性，不代表 actor thread 本身直接執行 heavy FSI work。
+
+• Added /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330050142.ActorTimeoutPassivation排查.op_log (+26 -0)
+     1 +[2026-03-30T05:01:42Z] start
+     2 +- 目標: 確認不是 Akka timeout kill / passivation 造成長任務異常，並評估是否立即改成顯式 queue。
+     3 +
+     4 +[2026-03-30T05:03:10Z] inspect
+     5 +- 讀取 Supervisor.fs / FsiWorker.fs / SupervisorSettings.fs / SupervisorTests.fs
+     6 +- 未見 ReceiveTimeout/SetReceiveTimeout/passivation wiring
+     7 +- 發現 idleRestartMs 僅存在於 settings，沒有被 actor lifecycle 使用
+     8 +
+     9 +[2026-03-30T05:07:25Z] edit
+    10 +- 在 FsiWorker.Initialize 補註解，說明 ReceiveAsync + LongRunning task 的 lifecycle 取捨
+    11 +- 新增測試:
+    12 +  - Caller ask timeout does not cancel in-flight session execution
+    13 +  - idleRestartMs is not wired to ReceiveTimeout or passivation
+    14 +
+    15 +[2026-03-30T05:10:42Z] test
+    16 +- 初次測試失敗: 新測試把 timeout exception 型別抓得太死
+    17 +- 修正成 Async.Catch + message 判斷
+    18 +
+    19 +[2026-03-30T05:12:40Z] test-pass
+    20 +- dotnet test Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj
+    21 +- Exit code 0
+    22 +
+    23 +[2026-03-30T05:13:20Z] conclusion
+    24 +- ask timeout 是 caller 側 timeout，不會取消既有 execution
+    25 +- idleRestartMs 目前不是實作中的 actor timeout/passivation
+    26 +- 本輪不做 queue redesign；原因是 reset/GracefulStop 與背景 task dispose/cancel 還沒設計完
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 先收斂這一輪結論。
+
+  不是 Akka 把 FsiWorkerActor timeout kill 了，也不是 passivation。現在 FAkka.FSI.Supervisor 這條上：
+
+  - 沒有 ReceiveTimeout
+  - 沒有 Context.SetReceiveTimeout
+  - FsiSupervisor/FsiWorker 也不是 sharding entity，所以沒有 entity passivation
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/SupervisorSettings.fs 裡的 idleRestartMs 目前只是 config 欄位，沒有接到 actor lifecycle
+
+  我補了兩個回歸測試，現在都通過：
+
+  - Caller ask timeout does not cancel in-flight session execution
+  - idleRestartMs is not wired to ReceiveTimeout or passivation
+
+  測試檔在 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs。
+  也就是說，ask timeout 只是在 caller 端超時，不會取消已經在跑的 FSI work；idleRestartMs 目前也不是根因。
+
+  你提的 queue 方向我先沒硬上。原因我直接寫進 /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/FsiWorker.fs 註解了：現在的 ReceiveAsync + LongRunning task 雖然讓同一 session mailbox 串行等
+  待，但它能保證 ResetSession/GracefulStop 不會在 in-flight evaluation 還沒結束時先把 FSI session dispose 掉。顯式 queue 可以做，但要一起補 shutdown/cancel semantics，不然會引入更糟的 race。
+
+  追溯已補：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/doc/DevLog.md
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330050142.ActorTimeoutPassivation排查.00001.00001.log
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330050142.ActorTimeoutPassivation排查.op_log
+
+  下一刀我建議不要碰 queue，直接查 FsiSession/EvalInteraction 的使用方式，特別是同一份 source 在：
+
+  - dotnet fsi script.fsx
+  - EvalScript
+  - EvalInteraction(code)
+  - EvalInteraction(code, scriptFileName)
+    之間的差異。这个方向比 queue 更接近你现在那个 remote CFar 性能 barrier。
+
+
+› 可以啊！剛剛也就只是建議，但是別太多廢話，盡快找到原因
+
+
+• 下一步只查 FsiSession/EvalInteraction 的喂法差異，不碰 queue。我要先确认这版 FCS 实际有哪些 EvalInteraction* overload，再在同一环境里做最小对照：整段 code、带 scriptFileName 的 code、以及 EvalScript。
+
+• Ran cat > /tmp/inspect_fsi_methods.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ open System
+  │ … +11 lines
+  └
+
+    /tmp/inspect_fsi_methods.fsx(4,34): error FS0039: The namespace 'Shell' is not defined.
+
+
+• Ran cat > /tmp/inspect_fsi_methods.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ open System
+  │ … +13 lines
+  └
+
+    /tmp/inspect_fsi_methods.fsx(6,14): error FS0074: The type referenced through 'Akka.FSI.Contracts.DiagnosticInfo' is defined in an assembly that is not referenced. You must add a reference to
+    assembly 'FAkka.Fsi.Contracts'.
+
+
+• Ran cat > /tmp/inspect_fsi_methods.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +14 lines
+  └ TYPE=FSharp.Compiler.Interactive.Shell+FsiEvaluationSession, FSharp.Compiler.Service, Version=43.12.201.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a
+    EvalInteraction(System.String code, Microsoft.FSharp.Core.FSharpOption`1[[System.Threading.CancellationToken, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral,
+    … +16 lines
+    PublicKeyToken=b03f5f7f11d50a3a],[System.Exception, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e]], FSharp.Core, Version=10.1.0.0, Culture=neutral,
+    PublicKeyToken=b03f5f7f11d50a3a],[FSharp.Compiler.Diagnostics.FSharpDiagnostic[], FSharp.Compiler.Service, Version=43.12.201.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a]]
+
+• Waited for background terminal
+
+─ Worked for 1m 10s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我已经确认这版 FCS 确实有 EvalInteractionNonThrowing(code, scriptFileName, ...) overload。现在直接做最小对照：同一份 1..76 行 payload，比 code-only、code+scriptFileName、EvalScriptNonThrowing(file) 三
+  种喂法，先看是不是 scriptFileName 这层差异，而不是 actor/queue。
+
+• Explored
+  └ Read generate_real_charts.inspect_930k_vs_30k.fsx
+
+• Ran ls -ld /gemini4 /workspace/home/work/coldfar-symbolics/experiments 2>/dev/null || true
+  └ drwxrwxr-x+ 2 claudeuser claudeuser 4096 Mar 19 23:02 /workspace/home/work/coldfar-symbolics/experiments
+
+• Ran ls -ld /workspace/home/vhdx/cFar_pcsl2/cFar2 2>/dev/null || true
+  └ drwxr-xr-x+ 16 root root 4096 Mar 17 17:00 /workspace/home/vhdx/cFar_pcsl2/cFar2
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我直接跑真实 case 的三种喂法，不再猜：同一份 1..76 行 payload，用当前容器里的真实数据根目录，对比 EvalScript、EvalInteraction(code)、EvalInteraction(code, scriptFileName)。这样能最快判断是不是
+  scriptFileName/file identity 这层差异。
+
+• Ran cat > /tmp/compare_fsi_modes.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +53 lines
+  └ SCRIPT_EXIT=1
+    INTERACTION_EXIT=1
+    INTERACTION_FILE_EXIT=1
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 脚本对照第一轮没跑通，我先把三种模式拆开单独跑并看错误，不继续把多个 timeout 混在一条 shell 里。
+
+• Ran cat /tmp/compare_script.err; echo '---'; cat /tmp/compare_script.out
+  └
+
+    … +3 lines
+
+    ---
+
+• Explored
+  └ Read compare_fsi_modes.fsx
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/compare_fsi_modes.fsx')
+  │ … +11 lines
+  └ SCRIPT_EXIT=1
+    INTERACTION_EXIT=1
+    INTERACTION_FILE_EXIT=1
+
+• Explored
+  └ Read compare_script.err
+
+• Ran timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx script > /tmp/compare_script.out 2> /tmp/compare_script.err; echo $?
+  └ 1
+
+• Ran cat /tmp/compare_script.out; echo '---'; ls -l /tmp/compare_script.out /tmp/compare_script.err
+  └ ---
+    -rw-r--r-- 1 root root 92 Mar 30 05:06 /tmp/compare_script.err
+    -rw-r--r-- 1 root root  0 Mar 30 05:06 /tmp/compare_script.out
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ b = Path('/tmp/compare_script.err').read_bytes()
+  │ … +2 lines
+  └ "\n\n/tmp/compare_fsi_modes.fsx(22,29): error FS0971: Undefined value 'EvalScriptNonThrowing'\n\n"
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把对照脚本改成全用反射调 FCS，避免 F# 静态可见性把结论搞脏。接下来直接看三种模式的真实耗时和可查询性，不再纠缠编译器表面 API。
+
+• Ran cat > /tmp/compare_fsi_modes.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +63 lines
+  └ (no output)
+
+• Ran timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx interaction > /tmp/compare_interaction.out 2> /tmp/compare_interaction.err; echo $?
+  └ 1
+
+• Ran timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx interaction-file > /tmp/compare_interaction_file.out 2> /tmp/compare_interaction_file.err; echo $?
+  └ 1
+
+• Ran timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx script > /tmp/compare_script.out 2> /tmp/compare_script.err; echo $?
+  └ 1
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ print(Path('/tmp/compare_fsi_modes.fsx').read_text())
+  │ … +1 lines
+  └ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+    #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+    … +61 lines
+    run mode
+
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ for name in ['script','interaction','interaction_file']:
+  │ … +4 lines
+  └ === script ===
+
+    … +16 lines
+
+
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p = Path('/tmp/compare_fsi_modes.fsx')
+  │ … +6 lines
+  └ 1
+
+• Explored
+  └ Search printQuery in compare_fsi_modes.fsx
+    Read compare_fsi_modes.fsx
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ print(Path('/tmp/compare_script.err').read_text(errors='replace'))
+  │ … +1 lines
+  └
+
+    /tmp/compare_fsi_modes.fsx(40,41): error FS0971: Undefined value 'get_ReflectionValue'
+
+
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/compare_fsi_modes.fsx')
+  │ … +9 lines
+  └ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+    #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+    … +61 lines
+    run mode
+
+
+• Waited for background terminal
+
+• Waited for background terminal · timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx script > /tmp/compare_script.out 2> /tmp/compare_script.err; printf 'EXIT=%s\n' $?; tail -n +1 /tmp/
+compare_script.out /tmp/compare_script.err
+
+─ Worked for 1m 15s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 刚才那条 shell 拼坏了。我不再把退出码和输出塞一条命令里，改成最简单的“跑完写 exit 文件”，避免再浪费时间在 shell quoting。
+
+• Ran cat > /tmp/run_compare_mode.sh <<'EOF'
+  │ #!/usr/bin/env bash
+  │ set -euo pipefail
+  │ … +12 lines
+  └ (no output)
+
+• Waited for background terminal · /tmp/run_compare_mode.sh script
+
+• Explored
+  └ Read run_compare_mode.sh
+
+─ Worked for 1m 52s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 脚本模式还在跑，我先不空等；并行看输出文件和进程状态。这样能确认它是不是和之前一样在正常前进。
+
+• Ran ls -l /tmp/compare_script.out /tmp/compare_script.err /tmp/compare_script.exit 2>/dev/null || true
+  └ -rw-r--r-- 1 root root   0 Mar 30 05:08 /tmp/compare_script.err
+    -rw-r--r-- 1 root root 428 Mar 30 05:08 /tmp/compare_script.out
+
+• Ran ps -eo pid,etime,pcpu,pmem,cmd | rg "compare_fsi_modes|dotnet fsi /tmp/compare_fsi_modes|/tmp/run_compare_mode.sh"
+  └  237786       02:08  0.0  0.0 /bin/bash -lc timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx script > /tmp/compare_script.out 2> /tmp/compare_script.err; printf 'EXIT=%s\n' $?; tail -n +1 /tmp/
+    compare_script.out /tmp/compare_script.err
+    … +7 lines
+     238395       00:00  0.0  0.0 /bin/bash -c ps -eo pid,etime,pcpu,pmem,cmd | rg "compare_fsi_modes|dotnet fsi /tmp/compare_fsi_modes|/tmp/run_compare_mode.sh"
+     238446 441077234-00:18:40 0.0  0.0 rg compare_fsi_modes|dotnet fsi /tmp/compare_fsi_modes|/tmp/run_compare_mode.sh
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我这边有两组旧的 compare 进程残留，会污染对照。我先清掉旧的，只保留一组干净实验，再继续量。
+
+• Ran pkill -f "dotnet fsi /tmp/compare_fsi_modes.fsx" || true
+  │ pkill -f "/tmp/run_compare_mode.sh" || true
+  │ pkill -f "timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx" || true
+  │ … +1 lines
+  └ (no output)
+
+• Ran timeout 480 dotnet fsi /tmp/compare_fsi_modes.fsx script > /tmp/compare_script.out 2> /tmp/compare_script.err; printf 'EXIT=%s\n' $?; tail -n +1 /tmp/compare_script.out /tmp/compare_script.err
+  └ (no output)
+
+• Ran /tmp/run_compare_mode.sh script
+  └ (no output)
+
+• Ran ps -eo pid,etime,pcpu,pmem,cmd | rg "compare_fsi_modes|/tmp/run_compare_mode.sh" || true
+  └  238486       00:00  0.0  0.0 /bin/bash -c ps -eo pid,etime,pcpu,pmem,cmd | rg "compare_fsi_modes|/tmp/run_compare_mode.sh" || true
+     238516       00:00  0.0  0.0 rg compare_fsi_modes|/tmp/run_compare_mode.sh
+
+• Waited for background terminal · bash /tmp/run_compare_mode.sh script
+
+• Ran bash /tmp/run_compare_mode.sh script
+  └ (no output)
+
+• Ran cat /tmp/compare_script.exit; echo; cat /tmp/compare_script.out; echo '---ERR---'; cat /tmp/compare_script.err
+  └ 1
+    [2026-03-30T05:10:45.514][es1kMinFlatten] Evaluation started.
+    … +9881 lines
+       at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    Stopped due to error
+
+• Ran bash /tmp/run_compare_mode.sh interaction
+  └ (no output)
+
+─ Worked for 5m 52s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 这个对照脚本的 choice 反射解码又在浪费时间，我把它简化成“方法有没有返回 + 返回后 query 能不能读到 cfar”，只保留我们真正需要的信号：耗时和 session 可见性。
+
+• Ran cat > /tmp/compare_fsi_modes.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +54 lines
+  └ (no output)
+
+• Ran pkill -f "dotnet fsi /tmp/compare_fsi_modes.fsx" || true
+  │ pkill -f "/tmp/run_compare_mode.sh" || true
+  │ rm -f /tmp/compare_interaction.out /tmp/compare_interaction.err /tmp/compare_interaction.exit /tmp/compare_interaction_file.out /tmp/compare_interaction_file.err /tmp/compare_interaction_file.exit
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先跑最关键的 interaction + scriptFileName 模式。只要这条能在 5~6 分钟内收敛并保留 cfar 可查询，根因就会比“自己切 chunk”更像是 FCS/file identity 的使用方式。
+
+• Ran bash /tmp/run_compare_mode.sh interaction-file
+  └ (no output)
+
+• Ran cat /tmp/compare_interaction-file.exit; echo; tail -n 40 /tmp/compare_interaction-file.out; echo '---ERR---'; cat /tmp/compare_interaction-file.err
+  └ 0
+    MODE=interaction-file ELAPSED_MS=939 RETURNED=true
+    QUERY=interaction-file RESULT=err:Operation could not be completed due to earlier error QDIAGS=4
+    ---ERR---
+
+• Ran bash /tmp/run_compare_mode.sh interaction
+  └ (no output)
+
+• Waited for background terminal
+
+• Ran cat /tmp/compare_interaction.exit; echo; tail -n 40 /tmp/compare_interaction.out; echo '---ERR---'; cat /tmp/compare_interaction.err
+  └ 0
+    MODE=interaction ELAPSED_MS=957 RETURNED=true
+    QUERY=interaction RESULT=err:Operation could not be completed due to earlier error QDIAGS=4
+    ---ERR---
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 刚才这组对照不干净：原始 1..76 行里还带 #if INTERACTIVE/#I/#r "name.dll"，在 EvalInteraction 语境里会先被路径解析弄成早期错误，所以这组不能用来判断性能 barrier。我改用“和 remote case 一样的 rewritten
+  payload”再做一次。
+
+• Ran cat > /tmp/compare_fsi_modes_rewritten.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +83 lines
+  └ (no output)
+
+• Explored
+  └ Read compare_fsi_modes_rewritten.fsx
+
+• Ran cat > /tmp/run_compare_rewritten_mode.sh <<'EOF'
+  │ #!/usr/bin/env bash
+  │ set -euo pipefail
+  │ … +13 lines
+  └ (no output)
+
+• Explored
+  └ Read run_compare_rewritten_mode.sh
+
+• Ran cat /tmp/compare_rewritten_interaction-file.exit; echo; tail -n 40 /tmp/compare_rewritten_interaction-file.out; echo '---ERR---'; cat /tmp/compare_rewritten_interaction-file.err
+  └ 1
+    ---ERR---
+    … +3 lines
+    program point to constrain the type of the object. This may allow the lookup to be resolved.
+
+
+• Explored
+  └ Read compare_fsi_modes_rewritten.fsx
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/compare_fsi_modes_rewritten.fsx')
+  │ … +5 lines
+  └     12    let rewrite (lines: string list) =
+        13        let rec loop (inside: bool) (acc: string list) (rest: string list) =
+    … +7 lines
+        21                elif inside && trimmed.StartsWith("#r \"") then
+        22                    let first = trimmed.IndexOf('"')
+
+• Ran bash /tmp/run_compare_rewritten_mode.sh interaction-file
+  └ (no output)
+
+• Ran cat /tmp/compare_rewritten_interaction-file.exit; echo; tail -n 60 /tmp/compare_rewritten_interaction-file.out; echo '---ERR---'; cat /tmp/compare_rewritten_interaction-file.err
+  └ 0
+    MODE=interaction-file ELAPSED_MS=559 RETURNED=true
+    … +3 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+    ---ERR---
+
+• Waited for background terminal
+
+─ Worked for 1m 11s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• interaction + scriptFileName 也没有变成 5 分钟完成，它是 559ms 就因为早期错误返回了。下一步我直接把 diagnostics 打出来，不再只看 Operation could not be completed due to earlier error 这层包装。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/compare_fsi_modes_rewritten.fsx')
+  │ … +47 lines
+  └ (no output)
+
+• Ran tail -n 80 /tmp/compare_rewritten_interaction-file.out; echo '---ERR---'; cat /tmp/compare_rewritten_interaction-file.err
+  └ MODE=interaction-file ELAPSED_MS=547 RETURNED=true
+    DIAG_interaction-file_COUNT=0
+    … +3 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+    ---ERR---
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 现在能确定的是：interaction-file 不是卡住，而是 547ms 就返回“有 earlier error”，而且 diagnostics 还是 0。也就是说更像是 EvalInteraction... 这条 API 本身返回了异常，不是 typecheck diagnostics。我要把返
+  回的 Choice case 和 exception message 直接打出来。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/compare_fsi_modes_rewritten.fsx')
+  │ … +23 lines
+  └ (no output)
+
+• Ran tail -n 120 /tmp/compare_rewritten_interaction-file.out; echo '---ERR---'; cat /tmp/compare_rewritten_interaction-file.err
+  └ MODE=interaction-file ELAPSED_MS=541 RETURNED=true
+    RESULT_interaction-file_TAG=0
+    … +4 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+    ---ERR---
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• EvalInteraction(..., scriptFileName) 现在拿到的是 Choice.Tag = 0 且无 diagnostics，但 stderr 只有一句 Stopped due to error。我去看 stdout/stderr 的具体内容，确认是不是 FSI 内部有 runtime error 被吞成
+  这个状态。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ text = Path('/tmp/compare_rewritten_interaction-file.out').read_text(errors='replace')
+  │ … +5 lines
+  └ OUT_HEAD:
+    MODE=interaction-file ELAPSED_MS=541 RETURNED=true
+    … +14 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ p=Path('/tmp/compare_fsi_modes_rewritten.fsx')
+  │ … +8 lines
+  └ (no output)
+
+• Ran tail -n 120 /tmp/compare_rewritten_interaction-file.out; echo '---ERR---'; cat /tmp/compare_rewritten_interaction-file.err
+  └ MODE=interaction-file ELAPSED_MS=559 RETURNED=true
+    RESULT_interaction-file_TAG=0
+    … +9 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+    ---ERR---
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ text = Path('/tmp/compare_rewritten_interaction-file.out').read_text(errors='replace')
+  │ … +2 lines
+  └ MODE=interaction-file ELAPSED_MS=559 RETURNED=true
+    RESULT_interaction-file_TAG=0
+    … +9 lines
+    STDERR_interaction-file_HEAD=Stopped due to error\n
+
+
+• Waited for background terminal
+
+─ Worked for 1m 15s ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Context compacted
+
+• 我先直接把 EvalScript / EvalInteraction / EvalInteraction(code, scriptFileName) 的差異驗死，抓到實際例外或診斷，不再猜 ;; 或 actor。
+
+• Explored
+  └ Read compare_fsi_modes_rewritten.fsx, compare_rewritten_interaction-file.out, compare_rewritten_interaction-file.err
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先把三種模式的實際診斷都印全，特別是 interaction-file 那個「earlier error」後面的 4 個診斷。
+
+• Ran cat > /tmp/compare_fsi_modes_rewritten_verbose.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +122 lines
+  └ MODE=interaction-file ELAPSED_MS=620 RETURNED=true
+    interaction-file_RESULT_TAG=0
+    … +20 lines
+    STDERR_interaction-file_LEN=21
+    STDERR_interaction-file=Stopped due to error\n
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把 verbose 腳本寫壞了，我直接改成先落檔再跑，避免 shell quoting 再污染一次。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ code = r'''#r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ … +118 lines
+  └ MODE=interaction-file ELAPSED_MS=494 RETURNED=true
+    interaction-file_RESULT_TAG=0
+    … +20 lines
+    STDERR_interaction-file_LEN=21
+    STDERR_interaction-file=Stopped due to error\n
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• interaction-file 現在不是卡住，而是很快失敗，而且 cfar 根本沒被定義。我要再對照 script 和單純 interaction，看哪一層把 top-level 定義吃掉了。
+
+• Ran timeout 430s dotnet fsi /tmp/compare_fsi_modes_rewritten_verbose.fsx -- interaction
+  └ MODE=interaction ELAPSED_MS=531 RETURNED=true
+    interaction_RESULT_TAG=0
+    … +20 lines
+    STDERR_interaction_LEN=21
+    STDERR_interaction=Stopped due to error\n
+
+• Waited for background terminal · dotnet fsi /tmp/compare_fsi_modes_rewritten_verbose.fsx -- script
+
+• Waited for background terminal
+
+• Explored
+  └ Read generate_real_charts.inspect_930k_vs_30k.fsx, cfar_compare_rewritten.fsx
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我先做一個極小重現，確認 EvalInteraction 對「多個 #r + open + type + let」到底會不會把後面的 binding 吃掉，免得一直在大案例裡盲猜。
+
+• Ran cat > /tmp/min_eval_interaction.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +16 lines
+  └ RES=Choice1Of2 None DIAGS=0
+    Q=Choice1Of2 (Some FSharp.Compiler.Interactive.Shell+FsiValue) QD=0
+    OUT=\nMicrosoft (R) F# Interactive version 15.2.201.0 for F# 10.0\nCopyright (c) Microsoft Corporation. All Rights Reserved.\n\nFor help type #help;;\n\n> \n--> Referenced '/workspace/home/work/
+    sharftrade7/實驗/SharFTrade.Exp/bin/net10.0/Argu.dll' (file may be locked by F# Interactive process)\n\ntype T =\n  { X: int }\nval x: int = 1\nval y: T = { X = 2 }\n\nval it: int = 2\n\n
+    ERR=
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我直接在同一份 code 裡插 milestone printfn，看單次 EvalInteraction 到底停在哪個 top-level 段落，這樣比猜 API 語意快。
+
+• Ran python - <<'PY'
+  │ from pathlib import Path
+  │ src = Path('/tmp/cfar_compare_rewritten.fsx').read_text().splitlines()
+  │ … +28 lines
+  └ MARK:refs
+    RES=Choice1Of2 None DIAGS=0
+    … +8 lines
+    by F# Interactive process)\n\n
+    ERR=
+
+• Waited for background terminal
+
+• Waited for background terminal · time dotnet fsi /tmp/cfar_compare_rewritten.fsx > /tmp/cfar_compare_rewritten.direct.out 2> /tmp/cfar_compare_rewritten.direct.err
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 根因抓到了：單次 EvalInteraction 對這份 payload 只執行到第一個互動段落，也就是 #r... 那一段，後面的 open/let cfar = ... 根本沒進去。我現在去對照 FsiWorker 現況，確認修法是不是已經對準這個行為。
+
+• Explored
+  └ Read FsiWorker.fs
+    Search splitInteractionBatch|combineSource|EvalInteraction|RunExecAsync|ExecuteExec in FsiWorker.fs
+    Search splitInteractionBatch|paragraph|blank line|EvalInteraction.*first|CFar|generate_real_charts|MARK:refs in Akka.FSI.Supervisor.Tests
+    Read SupervisorTests.fs
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我再做一個最小版重現，只保留 #r 段落 + 空白行 + let x = 1，確認是不是 FCS 在這種多段互動輸入下只吃第一段。
+
+• Ran cat > /tmp/min_split_behavior.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +12 lines
+  └ AFTER-REF
+    RES=Choice1Of2 None DIAGS=0
+    … +2 lines
+    sharftrade7/實驗/SharFTrade.Exp/bin/net10.0/Argu.dll' (file may be locked by F# Interactive process)\n\nval x: int = 1\n\nval it: int = 1\n\n
+    ERR=
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我找到一個更像的嫌疑點了：原始檔第 23 行有 open TAType;;。如果 EvalInteraction 看到 ;; 會把後面的字串當下一個互動段落丟掉，那就完全對得上現在的現象。先做最小重現。
+
+• Ran cat > /tmp/min_semicolon_terminator.fsx <<'EOF'
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/FAkka.Fsi.Contracts/bin/Debug/net10.0/FAkka.Fsi.Contracts.dll"
+  │ #r "/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/bin/Debug/net10.0/Akka.FSI.Supervisor.dll"
+  │ … +12 lines
+  └ RES=Choice1Of2 None DIAGS=0
+    Q=Choice2Of2
+      FSharp.Compiler.Interactive.Shell+FsiCompilationException: Operation could not be completed due to earlier error QD=2
+    OUT=\nMicrosoft (R) F# Interactive version 15.2.201.0 for F# 10.0\nCopyright (c) Microsoft Corporation. All Rights Reserved.\n\nFor help type #help;;\n\n>
+    ERR=Stopped due to error\n
+
+• Waited for background terminal
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 根因已經夠硬了：EvalInteraction 的 input string 中只要中途出現 ;;，後面的內容就不會在同一次互動裡繼續跑。我先把這件事補成回歸測試，免得之後又被改壞。
+
+• Explored
+  └ Read SupervisorTests.fs
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs (+37 -0)
+    165
+    166 +            testCase "splitInteractionBatch flushes explicit terminators and trims trailing double-semicolons" <| fun _ ->
+    167 +                let code =
+    168 +                    """
+    169 +open System;;
+    170 +let x = 1
+    171 +
+    172 +printfn "%d" x
+    173 +"""
+    174 +
+    175 +                let chunks = ExecHelpers.splitInteractionBatch code
+    176 +                Expect.equal chunks.Length 2 "Explicit terminators should split the interactive payload"
+    177 +                Expect.equal (chunks[0].Trim()) "open System" "Trailing ;; should be removed from the flushed chunk"
+    178 +                Expect.stringContains chunks[1] "let x = 1" "Subsequent top-level code should remain available to later chunks"
+    179 +
+    180 +            testCase "single EvalInteraction stops after an explicit terminator inside the same string" <| fun _ ->
+    181 +                use handle = new FsiSession.Handle("terminator-probe")
+    182 +                let code =
+    183 +                    """
+    184 +open System;;
+    185 +printfn "AFTER-OPEN"
+    186 +let x = 1
+    187 +"""
+    188 +
+    189 +                let result, diagnostics = handle.EvalInteraction(code)
+    190 +                Expect.equal result (Choice1Of2 None) "FCS still reports the first interaction as successful"
+    191 +                Expect.equal diagnostics.Length 0 "No direct diagnostics are reported for the truncated interaction"
+    192 +
+    193 +                let query, queryDiagnostics = handle.EvalExpression("x")
+    194 +
+    195 +                match query with
+    196 +                | Choice1Of2 _ -> failtest "x should not be defined when the remainder of the string is ignored"
+    197 +                | Choice2Of2 ex ->
+    198 +                    Expect.stringContains ex.Message "earlier error" "The session should report that later fragments were skipped"
+    199 +
+    200 +                Expect.equal queryDiagnostics.Length 2 "A follow-up query should surface the missing binding diagnostics"
+    201 +                Expect.equal (handle.StdoutText().Contains("AFTER-OPEN")) false "Statements after the explicit terminator should not execute in the same EvalInteraction"
+    202 +
+    203              testAsync "EnsureSupervisor creates supervisor actor and installs PcslFileSystem" {
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 我把這個行為補成回歸測試了，現在先只跑 Akka.FSI.Supervisor.Tests 確認沒有寫歪。
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "DisplayName~terminator|
+DisplayName~splitInteractionBatch" --logger "console;verbosity=minimal"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --filter "DisplayName~terminator|DisplayName~splitInteractionBatch" --logger
+  │ "console;verbosity=minimal"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +11 lines
+    Akka.FSI.Supervisor.Tests.dll
+
+
+• Waited for background terminal · dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=minimal"
+
+• Ran dotnet test /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj --logger "console;verbosity=minimal"
+  └   Determining projects to restore...
+      All projects are up-to-date for restore.
+    … +20 lines
+
+    Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, Duration: 12 s - Akka.FSI.Supervisor.Tests.dll (net10.0)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 有一個新測試寫歪了，我直接把 Expecto 的細節輸出打出來修掉，不兜圈子。
+
+• Waited for background terminal · dotnet run --project /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -- --summary
+
+• Ran dotnet run --project /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -- --summary
+  └ [05:26:44 INF] EXPECTO? Running tests... <Expecto>
+    [05:26:44 ERR] Akka.FSI.Supervisor.splitInteractionBatch flushes explicit terminators and trims trailing double-semicolons failed in 00:00:00.0300000.
+    … +26 lines
+       at Akka.FSI.Supervisor.Tests.ExpectoBridge.RunAll() in /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/ExpectoBridge.fs:line 13
+       at Akka.FSI.Supervisor.Tests.Program.main(String[] argv) in /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Program.fs:line 7
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• splitInteractionBatch 那個測試只是我預期錯了：現在實作會把 open System;;、let x = 1、printfn 分成 3 段，這是合理的。我改掉就好。
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs (+3 -2)
+    175                  let chunks = ExecHelpers.splitInteractionBatch code
+    176 -                Expect.equal chunks.Length 2 "Explicit terminators should split the interactive payload"
+    176 +                Expect.equal chunks.Length 3 "Explicit terminators and later top-level paragraphs should each become separate chunks"
+    177                  Expect.equal (chunks[0].Trim()) "open System" "Trailing ;; should be removed from the flushed chunk"
+    178 -                Expect.stringContains chunks[1] "let x = 1" "Subsequent top-level code should remain available to later chunks"
+    178 +                Expect.equal (chunks[1].Trim()) "let x = 1" "Subsequent top-level code should remain available to later chunks"
+    179 +                Expect.equal (chunks[2].Trim()) "printfn \"%d\" x" "Later top-level paragraphs should still be preserved"
+    180
+
+• Waited for background terminal · dotnet run --project /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -- --summary
+
+• Ran dotnet run --project /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -- --summary
+  └ [05:27:20 INF] EXPECTO? Running tests... <Expecto>
+    t: ImmutableHashSet`1
+    … +12 lines
+    [05:27:32 INF] EXPECTO! 24 tests run in 00:00:12.4801901 for Akka.FSI.Supervisor – 24 passed, 0 ignored, 0 failed, 0 errored. Success! <Expecto>
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 根因已經明確，不是 actor lifecycle，是 EvalInteraction 的單次字串裡碰到 ;; 之後，後面的段落不會在同一次互動裡繼續跑。我補完一個最小重現和回歸測試，再把結論寫回 DevLog。
+
+• Explored
+  └ List log
+    Read DevLog.md
+
+• Ran dotnet fsi /tmp/compare_fsi_modes_rewritten_verbose.fsx -- script
+  └ [2026-03-30T05:22:41.714][es1kMinFlatten] Evaluation started.
+    Idx count: Some 3737
+    … +9889 lines
+    STDERR_script_LEN=21
+    STDERR_script=Stopped due to error\n
+
+• Edited /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/doc/DevLog.md (+42 -0)
+    327    - queue redesign 留待後續專門處理 shutdown/cancel semantics 時再做
+    328 +
+    329 +## 2026-03-30 - 鎖定 EvalInteraction 單次字串在 `;;` 後截斷的根因
+    330 +
+    331 +### 背景
+    332 +
+    333 +- 使用者質疑先前把問題歸因到 `;;` 的說法不精確，因為官方文件明確說 `EvalInteraction` 不需要 `;;`。
+    334 +- 重新做最小重現，直接比較：
+    335 +  - `dotnet fsi script.fsx`
+    336 +  - `FsiSession.Handle.EvalInteraction(code)`
+    337 +  - `FsiSession.Handle.EvalInteraction(code, scriptFileName)`
+    338 +
+    339 +### 發現
+    340 +
+    341 +- 問題不是「沒有 `;;` 就不能跑」。
+    342 +- 真正的現象是：當 `EvalInteraction` 的單次 input string 中途出現顯式 terminator `;;` 時，FCS 只會處理 terminator 之前的那一段 interaction。
+    343 +- 之後同一個 string 中的內容不會繼續在這次 `EvalInteraction` 裡執行，session 之後會在 follow-up query 上呈現：
+    344 +  - `Operation could not be completed due to earlier error`
+    345 +  - missing binding diagnostics
+    346 +- 針對 `generate_real_charts.inspect_930k_vs_30k.fsx` 前 76 行的 rewritten payload 做 instrumentation 後，單次 `EvalInteraction` 只跑到了 references 段落後的 `MARK:refs`，後面的 `open ...`、`le
+         t cfar = ...` 都沒有進去。
+    347 +- 最小重現：
+    348 +  - `open System;;\nprintfn "AFTER-OPEN"\nlet x = 1`
+    349 +  - `EvalInteraction` 回 `Choice1Of2 None`
+    350 +  - 但 `x` 不存在，stdout 也沒有 `AFTER-OPEN`
+    351 +
+    352 +### 結論
+    353 +
+    354 +- 根因不是 actor timeout/passivation，也不是 `EvalInteraction` 一般性不支援大型 top-level code block。
+    355 +- 根因是：
+    356 +  - 我們送進 `EvalInteraction` 的 payload 內本來就可能包含多個 interactive fragments
+    357 +  - 其中顯式 `;;` 會把單次 input string 截成前後兩段
+    358 +  - 如果不在 caller 端先切 chunk，後半段根本不會執行
+    359 +- 因此 `ExecHelpers.splitInteractionBatch` 保留這兩種 flush 邏輯是正確的：
+    360 +  - 行尾 `;;`
+    361 +  - top-level paragraph boundary
+    362 +
+    363 +### 驗證
+    364 +
+    365 +- 新增測試：
+    366 +  - `splitInteractionBatch flushes explicit terminators and trims trailing double-semicolons`
+    367 +  - `single EvalInteraction stops after an explicit terminator inside the same string`
+    368 +- `dotnet run --project Libs/Akka.FSI.Supervisor.Tests/Akka.FSI.Supervisor.Tests.fsproj -- --summary`
+    369 +  - `24 passed, 0 failed`
+
+• Ran cat > /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330053000.EvalInteractionTerminatorsRootCause.00001.00001.log <<'EOF'
+  │ 主題: 釐清 remote CFar 初始化案例在 Akka.FSI.Supervisor 中的真正根因
+  │ 想法: 先排除 actor lifecycle，再直接比較 FCS 的 EvalInteraction 行為，避免再把問題錯誤歸因到 Akka 或一般性的大型 top-level block。
+  │ … +23 lines
+  └ (no output)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• 原因找到了，不是 Akka timeout，也不是 passivation。
+
+  真正的根因是：單次 EvalInteraction 的 input string 中途如果有顯式 ;;，FCS 只會跑到那個 terminator 前面的 interaction。後面的內容不會在同一次互動裡繼續執行。你那個案例裡，open TAType;; 就會把後面的 let
+  cfar = ... 截掉，所以看起來像「丟出去一直怪怪的」，但其實後半段根本沒進去。
+
+  我做了兩個硬驗證：
+
+  - 對 rewritten CFar payload 插 marker，單次 EvalInteraction 只跑到 refs 段落。
+  - 最小重現：open System;;\nprintfn "AFTER-OPEN"\nlet x = 1
+      - EvalInteraction 回成功
+      - 但 AFTER-OPEN 沒印
+      - x 也不存在，後續 query 只會拿到 earlier error
+
+  已補回歸測試並全綠：
+
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor.Tests/SupervisorTests.fs
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/FsiWorker.fs
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/doc/DevLog.md
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330053000.EvalInteractionTerminatorsRootCause.00001.00001.log
+  - /workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/log/20260330053000.EvalInteractionTerminatorsRootCause.op_log
+
+  測試結果：
+
+  - Akka.FSI.Supervisor Expecto：24 passed, 0 failed
+
+  所以現在 splitInteractionBatch 不是多餘 workaround，它是必要的，因為它要先把 ;; 和 top-level paragraphs 切開，再逐段送 EvalInteraction。
+
+
+› 這有點怪啊！如果是用 FSI ，腳本裡面有多處有 ;; 是不影響的，但是 fsi 的程式碼也沒有那樣的邏輯啊?!
+
+
+• 對，差別就在這裡：
+
+  - dotnet fsi some.fsx
+      - 走的是 script/file mode
+      - 整個檔案會被當成腳本處理
+      - 檔案裡有多個 ;; 通常只是多餘 separator，不會讓後半段消失
+  - EvalInteraction(code)
+      - 走的是 interactive submission mode
+      - 它的語意比較像「把這一段字串當成一次 FSI 主控台輸入」
+      - 在這個模式下，;; 是 submission terminator
+
+  所以怪的不是「FSI 本身」，而是：
+
+  - 你把本來偏 .fsx file 語意的一大段 source
+  - 直接塞進一次 EvalInteraction
+  - 而那段 source 裡又混了 ;;
+  - 那它就不再是「腳本檔案」語意，而是「一串互動式輸入」語意
+
+  也就是說，這不是說 FSI source code 有 bug，而是：
+
+  - EvalScriptNonThrowing(filePath) 和
+  - EvalInteractionNonThrowing(code)
+
+  本來就是兩條不同 API，語意不同。
+  FCS 文件自己也把它們分成兩類，這也是為什麼會同時存在這兩個 API。
+
+  我現在能很硬地證明這件事，不是空猜：
+
+  最小重現：
+
+  open System;;
+  printfn "AFTER-OPEN"
+  let x = 1
+
+  - 用 EvalInteraction(code)：
+      - 回成功
+      - 但 AFTER-OPEN 不印
+      - x 不存在
+  - 這表示在單次 interactive submission 裡，;; 確實把後面的段落截掉了
+
+  所以結論是：
+
+  - .fsx 裡多個 ;; 沒問題
+  - 但把含 ;; 的整段 .fsx source 直接當成一次 EvalInteraction 的 input，就有問題
+  - 這也是為什麼我們需要先切 chunk，再逐段 EvalInteraction
+
+  如果你要，我下一步可以直接去看 FCS/FSI source，確認這個行為是在 parser 還是 interactive loop 哪一層發生。

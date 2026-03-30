@@ -1,0 +1,236 @@
+
+❯ 載入 /workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest_gemini.md
+
+  Read 1 file (ctrl+o to expand)
+
+● 已載入。這是給 Gemini CLI 的 E2E 場景測試文件，描述如何在 fsharp-devkit MCP server 上建立 remote FSI host/session、執行 .fsx 腳本並取值的完整流程。
+
+  需要我執行這個 E2E 測試，還是有其他需求？
+
+❯ 執行 /workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest_gemini_prompt.md
+
+  Read 1 file (ctrl+o to expand)
+
+● 開始執行 E2E 場景測試。先取得需要的 MCP tool schemas。
+
+● Step 1: 註冊 agent。
+
+● fsharp-devkit - register_fsi_agent (MCP)(agentId: "claude-e2e-20260330-01", displayName: "Claude E2E Test Agent")
+  ⎿  {
+       "agentId": "claude-e2e-20260330-01",
+       "displayName": "Claude E2E Test Agent",
+     … +5 lines (ctrl+o to expand)
+
+● Agent 已註冊。Step 2: 建立 FSI host。
+
+● fsharp-devkit - create_fsi_host (MCP)(agentId: "claude-e2e-20260330-01", hostId: "claude-e2e-host-20260330-01", hostKind: "net10", executablePath: "dotnet", arguments: "exec --runtimeconfig
+                                       /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --systemname fsi-proc
+                                       --host 10.28.112.140 --port 0 --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --procid claude-e2e-host-20260330-01")
+  ⎿  {
+       "hostId": "claude-e2e-host-20260330-01",
+       "agentId": "claude-e2e-20260330-01",
+     … +15 lines (ctrl+o to expand)
+
+● Host 建立中。Step 3: 建立 session。
+
+● fsharp-devkit - create_fsi_session (MCP)(agentId: "claude-e2e-20260330-01", hostId: "claude-e2e-host-20260330-01", sessionId: "claude-e2e-session-20260330-01", sessionName: "Claude E2E Session")
+  ⎿  {
+       "sessionId": "claude-e2e-session-20260330-01",
+       "agentId": "claude-e2e-20260330-01",
+     … +18 lines (ctrl+o to expand)
+
+● Session ready. Step 4: 讀取目標 .fsx 的第 1~76 行。
+
+● fsharp-devkit - get_lines (MCP)(filePath: "/gemini4/work/coldfar-symbolics/experiments/generate_real_charts.inspect_930k_vs_30k.fsx", startLine: 1, endLine: 76)
+  ⎿  Lines 1-76 from /gemini4/work/coldfar-symbolics/experiments/generate_real_charts.inspect_930k_vs_30k.fsx:
+     1: #if INTERACTIVE
+     2: #I @"/workspace/home/work/sharftrade7/實驗/SharFTrade.Exp/bin/net10.0"
+     … +64 lines (ctrl+o to expand)
+
+● 讀取成功。現在進行字串改寫並執行。改寫規則：
+  1. 移除 #if INTERACTIVE / #endif
+  2. #I 路徑 /workspace/home/... → /gemini4/...
+  3. 前面加 SHARFTRADE_PCSL_ROOT 環境變數
+  4. fallback 路徑 /workspace/home/... → /gemini4/...
+
+  Step 5: 執行改寫後的程式碼。
+
+● fsharp-devkit - execute_f_sharp_code_async_routed (MCP)(agentId: "claude-e2e-20260330-01", hostId: "claude-e2e-host-20260330-01", sessionId: "claude-e2e-session-20260330-01", code:
+                                                         "System.Environment.SetEnvironmentVariable(\"SHARFTRADE_PCSL_ROOT\", \"/gemini4/vhdx/cFar_pcsl2/cFar2\")\n\n#I
+                                                         @\"/gemini4/work/sharftrade7/實驗/SharFTrade.Exp/bin/net10.0\"\n#r \"PersistedConcurrentSortedList.dll\"\n#r \"DynamicObj.dll\"\n#r
+                                                         \"Plotly.NET.dll\"\n#r \"FAkka.Shared.dll\"\n#r \"Skender.Stock.Indicators.dll\"\n#r \"SharFTrade.Exp.2025.dll\"\n#r \"MdcFsClient90.dll\"\n#r
+                                                         \"FSharp.Collections.ParallelSeq.dll\";;\n#r \"Argu.dll\";;\n\nopen System\nopen System.IO\nopen System.Collections.Generic\nopen
+                                                         Plotly.NET\nopen PersistedConcurrentSortedList\n//open PersistedConcurrentSortedList.Type\nopen Skender.Stock.Indicators\nopen CFar\nopen
+                                                         FAkka.TA\nopen TAType;;\nopen FAkka.TA.FAkkaQuote\nopen FAkka.Trading.FAnalytica\nopen FriceSeries9.FAkkaChartMod2\n\ntype QuoteBar(minKey:
+                                                         int64, o: decimal, h: decimal, l: decimal, c: decimal, v: decimal) =\n    let dt =\n        DateTime(\n            int (minKey / 100000000L),\n
+                                                                   int ((minKey / 1000000L) % 100L),\n            int ((minKey / 10000L) % 100L),\n            int ((minKey / 100L) % 100L),\n
+                                                         int (minKey % 100L),\n            0\n        )\n\n    interface IQuote with\n        member _.Open = o\n        member _.High = h\n        member
+                                                          _.Low = l\n        member _.Close = c\n        member _.Volume = v\n\n    interface ISeries with\n        member _.Date = dt\n\nlet repoRoot =
+                                                         Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, \"..\"))\n\nlet resolvePcslRoot () =\n    [ Environment.GetEnvironmentVariable
+                                                         \"SHARFTRADE_PCSL_ROOT\"\n      Environment.GetEnvironmentVariable \"CFAR_PCSL_ROOT\"\n      \"/gemini4/vhdx/cFar_pcsl2/cFar2\"\n
+                                                         \"/gemini4/vhdx/cFar_pcsl2\"\n      @\"H:\\cFar2\"\n      @\"h:\\cFar2\" ]\n    |> Seq.choose (fun path ->\n        if String.IsNullOrWhiteSpace
+                                                         path then None\n        else\n            let full = Path.GetFullPath path\n            if Directory.Exists full then Some full else None)\n
+                                                         |> Seq.tryHead\n    |> function\n        | Some root -> root\n        | None -> failwith \"PCSL root not found. Set SHARFTRADE_PCSL_ROOT or copy
+                                                         data under /gemini4/vhdx/cFar_pcsl2/cFar2.\"\n\nlet root = resolvePcslRoot ()\nlet scale = 5s\nlet limitCount = 1500\nlet output =
+                                                         Path.Combine(repoRoot, \"es_5k_dmi_macd_preview.html\")\n\nlet trimTail (arr: 'T[]) =\n    arr |> Array.skip (max 0 (arr.Length -
+                                                         limitCount))\n\nlet cfar = CFar(root, (\"CME\", \"ES\"), allKeyPair, 1)", timeoutSeconds: 120)
+  ⎿  709977bb43354136b11e00058dca6585
+
+● 已提交，asyncId = 709977bb43354136b11e00058dca6585。Step 6: 輪詢狀態。
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● Still running，等幾秒再查。
+
+● Bash(sleep 5)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● Bash(sleep 10)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● 仍在執行中（CFar 載入 PCSL 資料通常需要較長時間）。繼續等待。
+
+● Bash(sleep 15)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● Bash(sleep 20)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● 已跑了約 50 秒，繼續等待。
+
+● Bash(sleep 30)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● 約 80 秒了，CFar 載入大型 PCSL 資料可能需要更長時間。繼續等。
+
+● Bash(sleep 30)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~110 秒。再等一輪。
+
+● Bash(sleep 30)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● Bash(sleep 30)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~170 秒，仍在執行。CFar 初始化需要載入大量持久化資料。繼續等待。
+
+● Bash(sleep 60)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~230 秒。繼續等待。
+
+● Bash(sleep 60)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~290 秒。繼續。
+
+● Bash(sleep 60)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~350 秒。CFar 載入大量 PCSL 資料可能需要數分鐘。繼續等。
+
+● Bash(sleep 60)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● Bash(sleep 120)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~530 秒 (~9分鐘)。繼續等。
+
+● Bash(sleep 120)
+  ⎿  (No output)
+
+● fsharp-devkit - get_async_status (MCP)(asyncId: "709977bb43354136b11e00058dca6585")
+  ⎿  {
+       "asyncId": "709977bb43354136b11e00058dca6585",
+       "requestId": "5b9d84f0454d4b968800075b126bc4d2",
+     … +13 lines (ctrl+o to expand)
+
+● ~11 分鐘。繼續等待。
+
+● Bash(sleep 120)
+  ⎿  Interrupted · What should Claude do instead?

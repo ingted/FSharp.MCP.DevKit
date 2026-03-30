@@ -1,0 +1,21 @@
+• Waited for background terminal · cat > /tmp/gemini_e2e_prompt.txt <<'EOF'
+Read /workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest.md completely and follow it exactly.
+Your task is:
+1. Create a fresh remote out-of-process FSI host and a fresh FSI session through the connected fsharp-devkit MCP server.
+2. Execute lines 1 through 76 of /workspace/home/work/coldfar-symbolics/experiments/generate_real_charts.inspect_930k_vs_30k.fsx in that session.
+3. Do NOT modify the original .fsx file on disk. Only transform the transmitted code snippet exactly as instructed in E2EScenarioTest.md.
+4. After execution finishes, evaluate this expression in the same session:
+   cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c
+5. Return a concise result containing:
+   - SUCCESS or FAIL
+   - the hostId and sessionId you used
+   - the final value if successful
+   - the first concrete failing step and error if unsuccessful
+Rules:
+- Use fresh unique ids.
+- Prefer the MCP tool workflow; if MCP tool calling fails, use the pure HTTP fallback from E2EScenarioTest.md.
+- Do not retry after the first real failure. Stop and report it.
+- Do not improvise alternate workflows not documented in E2EScenarioTest.md.
+EOF
+gemini -m gemini-3.1-pro-preview --approval-mode yolo --include-directories /workspace/home/work/coldfar-symbolics,/workspace/home/work/PulseTrade.fs -p "$(cat /tmp/
+gemini_e2e_prompt.txt)" | tee /workspace/home/mcp/FSharp.MCP.DevKit/log/20260328061750.gemini-e2e-single-run.op_log

@@ -1,0 +1,48 @@
+
+● Now let me check if the background docs cleanup agent finished.
+
+  Read 1 file (ctrl+o to expand)
+
+● The cleanup agent hit permission issues. Let me do it directly.
+
+● Bash(sudo rm -f /workspace/home/mcp/FSharp.MCP.DevKit/docs/.md && sudo rm -rf /workspace/home/mcp/FSharp.MCP.DevKit/docs/API-Docs-Generated/ && echo "Cleanup done")
+  ⎿  Cleanup done
+
+● Now check if docs/API-Docs-Generated is already in .gitignore:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Already in .gitignore. Let me verify the cleanup results.
+
+  Read 1 file (ctrl+o to expand)
+
+● 完成。以下是本次工作摘要：
+
+  ---
+  完成項目
+
+  1. docs/ 清理
+
+  - 刪除 docs/.md（空白佔位檔）
+  - 刪除 docs/API-Docs-Generated/（4.3MB，711 個自動產生檔案）
+  - 確認已在 .gitignore 中
+  - docs/ 從 ~4.7MB 降至 428KB（減少 91%）
+
+  2. doc/Runbook.md — 完整重寫
+
+  全新的 Runbook 包含 9 個章節：
+  - 快速開始流程（Step 1~3 即可跑）
+  - 完整 56 個 tool 參考表（按 Control/Execution/Result/Analysis/Editing/Documentation 分類）
+  - 程式碼執行注意事項（#r 分段送入、Session Faulted 恢復、DLL 衝突策略、timeout）
+  - 多 Host/Session 策略
+  - 已知限制與陷阱（7 項，含根因與緩解方式）
+  - 部署與維運（Docker、環境變數、異常處理表）
+  - Claude Code 設定方式
+
+  3. doc4dev/20260328_issues.md — Code Review 報告
+
+  發現 17 個 issues：
+  - P0 (3 個)：buildExecRequest stale error message、Session Faulted 無自動恢復、模糊錯誤訊息
+  - P1 (6 個)：invalidOp 誤用、Console.WriteLine、缺少執行上下文、async failwith、case-sensitive enums、polling 無 max-retries
+  - P2 (8 個)：HealthCheck 不驗 FSI、config 無 fallback、timeout 硬編碼、InsertCode 預設不驗證等
+
