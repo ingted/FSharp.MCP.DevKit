@@ -105,12 +105,12 @@ type McpClientSession internal (client: McpClient, stderrLog: ConcurrentQueue<st
             ?sessionName: string,
             ?cancellationToken: CancellationToken
         ) =
-        let pairs = ResizeArray<string * obj>()
-        pairs.Add(("agentId", box agentId))
-        pairs.Add(("displayName", box (defaultArg displayName "")))
-        pairs.Add(("hostId", box (defaultArg hostId "")))
-        pairs.Add(("sessionId", box (defaultArg sessionId "")))
-        pairs.Add(("sessionName", box (defaultArg sessionName "")))
+        let pairs =
+            [ "agentId", box agentId
+              "displayName", box (defaultArg displayName "")
+              "hostId", box (defaultArg hostId "")
+              "sessionId", box (defaultArg sessionId "")
+              "sessionName", box (defaultArg sessionName "") ]
 
         let dictionary = Dictionary<string, obj>()
 

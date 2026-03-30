@@ -1,0 +1,5 @@
+[start] 修正 McpClientHarness 與最新 csharp-sdk/F# SDK 的 build 相容性
+[check] 檢查失敗檔案與差異: src/FSharp.MCP.DevKit.Server/McpClientHarness.fs
+[edit] 移除 ResizeArray.Add(...)，改以 list 建立 key/value pairs
+[verify] dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 -m:1 -> 0 Error(s)
+[conclusion] 當前 mod2 branch 已可在本地用最新 csharp-sdk 成功建置

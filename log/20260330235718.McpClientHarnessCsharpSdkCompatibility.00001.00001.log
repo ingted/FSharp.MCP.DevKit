@@ -1,0 +1,18 @@
+主題: 修正 McpClientHarness 在最新 csharp-sdk / F# SDK 組合下的建置相容性
+
+想法:
+- 只收斂本次 Docker build 失敗點，不擴散到既有 dirty docs/notes。
+- 先以最小改動修掉 `FS0503`，再本地 build 驗證。
+
+執行計畫:
+1. 檢查 `McpClientHarness.fs` 失敗位置與歷史。
+2. 以不改語意的方式移除 `ResizeArray.Add(...)` 用法。
+3. 本地 `dotnet build` 驗證 `FSharp.MCP.DevKit.Server`。
+4. 只 commit 相關檔案。
+
+結果:
+- 已將 `EnsureRouteAsync` 內的 pairs collection 改為 plain list。
+- 本地 `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 -m:1` 成功。
+
+附註:
+- 這不是 runtime/E2E 問題，而是 build-time 相容性問題。

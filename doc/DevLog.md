@@ -1316,3 +1316,15 @@
 - 結論：
   - 目前 `mod2` 可以保留，不需要退回 sparse baseline
   - 真正需要留下的是 `FAkka.FSI.Supervisor` 的 worker bootstrap 修正
+
+## 2026-03-30 23:57 UTC - McpClientHarness build compatibility with latest csharp-sdk
+
+- 使用最新 `csharp-sdk` rebuild `FSharp.MCP.DevKit.Server` 時，`McpClientHarness.fs` 的 `ResizeArray<string * obj>().Add(...)` 在目前 F#/SDK 組合下觸發 `FS0503`。
+- 修正：
+  - `src/FSharp.MCP.DevKit.Server/McpClientHarness.fs`
+  - 將 `EnsureRouteAsync` 內部 pairs collection 改為 plain list，再填入 `Dictionary<string,obj>`。
+- 驗證：
+  - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -f net10.0 -m:1`
+  - 結果 `0 Error(s)`。
+- 結論：
+  - 這是 build-time 相容性問題，不是 `fsharp-devkit` runtime / MCP routing 問題。
