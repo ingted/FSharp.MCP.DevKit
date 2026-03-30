@@ -1,0 +1,3 @@
+[2026-03-30 09:35:00 UTC] 準備跟進 PulseTrade.fs 尚未發版的 storage fallback / WorkerHost 修正。
+[2026-03-30 09:36:00 UTC] FSharp.MCP.DevKit.Server package references 上調為 dgx.18 / dgx.22。
+[2026-03-30 09:36:30 UTC] 待上游 package build/push 完成後，MCP server 即可直接部署最新鏈。

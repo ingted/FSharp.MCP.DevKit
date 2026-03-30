@@ -1,0 +1,10 @@
+主題: 跟進 Akka.FSI.Supervisor storage fallback 修正的 package reference
+想法:
+- 既然 PulseTrade.fs 尚有未提交的 runtime 修正，單純部署 dgx.17/dgx.21 仍不是完整狀態。
+- 需要把 MCP server 依賴同步到新 package 版本，避免部署和 source 真實狀態脫節。
+執行計畫:
+- 更新 FSharp.MCP.DevKit.Server.fsproj package references。
+- build 驗證。
+- 待上游 nupkg push 後，由使用者重新部署。
+結論:
+- package references 已跟進到 FSI dgx.18 / Proc dgx.22。

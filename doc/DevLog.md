@@ -1271,3 +1271,13 @@
   - `dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --configfile nuget.config`
   - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release --no-restore -m:1`
   - 皆已通過
+
+## 2026-03-30 09:35 UTC - Storage Fallback Release Follow-up
+
+- `PulseTrade.fs` 尚有未提交的 `Akka.FSI.Supervisor` runtime 修正，內容為：
+  - default PCSL storage root fallback
+  - `WorkerHost` 改走統一 bootstrap
+- 因此 package chain 再上調為：
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.18`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.22`
+- `FSharp.MCP.DevKit.Server` package references 已同步跟進，確保後續部署吃到完整版本而不是只拿到 session-cache 後的一半修正。
