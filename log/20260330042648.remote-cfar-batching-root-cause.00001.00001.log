@@ -1,0 +1,24 @@
+2026-03-30T04:26:48Z
+
+Experiment: remote CFar initialization batching comparison
+
+Inputs:
+- source: /workspace/home/work/coldfar-symbolics/experiments/generate_real_charts.inspect_930k_vs_30k.fsx
+- lines: 1..76 after removing #if INTERACTIVE/#endif
+- rewritten PCSL root / #I paths for deployed container visibility
+
+Observed:
+- direct dotnet fsi in deployed container:
+  - completed
+  - elapsed: 333899 ms
+- single EvalInteraction on same payload:
+  - timed out
+  - timeout: 420 s
+- paragraph/top-level batching with EvalInteraction:
+  - completed
+  - elapsed: 316735 ms
+  - follow-up query on cfar session value: succeeded
+
+Finding:
+- coarse interaction batching is the barrier
+- remote async Running is not caused by missing completion write-back

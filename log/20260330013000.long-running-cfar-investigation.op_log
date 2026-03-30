@@ -1,0 +1,16 @@
+[2026-03-30T01:21:00Z] Start investigation of the long-running CFar scenario.
+[2026-03-30T01:21:15Z] Re-queried async statuses via deployed MCP HTTP endpoint.
+[2026-03-30T01:21:30Z] Confirmed both long-running async jobs still report Running/exists=true/isCompleted=false.
+[2026-03-30T01:22:00Z] Queried host health; both corresponding remote hosts report running and available.
+[2026-03-30T01:22:15Z] Inspected recent container logs and procnode process table.
+[2026-03-30T01:22:45Z] Found sustained high CPU on the investigated procnode and continuous CFar/TA progress logs.
+[2026-03-30T01:23:12Z] Polled the investigated async job for ~2 minutes; status remained Running throughout.
+[2026-03-30T01:25:00Z] Verified from recent logs that the procnode continues progressing through many TA combinations rather than idling.
+[2026-03-30T01:26:00Z] Concluded this is currently a minutes-scale heavy async workload, not evidence of broken MCP host/session machinery.
+[2026-03-30T03:14:47Z] Started extended follow-up polling on the same async initialization instead of restarting it.
+[2026-03-30T03:19:32Z] After ~5 additional minutes of 15-second polling, status still remained Running/isCompleted=false.
+[2026-03-30T03:20:00Z] Updated conclusion: reuse-after-init is still the right product goal, but this specific initialization currently takes too long to reach the post-init query phase within a normal short observation window.
+[2026-03-30T03:25:00Z] Started apples-to-apples comparison inside the deployed fsharp-devkit container using the same rewritten first-76-line script payload.
+[2026-03-30T03:30:29Z] Direct `dotnet fsi` inside the deployed container completed in 5m29.289s.
+[2026-03-30T03:31:00Z] Re-checked the remote async job; it still remained Running with no completedAt timestamp.
+[2026-03-30T03:31:30Z] Conclusion strengthened: the issue is not just a heavy business workload. The remote session execution path is materially slower or not converging compared with direct `dotnet fsi` in the same container.

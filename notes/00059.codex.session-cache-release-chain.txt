@@ -1,0 +1,7 @@
+2026-03-30
+
+- 目標：將 `FAkka.FSI.Supervisor` session cache 修正正式往上游發版鏈補齊。
+- 預期：
+  - `FAkka.Proc.Supervisor dgx.21` 成功以正式 feed restore/build/push。
+  - `FSharp.MCP.DevKit` 以正式 `nuget.config` restore/build 通過。
+  - 兩個 repo 僅提交本輪必要檔案。

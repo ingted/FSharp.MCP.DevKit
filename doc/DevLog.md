@@ -722,3 +722,552 @@
 - 後續原則：
   - 這次依要求立即停止，不再追打 Gemini。
   - 若要進一步區分「md 問題」還是「prompt 問題」，需等模型容量恢復後再做下一次、仍然單次且可歸因的驗證。
+
+## 2026-03-28 Clarified Container Mount Semantics For Agent Guidance
+
+- 補強 `doc/E2EScenarioTest.md` 的路徑說明，避免 agent 再把 `fsharp-devkit` container 內的兩種 mount 混為一談：
+  - `/gemini4/...` 對應 host `/home/sa/gemini4/...`，為 **唯讀** source-tree / DLL / 腳本視角
+  - `/workspace/...` 對應 host `/home/sa/gemini4/devkit_workspace/...`，為 **可讀寫** workspace 視角
+- 對 agent 的操作意義：
+  - 讀 `.fsx`、讀非 NuGet DLL、讀 source tree 時，應優先使用 `/gemini4/...`
+  - 需要 remote host / server 寫暫存檔或中間產物時，應使用 `/workspace/...`
+  - 不應把 agent container 看到的 `/workspace/home/...` 直接視為 remote host 可見路徑
+
+## 2026-03-28 Gemini Retry Outcome: md Improved, Next Failure Is Async Resource Visibility
+
+- 先以 `gemini-3.1-pro-preview` 重試同一份 prompt 與同一份 `doc/E2EScenarioTest.md`。
+  - 結果仍是 `HTTP 429 / MODEL_CAPACITY_EXHAUSTED`
+  - 因此 `3.1` 這條仍無法用來判讀文件品質。
+- 再以完全相同的 prompt 與文件改用 `gemini-2.5-pro`。
+- 結果：
+  - Gemini 2.5 能成功讀懂文件
+  - 能辨識「tool surface 不一定直接有 `resources/read`，因此要改走純 HTTP fallback」
+  - 能完成：
+    - fresh host 建立
+    - fresh session 建立
+    - async code submit
+  - 失敗點改為：
+    - 輪詢 `fsi/async/{asyncId}` 時，持續得到 `exists=false`
+    - 最終 timeout
+- 判讀：
+  - 這表示 `doc/E2EScenarioTest.md` 的前一輪修正是有效的：
+    - path rewrite 規則有被遵守
+    - Python/HTTP fallback 方向被採納
+    - agent 不再首先死在 shell quoting
+  - 下一個 failure surface 已經不是 prompt/文件理解，而是：
+    - `fsharp-devkit` 在純 HTTP fallback + async polling 這條路上的 async resource 可見性/保留行為
+  - 因此後續若要繼續修，應優先查：
+    - 為何 agent 取得 `asyncId` 後，`resources/read` 仍回 `exists=false`
+    - 是 server 端 async registry/resource surface 問題，還是 Gemini 的 HTTP 讀取/解析流程與 MCP server 預期不完全一致
+
+## 2026-03-28 SA/SD: Add `get_async_status` Tool To Decouple Weak Agents From `resources/read`
+
+- 新增 fresh 的 [SA.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/SA.md) 與 [SD.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/SD.md)，把問題明確定義為：
+  - server 並不缺 `fsi/async/{asyncId}` resource
+  - 真正缺的是「弱 client / 弱 agent 對 `resources/read` 的可用性」
+- 設計決策：
+  - 新增 MCP tool `get_async_status(asyncId)`
+  - 不分 routed/default，因為 async job 本來就只以 `asyncId` 為查詢主鍵
+  - resource 仍保留，tool 只是給較弱 agent 的 ergonomics 補洞
+- 具體實作：
+  - [McpFsiTools.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/McpFsiTools.fs) 新增 `get_async_status`
+  - async execute 的工具描述改為明確提示：
+    - 優先輪詢 `get_async_status`
+    - 或讀 `fsi/async/{asyncId}`
+  - [Program.fs](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/Program.fs) 的 async resource 描述同步更新
+- 測試：
+  - [McpSurfaceTests.fs](/workspace/home/mcp/FSharp.MCP.DevKit/tests/McpSurfaceTests.fs) 驗證 tool 與 resource 的 async status payload 對齊
+  - [McpExecutionToolsTests.fs](/workspace/home/mcp/FSharp.MCP.DevKit/tests/McpExecutionToolsTests.fs) 驗證 routed async 可經 `get_async_status` 完成輪詢
+  - [McpClientAvailabilityTests.fs](/workspace/home/mcp/FSharp.MCP.DevKit/tests/McpClientAvailabilityTests.fs) 驗證 discoverability
+  - [McpClientSmokeTests.fs](/workspace/home/mcp/FSharp.MCP.DevKit/tests/McpClientSmokeTests.fs) 改用 `get_async_status` 做 async smoke
+- 驗證結果：
+  - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -m:1` 通過
+  - 相關 targeted tests（surface/execution/client availability/client async smoke）通過
+
+## 2026-03-28 Live HTTP Reproduction Loop: Gemini `exists=false` Was Not Reproduced
+
+- 為了回答「為什麼我之前能成功、Gemini 卻失敗」，刻意不部署新 build，而是直接對 live deployment 做純 HTTP JSON-RPC 重現，盡量貼近 Gemini 當時的 fallback 路徑。
+- Attempt 1：
+  - 結果：失敗於 `initialize`
+  - 症狀：`HTTP 406 Not Acceptable`
+  - 根因：文件中的 Python fallback 範例漏了 `Accept: application/json, text/event-stream`
+  - 判讀：這是文件/範例 bug，不是 server async 狀態面壞掉
+- Attempt 2：
+  - 結果：收到 initialize response 但 client 誤判沒有 session id
+  - 症狀：`Missing mcp-session-id`
+  - 根因：server 回的是 `Mcp-Session-Id`；範例先把 headers 轉成普通 dict，再只抓小寫 `mcp-session-id`
+  - 判讀：這也是文件/範例 bug，而不是 server 沒給 session id
+- Attempt 3：
+  - 在補上正確 `Accept` header 與 case-insensitive session header 讀取後，純 HTTP 路徑可成功：
+    - `register_fsi_agent`
+    - `create_fsi_host`
+    - `create_fsi_session`
+    - `execute_f_sharp_code_async_routed`
+  - `resources/read fsi/async/{asyncId}` 的每一次輪詢都回：
+    - `exists = true`
+    - `status = Running`
+    - `isCompleted = false`
+  - 在約 60 秒輪詢視窗內未完成，但 **完全沒有重現 Gemini 先前的 `exists=false`**
+- 結論：
+  - 目前沒有證據顯示 server async registry / resource surface 會像 Gemini 那次描述的那樣立即消失
+  - 更強的解釋是：Gemini 當時的 HTTP fallback 細節有誤，或對 header / session / request 內容處理不正確
+  - 對這個 workload，本案例文件還必須再強調：
+    - HTTP fallback 必帶 `Accept: application/json, text/event-stream`
+    - `mcp-session-id` 要 case-insensitive 讀取
+    - `exists=true,status=Running` 持續數十秒不是失敗，而是應增加輪詢預算
+- 已同步更新 [E2EScenarioTest.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest.md)：
+  - 修正 Python fallback headers
+  - 修正 session header 讀取
+  - 增加長 workload 輪詢規則
+  - 新增 `get_async_status` 優先策略
+  - 新增單次 prompt 範本
+
+## 2026-03-29 Gemini Single-Shot Learning Loop After Redeploy
+
+- 先確認 redeployed `fsharp-devkit` 已包含 `get_async_status`，對 live MCP `tools/list` 的結果為：
+  - `tool_count = 57`
+  - `has_get_async_status = true`
+- 接著開始 `gemini` 單次執行迴圈，優先嘗試 `gemini-3.1-pro-preview`，並把每次結果寫入 `log/20260329.gemini-single-shot-learning.op_log`。
+- Attempt 7:
+  - `gemini-3.1-pro-preview` 這次不是容量錯誤，已能讀 `E2EScenarioTest.md` 與目標 `.fsx` 前 76 行。
+  - 但模型接著自行轉去使用 `generalist` 類委派工具，沒有完成任務。
+  - 判讀：這是模型/提示服從性的問題，不是 `fsharp-devkit` server 問題。
+- Attempt 8:
+  - `gemini-2.5-pro` 能正確讀文件、讀腳本，並開始依文件轉換 code。
+  - 失敗點是它嘗試使用 `write_file` 這類本地工具把 transformed code 落到暫存檔，但 Gemini CLI 當前可用的本地工具面只看到 `read_file`、`cli_help`、`generalist`，沒有 `write_file`。
+  - 判讀：此時卡住的不是 MCP server，也不是 prompt 對 remote host/session 的說明，而是 Gemini CLI 本身沒有文件假設中的本地寫檔/殼層工具。
+- 目前結論：
+  - `E2EScenarioTest.md` 已足以教會 agent 理解 remote path rewrite、async-first 與 `get_async_status`。
+  - 但若目標 client 沒有本地 `write_file` / shell 能力，就不能直接照目前的 HTTP fallback 版本執行。
+  - 下一步應討論是否需要再補一份「無本地寫檔、無 shell」變體流程，專供 Gemini CLI 這類較弱 client。
+
+## 2026-03-29 Added Gemini-Specific E2E Scenario Guide
+
+- 新增 [E2EScenarioTest_gemini.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest_gemini.md)。
+- 這份文件明確針對 Gemini CLI 的實際限制：
+  - 常只有 `read_file`
+  - 有 `fsharp-devkit` MCP tools
+  - 不一定有 `write_file`
+  - 不一定有 shell
+  - 可能亂用 `generalist` / delegation
+- 因此 Gemini 版流程改成：
+  - 只用 `read_file` + MCP tools
+  - 不依賴本地暫存檔
+  - 不依賴 shell
+  - 直接把 transformed F# code string 送進 `execute_f_sharp_code_async_routed`
+  - 之後用 `get_async_status` 輪詢
+  - 完成後再 `evaluate_f_sharp_expression_routed`
+- 只有在 agent 明確擁有本地寫檔與 shell 時，才回頭參考一般版 [E2EScenarioTest.md](/workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest.md) 的純 HTTP fallback。
+
+## 2026-03-29 Gemini CLI Prompt Loop Reached A Client-Side MCP Registration Blocker
+
+- 在加入 Gemini 專用文件後，繼續做單次執行 loop：
+  - Attempt 9 (`gemini-3.1-pro-preview`)
+    - 已不再亂用 `generalist`
+    - 也能讀 `E2EScenarioTest_gemini.md` 與目標腳本
+    - 但讀完後停滯，不往下打 MCP tools
+  - Attempt 10 (`gemini-2.5-pro`)
+    - 明確知道應先 `register_fsi_agent`
+    - 但仍把這一步轉去 `generalist`
+    - 被 Gemini 本地 executor 的 recursion guard 擋掉
+  - Attempt 11 (`gemini-2.5-pro`, 最小 direct-tool probe)
+    - 不再要求整個 scenario，只要求直接呼叫 `register_fsi_agent`
+    - Gemini 最終真的嘗試 direct tool：
+      - `fsharp_devkit.register_fsi_agent`
+    - 但客戶端回：
+      - `Tool "fsharp_devkit.register_fsi_agent" not found`
+      - 可見工具只像是本地 `read_file` / `list_directory` / `grep_search`
+- 這表示目前阻塞已不是文件理解問題，也不是 `fsharp-devkit` server 本身問題，而是：
+  - **Gemini CLI 雖然顯示 MCP server connected，但模型可見的 tool registry 裡沒有真正的 `fsharp-devkit` MCP tools**
+- 結論：
+  - 目前不應再繼續透過 prompt 微調硬凹
+  - 後續應改查：
+    - Gemini CLI 的 MCP 註冊/暴露方式
+    - 是否需不同 invocation mode / 設定檔 / server naming 方式，才能讓 MCP tools 真正進入模型工具表
+
+## 2026-03-29 Gemini CLI MCP Config Verification
+
+- 依官方文件再次核對 Gemini CLI 的 MCP 設定方式：
+  - Gemini CLI 使用 `~/.gemini/settings.json`
+  - 不是 `~/.gemini/mcp_servers.json`
+- 本機實際狀態：
+  - `~/.gemini/settings.json` 已正確包含：
+    - `mcpServers.fsharp-devkit.url = http://10.28.112.140:15000/mcp`
+  - `gemini mcp list` 也顯示：
+    - `fsharp-devkit ... Connected`
+- 另外驗證了官方推薦的 `@server-name` 提示方式：
+  - 使用 `@fsharp-devkit ...`
+  - Gemini 仍然沒有直接使用 `fsharp-devkit` 的 MCP tools
+  - 反而只使用本地 `list_directory` / `grep_search` 等工具
+- 最小 direct-tool probe 的結果更明確：
+  - Gemini 嘗試呼叫 `fsharp_devkit.register_fsi_agent`
+  - 但客戶端本地工具表回覆 `Tool ... not found`
+- 判讀：
+  - 目前阻塞已不是 `fsharp-devkit` server 沒 expose tools
+  - 也不是設定檔放錯位置
+  - 更像 Gemini CLI headless 模式下，MCP server 雖顯示 connected，但其 tools 沒真正進入模型可呼叫 registry
+
+## 2026-03-29 csharp-sdk Snapshot Reset And Gemini CLI Headless MCP Reality Check
+
+- `csharp-sdk` 的本機修改只有：
+  - `Directory.Packages.props`
+  - `nuget.config`
+- 已先切 snapshot branch：
+  - `20260329_snapshot`
+  - commit `9ed6b63`
+- 之後已切回 `main` 並 reset/pull 到 upstream：
+  - `498de08 Release v1.2.0 (#1472)`
+
+- `PulseTrade` 套件鏈重新核對後的 source 版本：
+  - `PersistedConcurrentSortedList.IFileSystem 10.0.201`
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.14`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.18`
+- local pack / NuGet push 結果：
+  - 這幾個版本都已存在於 NuGet，push 實際上是 duplicate/skip，不是新的 publish failure
+
+- `FSharp.MCP.DevKit` 目前 source 參考：
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.14`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.18`
+- restore/build 已通過，但 tests 目前仍有既有失敗，至少包含：
+  - `InProcBackendTests.InProcBackend executes multi-interaction batches separated by terminators`
+  - `SmokeRegressionTests.Smoke old tools remain compatible on default route`
+  - `RealNet10HostIsolationTests.Real out-of-proc net10 hosts keep state isolated`
+  - `RealNet10HostIsolationTests.Real out-of-proc net10 host executes multi-interaction batches`
+  - `McpClientE2ETests.MCP client E2E runner executes all smoke scenarios without failures`
+  - `McpClientSmokeTests.Client smoke covers fsharp-code result query`
+- 所以目前狀態是：
+  - package chain 可 rebuild
+  - 但 `FSharp.MCP.DevKit` 測試集不是全綠
+
+- Gemini CLI 0.35.3 的本機 source/registry 驗證推翻了前面一個錯判：
+  - `~/.gemini/settings.json` 是正確設定位置
+  - `gemini mcp list` 顯示 `fsharp-devkit` connected
+  - 更重要的是，直接用 Gemini CLI 自己的 `loadCliConfig(...); config.initialize()` 建出 headless `Config` 後：
+    - tool registry 內確實有 `57` 個 `fsharp-devkit` MCP tools
+    - 例如：
+      - `mcp_fsharp-devkit_register_fsi_agent`
+      - `mcp_fsharp-devkit_execute_f_sharp_code_async_routed`
+      - `mcp_fsharp-devkit_get_async_status`
+- 這表示：
+  - **Gemini CLI headless mode 並不是「看不到 MCP tools」**
+  - 先前 `Tool "fsharp_devkit.register_fsi_agent" not found` 的 probe，本質上是用了錯的 tool name
+  - 正確 fully-qualified name 是 `mcp_fsharp-devkit_*`
+
+- 再做最小 headless 真實驗證：
+  - prompt 明確要求只呼叫 `mcp_fsharp-devkit_register_fsi_agent`
+  - 結果 Gemini CLI 不再說 tool not found，反而真的開始走 MCP tool path
+  - 但它仍然選錯工具，實際跑到了 `mcp_fsharp-devkit_ensure_fsi_route`
+  - 最後命令在 `timeout 40s` 下結束
+- 這表示目前更準確的現況是：
+  - 設定沒有錯
+  - MCP tools 也有載入
+  - 真正的問題是 **model 在 headless prompt 下仍會錯選/亂選工具，或在 broad prompt 下停住**
+
+- 外部參考：
+  - Gemini CLI 官方文件確認使用 `~/.gemini/settings.json` 與 `mcpServers` 設定，不是 `mcp_servers.json`
+  - 官方 issue `#12362 Headless Mode Hangs During Execution` 也顯示 headless 模式確實有已知掛住案例
+- 因此目前的工程結論是：
+  - `fsharp-devkit` 不需要為 Gemini CLI 的「MCP tools 沒載入」背鍋
+  - 後續應聚焦在：
+    - Gemini 專用文件/Prompt 如何更強制使用正確 FQN
+    - 或 Gemini CLI / model 在 headless 模式下的工具選擇穩定性
+
+## 2026-03-29 Package Version Bump For Redeploy
+
+- 依使用者要求，先把本機 `csharp-sdk` 釘回新主線：
+  - repo: [csharp-sdk](/workspace/home/mcp/csharp-sdk)
+  - branch: `main`
+  - HEAD: `498de08 Release v1.2.0 (#1472)`
+- local snapshot 先保留在：
+  - branch: `20260329_snapshot`
+  - commit: `9ed6b63`
+
+- 本輪實際升版：
+  - [PersistedConcurrentSortedList.IFileSystem.fsproj](/workspace/home/work/PulseTrade.fs/Libs/PersistedConcurrentSortedList.IFileSystem/PersistedConcurrentSortedList.IFileSystem.fsproj)
+    - `10.0.201` -> `10.0.201.1`
+  - [Akka.FSI.Supervisor.fsproj](/workspace/home/work/PulseTrade.fs/Libs/Akka.FSI.Supervisor/Akka.FSI.Supervisor.fsproj)
+    - `1.562.101.201-dgx.14` -> `1.562.101.201-dgx.15`
+    - 依賴 `PersistedConcurrentSortedList.IFileSystem 10.0.201.1`
+  - [Akka.Proc.Supervisor.fsproj](/workspace/home/work/PulseTrade.fs/Libs/Akka.Proc.Supervisor/Akka.Proc.Supervisor.fsproj)
+    - `1.562.101.201-dgx.18` -> `1.562.101.201-dgx.19`
+    - 依賴 `FAkka.FSI.Supervisor 1.562.101.201-dgx.15`
+  - [FSharp.MCP.DevKit.Server.fsproj](/workspace/home/mcp/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj)
+    - `FAkka.FSI.Supervisor 1.562.101.201-dgx.15`
+    - `FAkka.Proc.Supervisor 1.562.101.201-dgx.19`
+
+- 發版結果：
+  - `PersistedConcurrentSortedList.IFileSystem 10.0.201.1` -> NuGet push 成功
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.15` -> NuGet push 成功
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.19` -> NuGet push 成功
+
+- 驗證結果：
+  - `FSharp.MCP.DevKit.Server` restore 成功
+  - `FSharp.MCP.DevKit.Server` release build 成功
+- 目前仍保留的 warnings：
+  - `Suave 3.2.3` 對 `FSharp.Core < 10.1.0` 的 `NU1608`
+  - `NuGet.* 7.3.0` 在 `netstandard2.0` core 專案上的 `NU1701`
+  - `McpFsiTools.fs` 多個 `FS3511`
+- 這輪的目標是讓使用者可重新部署 `FSharp.MCP.DevKit`，不是把整個 test matrix 收到全綠；既有 failing tests 仍待另外處理。
+
+## 2026-03-30 Gemini 3.1 Headless Loop Attempts 14-20
+
+- 延續前一輪已成功的 `attempt13`：
+  - Gemini 3.1 已能完成：
+    - `register_fsi_agent`
+    - `create_fsi_host`
+    - `get_fsi_host_health`
+    - `create_fsi_session`
+    - `get_lines` 讀 `/gemini4/...` 外部 `.fsx`
+    - `execute_f_sharp_code_async_routed`
+    - `get_async_status` 一次
+  - 當時拿到：
+    - `agentId = gemini-e2e-agent-001101-a13`
+    - `hostId = gemini-e2e-host-001101-a13`
+    - `sessionId = gemini-e2e-session-001101-a13`
+    - `asyncId = b5b01c5fe6ed468badde6b60443b8961`
+
+- 這一輪目標只剩：
+  - 讓 Gemini 3.1 在 headless mode 下，對既有 `asyncId` 做輪詢並在完成後 `evaluate`
+
+- 嘗試摘要：
+  - `attempt14`
+    - prompt 要求 `get_async_status` 最多 6 次後 evaluate
+    - 結果：
+      - 模型確實連續呼叫 `get_async_status`
+      - 但 async job 持續 `Running`
+      - Gemini 自己在 repeated same-tool polling 下觸發 loop recovery，最後 abort
+  - `attempt15`
+    - 改成單次 `get_async_status`，若未完成則立即輸出 JSON
+    - 結果：成功
+  - `attempt16`
+    - 再收斂成「單次 status check + raw compact JSON + 無 prose/無 markdown fence」
+    - 結果：成功
+  - `attempt17`
+    - 同一 prompt，隔一段時間再查
+    - 結果：成功，但仍 `Running`
+  - `attempt18`
+    - 同一 prompt，期間有 `gemini-3.1-pro-preview` 429 capacity noise
+    - 結果：即使有 429，最終仍完成一次 `get_async_status` 並輸出 JSON；仍 `Running`
+  - `attempt19`
+    - 同一 prompt
+    - 結果：成功，但仍 `Running`
+  - `attempt20`
+    - 同一 prompt
+    - 結果：成功，但仍 `Running`
+
+- 產品層結論：
+  - 這 7 次嘗試已經足以證明：
+    - Gemini 3.1 headless **現在已經學會正確使用 `fsharp-devkit` MCP tools**
+    - 對本案例而言，剩下的阻塞不是 prompt
+    - 而是該 async 業務腳本在整個觀察窗口內始終維持 `Running`
+  - 因此不應再把這個案例誤判成：
+    - `Gemini 不會用工具`
+    - `MCP tools 沒暴露`
+    - `prompt 不夠強`
+
+- 工程結論：
+  - 對 Gemini 3.1 headless，穩定可用的操作模式是：
+    1. 第一回合：
+       - 建 host / session
+       - 讀外部 `.fsx`
+       - 做 path rewrite
+       - `execute_f_sharp_code_async_routed`
+    2. 後續回合：
+       - 每回合只做一次 `get_async_status`
+       - 若完成才 `evaluate`
+  - 不建議讓 Gemini 在單一回合內做 repeated polling，因為容易撞到它自己的 loop recovery
+
+## 2026-03-30 01:30:00 Long Running CFar Investigation
+
+- 目標：
+  - 釐清 `generate_real_charts.inspect_930k_vs_30k.fsx` 前 76 行在 deployed `fsharp-devkit` 上長時間 `Running`，到底是產品故障還是業務初始化本來就重。
+
+- 先驗：
+  - deployed `fsharp-devkit` 核心 MCP 路徑仍正常：
+    - `register_fsi_agent`
+    - `create_fsi_host`
+    - `create_fsi_session`
+    - routed execute / evaluate
+    - `get_async_status`
+  - 先前 direct self-test 仍可在 fresh host/session 內得到：
+    - `x = 42`
+    - `y = 43`
+
+- 本輪觀察對象：
+  - `asyncId = a9753a43091d45c98315290be9d8f8dd`
+  - `hostId = codex-investigate-host-1774833523`
+  - `sessionId = codex-investigate-session-1774833523`
+  - 舊的 Gemini async：
+    - `asyncId = b5b01c5fe6ed468badde6b60443b8961`
+    - `hostId = gemini-e2e-host-001101-a13`
+
+- 直接結果：
+  - 兩個 async job 都仍回：
+    - `status = Running`
+    - `exists = true`
+    - `isCompleted = false`
+  - `get_fsi_host_health` 對兩個 host 都回：
+    - `isAvailable = true`
+    - `message = running`
+
+- 關鍵發現：
+  - 這不是 idle `Running`。
+  - `docker top fsharp-mcp-devkit` 顯示：
+    - `codex-investigate-host-1774833523` 的 procnode 持續高 CPU
+    - `%CPU` 一度超過 `200`
+  - `docker logs fsharp-mcp-devkit` 顯示該 procnode 正在連續執行大量 CFar/TA 初始化工作：
+    - 多組 `[Start] ...`
+    - 對應 `[cfTA] root: /gemini4/vhdx/cFar_pcsl2/cFar2/...`
+    - 對應 `[Finished] ...`
+  - 也出現過：
+    - `heartbeat was delayed`
+    - 這表示重 CPU / thread starvation 噪音確實存在
+  - 但最近 5 分鐘 log 顯示它仍在穩定前進，不像死鎖。
+
+- 結論：
+  - 目前最合理的判讀是：
+    - `fsharp-devkit` 核心產品沒有壞
+    - 問題不是 MCP tool exposure
+    - 問題也不是 Gemini prompt
+    - 這個案例在第 76 行 `let cfar = CFar(...)` 就已進入非常重的資料初始化
+    - 因此 async 可能需要顯著較長時間才會完成
+  - 後續若要改善，不是先改 prompt，而是評估：
+    - 是否要把這種長時間 CPU work 與目前 actor/default dispatcher 更清楚隔離
+    - 或至少在 Runbook / Scenario doc 明寫這個案例屬於 minutes-scale async，不是 quick async
+
+- 追加驗證：
+  - 依照真正業務目標，不再重跑初始化，而是盯住同一個 remote session 的既有 async 初始化：
+    - `asyncId = a9753a43091d45c98315290be9d8f8dd`
+  - 額外再追約 5 分鐘（每 15 秒輪詢一次）後，仍持續：
+    - `Running`
+    - `isCompleted = false`
+  - 因此目前還無法進到「初始化完成後連續查詢 3 次」這一步。
+
+- 這一步的結論修正：
+  - 產品問題的核心不是「session 無法重用」。
+  - 核心是：
+    - 這個特定 `CFar(...)` 初始化在目前資料量下，完成時間遠超一般 quick async 預期。
+  - 若要達到「一次初始化，後續連續查 5 次」的體驗，接下來要處理的是：
+    - 初始化本身耗時是否可接受
+    - 或是否需要把初始化與後續查詢拆成更長壽、更明確的工作流，而不是一個短觀察窗內期待完成
+
+- 同 container 對照實驗：
+  - 直接在 deployed `fsharp-mcp-devkit` container 內，對同一份腳本做與 remote session 相同的 rewrite：
+    - `#I` 由 `/workspace/home/...` 改成 `/gemini4/...`
+    - `SHARFTRADE_PCSL_ROOT` 設為 `/gemini4/vhdx/cFar_pcsl2/cFar2`
+    - 僅執行前 76 行
+  - 直接 `dotnet fsi /tmp/cfar_remote_compare.fsx` 的完成時間為：
+    - `5m29.289s`
+  - 而同一份 rewritten payload 經 `fsharp-devkit -> remote host/session -> Akka.FSI.Supervisor` 執行，對應 async job 在兩個多小時後仍保持：
+    - `Running`
+    - `isCompleted = false`
+
+- 追加結論：
+  - 這已經足以排除「只是腳本本身需要很多分鐘」的單一解釋。
+  - 在同一個 deployed container 內，直接 `dotnet fsi` 可以在約 5 分半完成；
+    但 remote session 路徑沒有在合理時間內收斂。
+  - 因此目前可以明確下判斷：
+    - `fsharp-devkit` remote execution path 確實存在效能或收斂問題
+    - 問題不在 async registry 缺少 completed write-back
+    - 問題更可能位於：
+      - `Akka.FSI.Supervisor` 的 `FsiSession.Handle/EvalInteraction` 路徑
+      - 或其周邊遠端 host/session 執行模型
+
+## 2026-03-30 04:26:48Z Remote CFar Root Cause Narrowed to Interaction Batching
+
+- 目的：
+  - 判斷長時間 `CFar(...)` 初始化在 remote session 中遲遲不完成，究竟是：
+    - workload 本身很重，
+    - 還是 `Akka.FSI.Supervisor` 的 execute path 在大段 script-like source 上有 barrier。
+
+- 關鍵對照一：
+  - 在 deployed `fsharp-mcp-devkit` container 內，直接 `dotnet fsi /tmp/cfar_remote_compare.fsx`
+  - 完成時間：
+    - `333899 ms`（約 `5m34s`）
+
+- 關鍵對照二：
+  - 同一份 rewritten source，直接用 `FsiSession.Handle.EvalInteraction` 整段送進去
+  - `timeout 420s` 仍未完成
+  - 結果：
+    - `EXIT=124`
+
+- 關鍵對照三：
+  - 同一份 rewritten source，不走單一 interaction
+  - 改成：
+    - 保留既有 flush 規則
+    - 並在 top-level paragraphs 邊界額外 flush
+  - 在容器內以 `FsiSession.Handle` 逐 chunk `EvalInteraction`
+  - 完成時間：
+    - `316735 ms`（約 `5m17s`）
+  - 並且後續 expression 查詢成功：
+    - `EXPR_RESULT=Choice1Of2`
+    - 查詢表達式：`cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c`
+
+- 明確結論：
+  - `EvalInteractionNonThrowing` 在語法上不需要 `;;`；官方文件明確支持沒有 `;;` 的 top-level code。
+  - 這次問題不是語法需求，而是我們自己的 batching 策略過粗。
+  - 現行 `splitInteractionBatch` 幾乎只靠既有 flush marker 分段，會把大量 script-like top-level code 合成單一巨型 interaction。
+  - 對這個 `CFar(...)` 案例，單一巨型 `EvalInteractionNonThrowing` 會形成明顯 barrier。
+  - 問題不是 async registry、不是 `get_async_status`、也不是「沒有接回 fsi evaluate 結果」。
+  - 問題點就是：
+    - `Akka.FSI.Supervisor/FsiWorker.splitInteractionBatch`
+    - 對大型 `.fsx` 風格 source 的分塊策略過粗。
+
+- 已完成修正（source）：
+  - `splitInteractionBatch` 新規則：
+    - 保留原本的 flush 行為
+    - 若遇到空白行，且下一個非空行縮排回到 top-level（indent = 0），則 flush
+  - 這能保留：
+    - type / function 內部的縮排區塊
+  - 同時把：
+    - top-level paragraphs
+    - `let cfar = ...`
+    - 後續 query
+    拆成更接近 `.fsx` 語意的 interaction chunks。
+
+- 現況：
+  - source fix 已做完，基礎測試/編譯通過。
+  - 尚未重新打包部署到 live `fsharp-devkit`，因此 live server 仍未吃到這個 batching 修正。
+
+- 附註：
+  - 額外做「更新後 supervisor 整體路徑」本機驗證時，撞到一個獨立問題：
+    - `MBrace.FsPickler.FsPicklerTextSerializer.UnPickleOfString(...)` method mismatch
+  - 這是另一條依賴問題，不是這次 remote `CFar` 卡住的主因。
+
+- package / build 狀態：
+  - 已升版：
+    - `FAkka.FSI.Supervisor 1.562.101.201-dgx.16`
+    - `FAkka.Proc.Supervisor 1.562.101.201-dgx.20`
+  - `FAkka.FSI.Supervisor dgx.16` 已成功 push 到 NuGet。
+  - `FAkka.Proc.Supervisor dgx.20` 已成功 push 到 NuGet。
+  - `FSharp.MCP.DevKit` 已改成引用：
+    - `FAkka.FSI.Supervisor 1.562.101.201-dgx.16`
+    - `FAkka.Proc.Supervisor 1.562.101.201-dgx.20`
+  - 本地 `FSharp.MCP.DevKit` release build 已通。
+  - 由於 NuGet propagation lag，`FAkka.Proc.Supervisor dgx.20` / `FAkka.FSI.Supervisor dgx.16` 在正式 feed 上短時間內可能還查不到；
+    本地驗證時使用了臨時 `RestoreConfigFile=/tmp/fsharp-devkit-local-fakka.config` 指向新產出的 nupkg。
+  - 正式 Docker build 仍應只使用 repo 正式 `nuget.config` 與正式來源；等 NuGet propagation 完成後再重部署。
+
+## 2026-03-30 08:37:04 Session Cache Dependency Bump
+
+- `FSharp.MCP.DevKit` 的上游依賴已改為：
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.17`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.21`
+- 目的不是功能面新改，而是讓下次部署時吃到 `FAkka.FSI.Supervisor` 本輪對 `ListSessions/GetSessionInfo` 的 session cache 修正。
+
+## 2026-03-30 08:40:13 Release Chain Closure For Session Cache Fix
+
+- `FAkka.FSI.Supervisor dgx.17` 已確認存在於 NuGet；再次 `nuget push --skip-duplicate` 得到 duplicate，表示 package 已在 feed。
+- `FAkka.Proc.Supervisor dgx.21` 已成功 build 並 push 到 NuGet。
+- `FSharp.MCP.DevKit.Server` 指向：
+  - `FAkka.FSI.Supervisor 1.562.101.201-dgx.17`
+  - `FAkka.Proc.Supervisor 1.562.101.201-dgx.21`
+- 正式 feed 當下仍未完全 propagation 到 `Proc dgx.21`，因此本地 compile 驗證採：
+  - 不修改 repo 內 `nuget.config`
+  - 不新增新的 `nuget.config`
+  - 將 `dgx.17/dgx.21` nupkg 展開到 NuGet global-packages cache
+  - 然後以 repo 正式 `nuget.config` 完成 restore/build
+- 驗證結果：
+  - `dotnet restore src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj --configfile nuget.config`
+  - `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release --no-restore -m:1`
+  - 皆已通過

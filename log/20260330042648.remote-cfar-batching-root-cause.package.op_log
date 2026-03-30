@@ -1,0 +1,17 @@
+2026-03-30T04:26:48Z theme=remote-cfar-batching-package-chain
+
+changes:
+- FAkka.FSI.Supervisor -> 1.562.101.201-dgx.16
+- FAkka.Proc.Supervisor -> 1.562.101.201-dgx.20
+- FSharp.MCP.DevKit references updated to dgx.16 / dgx.20
+
+verification:
+- FSI release build: passed
+- FSI NuGet push: passed
+- Proc release build with temporary local source for fresh FSI nupkg: passed
+- Proc NuGet push: passed
+- FSharp.MCP.DevKit release build with temporary RestoreConfigFile: passed
+
+note:
+- temporary local RestoreConfigFile was only used to bridge NuGet propagation lag for local verification
+- formal Docker/redeploy should continue to rely on official nuget sources after propagation catches up

@@ -1,0 +1,20 @@
+背景
+- 先前已完成 `FAkka.FSI.Supervisor` session cache 修正與版本提升，但正式發版鏈尚未完整收尾。
+
+目標
+- 確認 `FAkka.FSI.Supervisor dgx.17` 已存在於 NuGet。
+- 建置並推送 `FAkka.Proc.Supervisor dgx.21`。
+- 驗證 `FSharp.MCP.DevKit` 指向 `dgx.17/dgx.21` 的 restore/build。
+
+執行結果
+- `FAkka.FSI.Supervisor dgx.17`：重新 `nuget push --skip-duplicate`，確認 package 已存在。
+- `FAkka.Proc.Supervisor dgx.21`：以本地 `FAkka.FSI.Supervisor dgx.17` nupkg 作為暫時 restore source 完成 Release build，並成功 push 到 NuGet。
+- `FSharp.MCP.DevKit`：正式 feed 尚未看到 `Proc dgx.21`；為避免修改 repo 正式 source 定義，改將 `dgx.17/dgx.21` nupkg 展開到 NuGet global-packages cache，再以正式 `nuget.config` 完成 restore/build 驗證。
+
+根因判讀
+- 阻塞不是 source code 或 package metadata，而是正式 feed propagation lag。
+- `PackageSourceMapping` 使得一次性本地 source 參數不易與 repo 內正式 `nuget.config` 並存，因此本輪本地驗證採 global-packages cache 注入，不更動 repo 的正式 NuGet 來源策略。
+
+下一步
+- commit + push 本輪 `PulseTrade.fs` 與 `FSharp.MCP.DevKit` 的必要檔案。
+- 等使用者重新部署。

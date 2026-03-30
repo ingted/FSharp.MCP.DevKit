@@ -1,0 +1,21 @@
+2026-03-30T04:26:48Z theme=remote-cfar-batching-root-cause
+
+plan:
+- compare deployed direct dotnet-fsi vs single EvalInteraction vs smarter paragraph batching
+- determine whether remote Running is due to async bookkeeping or FSI interaction batching
+- document only hard conclusions
+
+results:
+- direct dotnet fsi on rewritten script inside deployed container: completed in 333899 ms
+- single giant EvalInteraction on same payload: timeout at 420 s
+- paragraph/top-level batching with EvalInteraction: completed in 316735 ms
+- post-init query on same session after paragraph batching: succeeded
+
+conclusion:
+- root cause is overly coarse splitInteractionBatch behavior, not async registry or missing result synchronization
+- large .fsx-like payloads need top-level paragraph batching before EvalInteraction
+- source fix applied in Akka.FSI.Supervisor/FsiWorker.fs
+
+notes:
+- separate local supervisor validation hit an unrelated FsPicklerTextSerializer method mismatch
+- that dependency issue is not the primary cause of the live CFar Running symptom

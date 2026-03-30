@@ -1,0 +1,26 @@
+Topic
+- Investigate whether the long-running CFar business script indicates an MCP/runtime fault or a genuinely heavy async workload.
+
+Plan
+- Re-check async status for the two known long-running jobs.
+- Re-check host health for the corresponding remote hosts.
+- Inspect procnode CPU usage and recent container logs.
+- Decide whether this is a product fault, a stuck job, or an expected long initialization path.
+
+Findings
+- `a9753a43091d45c98315290be9d8f8dd` remains `Running`, `exists=true`, `isCompleted=false`.
+- `b5b01c5fe6ed468badde6b60443b8961` remains `Running`, `exists=true`, `isCompleted=false`.
+- Both corresponding hosts remain healthy and report `running`.
+- The investigated procnode is consuming sustained high CPU.
+- Recent procnode logs show repeated `[Start]`, `[cfTA]`, and `[Finished]` lines across many CFar/TA combinations.
+- This indicates active progress, not an idle/stuck async record.
+- Heartbeat delay warnings do appear under load, so the job is heavy enough to pressure the actor runtime.
+
+Conclusion
+- Current evidence points to a genuinely long-running CFar initialization at line 76 (`let cfar = CFar(...)`), not a broken MCP tool path.
+- No redeploy is required for this specific finding.
+- The next engineering question is whether this workload should be isolated more strongly from the actor runtime, not whether Gemini/MCP can start it.
+
+Notes
+- The scenario should be documented as minutes-scale async work.
+- Prompt tuning should not be the next move until the runtime behavior is explicitly deemed unacceptable.
