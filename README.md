@@ -9,6 +9,10 @@ The practical focus of this fork is:
 - keep the initialized state alive
 - query that state repeatedly from later MCP calls
 
+> [!IMPORTANT]
+> All host paths, mount paths, host IPs, container names, and service snippets in this README are **deployment examples from one working environment**, not universal defaults.
+> Before using them, replace them with values that match **your own host**, **your own Docker mounts**, and **your own network layout**.
+
 ## Upstream / Author
 
 This project was originally created by **EHotwagner**. The upstream/original repository is:
@@ -73,6 +77,8 @@ In the typical deployment used here:
 - host path `/home/sa/gemini4/...`
 - mounted into `fsharp-devkit` container as `/gemini4/...` (read-only)
 - mounted into `fsharp-devkit` container as `/workspace/...` for writable workspace data
+
+These example paths are not special. They only describe one concrete deployment. In your environment, you must substitute your own host paths and container mount points.
 
 Practical rule:
 
@@ -163,6 +169,7 @@ Notes:
 - `/gemini4` is the read-only mount exposing your checked-out source/data tree
 - `/workspace` is the writable mount for runtime workspace usage
 - the remote `net10` procnode host arguments usually reference `/app/Akka.Proc.Supervisor...` inside the container
+- all paths, image tags, and hostnames in the example must be adapted to your environment
 
 ## Example: Create a Remote net10 Host
 
@@ -173,6 +180,8 @@ exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /ap
 ```
 
 `probeMessage` and `probeIntervalMs` are optional. Leave them empty until basic host/session flow is confirmed.
+
+Again, replace `<HOST_IP>`, `<HOST_ID>`, mount paths, and any example container-local paths with values valid in your own deployment.
 
 ## notifications/initialized
 

@@ -5,6 +5,8 @@
 > 目標：在 deployed `fsharp-devkit` MCP server 上，建立一個 **remote / out-of-process** FSI host 與 session，執行指定 `.fsx` 的前 76 行，然後在同一個 session 取值：
 >
 > `cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c`
+>
+> 注意：本文中的 host 路徑、container 路徑、IP、mount point 都是某一個可工作的部署範例，不是通用固定值。實際使用時，請替換成你自己的環境值。
 
 ---
 
@@ -40,6 +42,8 @@
    - `-v /home/sa/gemini4/devkit_workspace:/workspace`
 
 remote host / remote FSI session 是在 `fsharp-devkit` container 內執行，不是在 agent container 內執行。
+
+上面的 `/home/sa/gemini4`、`/gemini4`、`/workspace` 都只是範例。你必須根據自己的 host 掛載方式替換成對應路徑。
 
 更精確地說：
 
