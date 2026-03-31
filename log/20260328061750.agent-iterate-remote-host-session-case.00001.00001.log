@@ -29,3 +29,7 @@
 [2026-03-28T00:00:00Z] progress=authored doc/E2EScenarioTest.md with path-rewrite rules, async-first guidance, and pure HTTP fallback sequence
 [2026-03-28T00:00:00Z] progress=starting single-shot gemini validation against doc/E2EScenarioTest.md; will stop immediately on first failure
 [2026-03-28T00:00:00Z] result=single-shot gemini validation aborted by upstream model capacity exhaustion (HTTP 429 MODEL_CAPACITY_EXHAUSTED for gemini-3.1-pro-preview); no second attempt performed by design
+[2026-03-28T00:00:00Z] plan=retry single-shot gemini validation once with gemini-3.1-pro-preview; if same failure, retry once with gemini-2.5-pro; keep md and prompt unchanged for attribution
+[2026-03-28T00:00:00Z] topic=answer resources/read question and harden E2EScenarioTest.md with concrete python-based HTTP fallback after gemini 2.5 shell quoting failure
+[2026-03-28T00:00:00Z] progress=clarifying exact fsharp-devkit container mount semantics: /gemini4 maps to host /home/sa/gemini4 as read-only; /workspace maps to host /home/sa/gemini4/devkit_workspace as read-write
+[2026-03-28T00:00:00Z] result=gemini-2.5-pro single-shot validation reached host/session creation and async submission, then failed while polling fsi/async/{asyncId}; server kept returning exists=false until timeout

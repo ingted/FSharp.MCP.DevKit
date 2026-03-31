@@ -1,0 +1,6 @@
+Topic: create_fsi_session registry convergence
+Plan:
+- patch SessionProvisioningService to poll backend state after bootstrap
+- add tests for delayed ready and permanent missing
+- rerun targeted tests
+- continue Gemini loop only if green

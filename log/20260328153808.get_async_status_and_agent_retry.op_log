@@ -1,0 +1,12 @@
+[op] start task: add get_async_status tool, follow SOP, then reproduce agent scenario without deployment
+[op] inspect complete: adding SA/SD, get_async_status tool, parity tests, and client smoke via tool polling
+[op] dev complete: running targeted tests for get_async_status tool and client smoke path
+[op] targeted tests exposed three issues: missing default route bootstrap in new routed async test, unstable add_search_path test path, and existing case-sensitive resultQuery assertion; patching tests now
+[op] rerunning targeted tests after test stabilization patches
+[op] rerunning targeted tests after relaxing routed state assertion
+[op] broad smoke surfaced unrelated existing fsharp-result-query failure; narrowing to async-status-relevant tests only
+[op] tests green for get_async_status-related scope; starting live HTTP E2E reproduction loop against deployed server (max 20 attempts)
+[op] live attempt #1 failed before initialize: HTTP 406 from /mcp using plain application/json; investigating required Accept/content negotiation headers
+[op] attempt-1: reproduced HTTP 406 due missing Accept header in fallback example
+[op] attempt-2: reproduced missing session id due case-sensitive header lookup in fallback example
+[op] attempt-3: did not reproduce Gemini exists=false; corrected HTTP flow yielded exists=true with long-running status=Running throughout polling window

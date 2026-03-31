@@ -1,0 +1,32 @@
+# Log: WBS Phase
+
+## Task Breakdown (from SD groups)
+
+### Milestone 1: ISSUE-002 + 003 (Session Faulted + Error Enrichment)
+- [ ] ExecutionRouter.fs: Remove SessionFaulted override
+- [ ] McpExecutionTools.fs: Add formatRecordError, change 6 error paths
+- [ ] dotnet build
+
+### Milestone 2: ISSUE-001 + 006 (Stale Messages)
+- [ ] Net10HostBackend.fs: Fix stale error messages (line 98, 100), improve requireHost
+- [ ] dotnet build
+
+### Milestone 3: ISSUE-004 + 008 (invalidOp + Enum Docs)
+- [ ] ExecutionRouter.fs: Improve requireHost message
+- [ ] McpControlPlaneTools.fs: Improve parseHostKind messages
+- [ ] McpResultTools.fs: Improve parseKind, parseLanguage, ListFsiResults messages
+- [ ] dotnet build
+
+### Milestone 4: ISSUE-005 + 007 (Console.WriteLine + failwith)
+- [ ] McpFsiTools.fs: Remove 16 Console.WriteLine
+- [ ] McpFsiTools.fs: Replace failwith with return error string
+- [ ] dotnet build
+
+### Milestone 5: ISSUE-009 (Max-Retries)
+- [ ] ProvisioningServices.fs: Add remainingAttempts parameter
+- [ ] dotnet build
+
+### Milestone 6: Final Validation
+- [ ] Full dotnet build (0 errors)
+- [ ] MCP FSI host functional test
+- [ ] DevLog

@@ -1,0 +1,32 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+{"type":"init","timestamp":"2026-03-29T23:58:46.573Z","session_id":"9ea98e7c-fa85-42b7-af40-257971adfa18","model":"gemini-3.1-pro-preview"}
+{"type":"message","timestamp":"2026-03-29T23:58:46.573Z","role":"user","content":"Use only read_file and fsharp-devkit MCP tools. Do not delegate. Do not use generalist.\n\nUse these exact ids:\n- agentId: gemini-e2e-agent-235841-a10\n- hostId: gemini-e2e-host-235841-a10\n- sessionId: gemini-e2e-session-235841-a10\n\nDo exactly this:\n1. register the agent\n2. create the remote net10 host\n3. poll get_fsi_host_health for that host until it is available/running, up to 20 polls\n4. create the session\n5. stop and output only the agent id, host id, session id, and final host health summary\n\nIf any tool errors, stop immediately and output only the exact tool error."}
+{"type":"tool_use","timestamp":"2026-03-29T23:58:58.782Z","tool_name":"mcp_fsharp-devkit_register_fsi_agent","tool_id":"mcp_fsharp-devkit_register_fsi_agent_1774828738782_0","parameters":{"agentId":"gemini-e2e-agent-235841-a10"}}
+{"type":"tool_use","timestamp":"2026-03-29T23:58:58.849Z","tool_name":"read_file","tool_id":"read_file_1774828738849_1","parameters":{"file_path":"/workspace/home/mcp/FSharp.MCP.DevKit/doc/E2EScenarioTest_gemini.md"}}
+{"type":"tool_result","timestamp":"2026-03-29T23:58:59.017Z","tool_id":"mcp_fsharp-devkit_register_fsi_agent_1774828738782_0","status":"success","output":"{\"agentId\":\"gemini-e2e-agent-235841-a10\",\"displayName\":null,\"createdAt\":\"2026-03-29T23:58:59.0091947Z\",\"lastSeenAt\":\"2026-03-29T23:58:59.0091947Z\",\"defaultHostId\":null,\"metadata\":{}}"}
+{"type":"tool_result","timestamp":"2026-03-29T23:58:59.017Z","tool_id":"read_file_1774828738849_1","status":"success","output":""}
+{"type":"tool_use","timestamp":"2026-03-29T23:59:08.774Z","tool_name":"mcp_fsharp-devkit_create_fsi_host","tool_id":"mcp_fsharp-devkit_create_fsi_host_1774828748774_0","parameters":{"executablePath":"dotnet","arguments":"exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --systemname fsi-proc --host 10.28.112.140 --port 0 --supervisor akka.tcp://proc-system@10.28.112.140:8110/user/proc-supervisor --procid gemini-e2e-host-235841-a10","agentId":"gemini-e2e-agent-235841-a10","hostKind":"net10","hostId":"gemini-e2e-host-235841-a10"}}
+{"type":"tool_result","timestamp":"2026-03-29T23:59:09.435Z","tool_id":"mcp_fsharp-devkit_create_fsi_host_1774828748774_0","status":"success","output":"{\"hostId\":\"gemini-e2e-host-235841-a10\",\"agentId\":\"gemini-e2e-agent-235841-a10\",\"hostKind\":{\"Case\":\"Net10Host\"},\"backendKind\":{\"Case\":\"Net10Remote\"},\"status\":{\"Case\":\"Creating\"},\"address\":\"akka.tcp://fsi-proc@10.28.112.140:33045/user/fsi/supervisor\",\"procId\":25288,\"createdAt\":\"2026-03-29T23:59:08.9193155Z\",\"lastHealthCheckAt\":\"2026-03-29T23:59:09.428617Z\",\"lastError\":null}"}
+{"type":"tool_use","timestamp":"2026-03-29T23:59:15.719Z","tool_name":"mcp_fsharp-devkit_get_fsi_host_health","tool_id":"mcp_fsharp-devkit_get_fsi_host_health_1774828755719_0","parameters":{"hostId":"gemini-e2e-host-235841-a10"}}
+{"type":"tool_result","timestamp":"2026-03-29T23:59:15.882Z","tool_id":"mcp_fsharp-devkit_get_fsi_host_health_1774828755719_0","status":"success","output":"{\"backendKind\":{\"Case\":\"Net10Remote\"},\"isAvailable\":true,\"message\":\"running\",\"hostId\":\"gemini-e2e-host-235841-a10\",\"checkedAt\":\"2026-03-29T23:59:15.8640455Z\"}"}
+{"type":"tool_use","timestamp":"2026-03-29T23:59:21.815Z","tool_name":"mcp_fsharp-devkit_create_fsi_session","tool_id":"mcp_fsharp-devkit_create_fsi_session_1774828761815_0","parameters":{"hostId":"gemini-e2e-host-235841-a10","sessionId":"gemini-e2e-session-235841-a10","agentId":"gemini-e2e-agent-235841-a10"}}
+{"type":"tool_result","timestamp":"2026-03-29T23:59:52.045Z","tool_id":"mcp_fsharp-devkit_create_fsi_session_1774828761815_0","status":"error","output":"Error: MCP tool 'create_fsi_session' reported an error.","error":{"type":"mcp_tool_error","message":"MCP tool 'create_fsi_session' reported tool error for function call: {\"name\":\"create_fsi_session\",\"args\":{\"hostId\":\"gemini-e2e-host-235841-a10\",\"sessionId\":\"gemini-e2e-session-235841-a10\",\"agentId\":\"gemini-e2e-agent-235841-a10\"}} with response: [{\"functionResponse\":{\"name\":\"create_fsi_session\",\"response\":{\"content\":[{\"type\":\"text\",\"text\":\"An error occurred invoking 'create_fsi_session'.\"}],\"isError\":true}}}]"}}
+Error executing tool mcp_fsharp-devkit_create_fsi_session: Error: MCP tool 'create_fsi_session' reported an error.
+{"type":"message","timestamp":"2026-03-30T00:00:00.127Z","role":"assistant","content":"MCP tool 'create_fsi_session' reported tool error for function call: {\"name\":\"create_fsi_session\",\"args\":{\"hostId\":\"gemini","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:00:00.165Z","role":"assistant","content":"-e2e-host-235841-a10\",\"sessionId\":\"gemini-e2e-session-235841-a10\",\"agentId\":\"gemini-e2e-agent-235841-a10\"}} with","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:00:00.254Z","role":"assistant","content":" response: [{\"functionResponse\":{\"name\":\"create_fsi_session\",\"response\":{\"content\":[{\"type\":\"text\",\"text\":\"An error occurred invoking 'create_fsi_session'.\"}],\"isError\":true}}}]","delta":true}
+{"type":"result","timestamp":"2026-03-30T00:00:00.427Z","status":"success","stats":{"total_tokens":157654,"input_tokens":154224,"output_tokens":543,"cached":105962,"input":48262,"duration_ms":73854,"tool_calls":5,"models":{"gemini-3.1-pro-preview":{"total_tokens":157654,"input_tokens":154224,"output_tokens":543,"cached":105962,"input":48262}}}}

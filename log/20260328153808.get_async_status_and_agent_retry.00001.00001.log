@@ -1,0 +1,20 @@
+[background] Add MCP tool get_async_status to avoid resources/read dependency for weaker agents.
+[goal] Follow SA->SD->dev/test/devlog, then reproduce agent scenario without deployment.
+[plan] 1) Inspect current async resource implementation and tool surfaces 2) Write focused SA/SD docs 3) Implement get_async_status tool + tests 4) Build/test locally 5) Reproduce prior scenario via HTTP/tooling against live server 6) If issue reproduces, diagnose server/client root cause; else harden docs/prompt 7) Record each loop result in DevLog/logs (max 20 iterations).
+[attempt-1]
+method=python http json-rpc fallback against deployed /mcp
+result=failed-before-initialize
+symptom=HTTP 406 Not Acceptable
+analysis=E2EScenarioTest HTTP fallback example omitted Accept: application/json, text/event-stream; this is a documentation/prompt issue, not a server async issue.
+
+[attempt-2]
+method=python http json-rpc fallback against deployed /mcp
+result=failed-after-initialize-response
+symptom=missing mcp-session-id in client code
+analysis=server returned header Mcp-Session-Id; example converted headers to a plain dict and read only lower-case mcp-session-id. This is another documentation/example bug.
+
+[attempt-3]
+method=python http json-rpc fallback against deployed /mcp with corrected Accept header and case-insensitive session header lookup
+result=host/session creation succeeded; async job submitted; async polling did NOT reproduce Gemini's exists=false
+observed=every poll returned exists=true,status=Running,isCompleted=false for the same asyncId; after ~60s polling window the job was still running
+analysis=Gemini's previous exists=false is not reproducible by the same pure HTTP route once the HTTP details are corrected. The stronger explanation is client/example misuse rather than server async resource disappearance. The workload may simply require a much longer polling budget.

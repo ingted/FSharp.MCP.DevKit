@@ -1,0 +1,59 @@
+[INIT] 2026-03-29 start gemini single-shot learning loop
+[INIT] goal=teach weak agent to complete E2E scenario via deployed fsharp-devkit
+[INIT] constraints=max_attempts_20 model_prefer=gemini-3.1-pro-preview
+[ATTEMPT] 1 model=gemini-3.1-pro-preview prompt=attempt1 direct-single-shot
+[ATTEMPT_RESULT] 1 exit=0
+[ATTEMPT_ANALYSIS] 1 fail_type=workspace_scope
+[ATTEMPT_ANALYSIS] 1 detail=gemini tried MCP/local read_file on /workspace/home/work/... and was blocked because its workspace only included repo cwd
+[ATTEMPT_ANALYSIS] 1 action=next_attempt_add_include_directories_/workspace/home/work_and_tell_agent_not_to_assume_repo-only_workspace
+[ATTEMPT] 2 model=gemini-3.1-pro-preview prompt=attempt2 include-workspace
+[ATTEMPT_ANALYSIS] 2 fail_type=host_create_plus_tmp_path
+[ATTEMPT_ANALYSIS] 2 detail=create_fsi_host generic tool error and gemini chose /tmp/e2e_scenario_code.fsx which is outside Gemini workspace sandbox
+[ATTEMPT_ANALYSIS] 2 action=doc+prompt must force writable temp under included workspace and fixed create_fsi_host net10 arguments; fallback to HTTP immediately on tool error
+[ATTEMPT] 3 model=gemini-3.1-pro-preview prompt=attempt3 fixed-temp-and-fallback
+[ATTEMPT_RESULT] 3 exit=0
+[ATTEMPT_RESULT] 2 exit=0
+[ATTEMPT] 4 model=gemini-3.1-pro-preview prompt=attempt4 stream-json
+[ATTEMPT_ANALYSIS] 4 fail_type=model_capacity
+[ATTEMPT_ANALYSIS] 4 detail=gemini-3.1-pro-preview returned HTTP 429 MODEL_CAPACITY_EXHAUSTED before task execution
+[ATTEMPT_ANALYSIS] 4 action=switch_to_gemini-2.5-pro_with_same_prompt_shape
+[ATTEMPT] 5 model=gemini-2.5-pro prompt=attempt4-shape stream-json
+[ATTEMPT_ANALYSIS] 5 fail_type=doc_http_fallback_bug
+[ATTEMPT_ANALYSIS] 5 detail=http fallback script assumed execute_f_sharp_code_async_routed returns JSON text, but actual tool returns bare asyncId string; downstream json.loads failed
+[ATTEMPT_ANALYSIS] 5 action=fix E2EScenarioTest.md to parse raw asyncId text and poll via get_async_status first, resource fallback second
+[ATTEMPT] 6 model=gemini-2.5-pro prompt=attempt6 fixed-http-asyncid
+[ATTEMPT_RESULT] 4 exit=124
+[ATTEMPT_RESULT] 5 exit=124
+[ATTEMPT_RESULT] 6 exit=124
+[ATTEMPT] 7 model=gemini-3.1-pro-preview prompt=attempt7 same-task-post-redeploy
+[ATTEMPT_RESULT] 7 exit=124
+[ATTEMPT_ANALYSIS] 7 fail_type=model_behavior_delegation
+[ATTEMPT_ANALYSIS] 7 detail=gemini-3.1-pro-preview entered task, read doc and source, then invoked generalist subagent tool and never completed the scenario
+[ATTEMPT_ANALYSIS] 7 action=next_attempt_use_gemini-2.5-pro_and_explicitly_forbid_generalist_or_delegation
+[ATTEMPT] 8 model=gemini-2.5-pro prompt=attempt8 no-delegation direct-http-or-mcp
+[ATTEMPT_ANALYSIS] 8 fail_type=client_local_tool_surface
+[ATTEMPT_ANALYSIS] 8 detail=gemini-2.5-pro followed the doc, rewrote code, then failed because its environment has no write_file tool; available local tools looked limited to read_file/cli_help/generalist
+[ATTEMPT_ANALYSIS] 8 action=stop_loop_and_discuss_whether_E2EScenarioTest_should_have_a_no-local-write/no-shell_variant_for_gemini_cli
+[ATTEMPT_RESULT] 8 exit=0
+[STEP] draft doc/E2EScenarioTest_gemini.md based on gemini-cli tool-surface limits
+[THINK] gemini cli currently exposes read_file + mcp server but not reliable local write_file/shell; doc must avoid those assumptions
+[ATTEMPT] 9 model=gemini-3.1-pro-preview prompt=attempt9 gemini-doc no-delegation no-local-write
+[ATTEMPT_ANALYSIS] 9 fail_type=model_stall_after_read
+[ATTEMPT_ANALYSIS] 9 detail=gemini-3.1-pro-preview read the gemini-specific doc and script lines, did not delegate, but then stalled without issuing MCP tool calls
+[ATTEMPT_ANALYSIS] 9 action=use_gemini-2.5-pro_with_more_stepwise_prompt_that_forces_immediate_first_tool_call
+[ATTEMPT] 10 model=gemini-2.5-pro prompt=attempt10 stepwise first-tool-call
+[ATTEMPT_RESULT] 9 exit=0
+[ATTEMPT_ANALYSIS] 10 fail_type=client_mcp_routing_via_generalist
+[ATTEMPT_ANALYSIS] 10 detail=gemini-2.5-pro understood the sequence, but still tried to route register_fsi_agent via generalist instead of direct MCP tool use; local executor blocked recursion
+[ATTEMPT_ANALYSIS] 10 action=run_minimal_probe_for_single_direct_mcp_tool_call
+[ATTEMPT] 11 model=gemini-2.5-pro prompt=attempt11 minimal-direct-register
+[ATTEMPT_RESULT] 10 exit=0
+[ATTEMPT_ANALYSIS] 11 fail_type=client_mcp_tools_not_registered
+[ATTEMPT_ANALYSIS] 11 detail=gemini-2.5-pro eventually attempted direct tool name fsharp_devkit.register_fsi_agent, but the local tool registry rejected it as not registered; only local file/search tools were visible
+[ATTEMPT_ANALYSIS] 11 action=stop_prompt_loop_and_discuss_gemini_cli_mcp_registration_or_invocation_mode
+[ATTEMPT_RESULT] 11 exit=124
+[ATTEMPT_ANALYSIS] 11 followup=gemini_official_docs_show_at-server_prompting_not_direct_tool_name_calls
+[ATTEMPT] 12 model=gemini-2.5-pro prompt=attempt12 minimal-at-server-register
+[ATTEMPT_RESULT] 12 exit=0
+[STEP] build-pack-push sequence: PCSL -> FSI -> Proc -> FSharp.MCP
+[NOTE] local feed=/tmp/pulse-nupkgs nuget=/Nuget/apikey.txt skip-duplicate=true

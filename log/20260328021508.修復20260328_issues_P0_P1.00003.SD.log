@@ -1,0 +1,11 @@
+# Log: SD Phase — P0/P1 Code-Level Fix Design
+
+## 動作
+設計每個 P0/P1 issue 的具體 code change（function/type 層級）。
+
+## 輸入
+- doc4dev/20260328_SA_P0P1.md
+- Source files (all read)
+
+## 輸出
+- doc4dev/20260328_SD_P0P1.md

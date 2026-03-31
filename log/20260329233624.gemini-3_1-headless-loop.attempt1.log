@@ -1,0 +1,34 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+I am reading the specified end-to-end scenario documentation while simultaneously registering the FSI agent as required by the first rule.
+I will now read lines 1 through 76 of the target F# script, and simultaneously create the fresh remote FSI host on the FSharp MCP DevKit server.
+我現在建立一個全新的 FSI session，為稍後的非同步腳本執行做準備。
+我現在將經過路徑改寫處理過的 F# 腳本送入 remote session 進行非同步執行。
+我現在輪詢非同步執行的狀態，等待其完成。
+非同步工作仍在執行中，我再次檢查其狀態。
+非同步工作仍在執行中，我再次檢查其狀態。
+非同步工作仍在載入與初始化資料，我再次檢查其狀態。
+工作還在持續執行中，這需要一點時間處理大量資料。我繼續等待。AbortError: The user aborted a request.
+    at abort (/usr/lib/node_modules/@google/gemini-cli/node_modules/node-fetch/lib/index.js:1458:16)
+    at AbortSignal.abortAndFinalize (/usr/lib/node_modules/@google/gemini-cli/node_modules/node-fetch/lib/index.js:1473:4)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:486:10)
+    at abortSignal (node:internal/abort_controller:463:5)
+    at AbortController.abort (node:internal/abort_controller:505:5)
+    at GeminiClient._recoverFromLoop (file:///usr/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/core/client.js:824:28)
+    at GeminiClient.processTurn (file:///usr/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/core/client.js:524:32)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

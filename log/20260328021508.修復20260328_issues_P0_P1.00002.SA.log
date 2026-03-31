@@ -1,0 +1,11 @@
+# Log: SA Phase — P0/P1 Issue Fix
+
+## 動作
+撰寫 SA 分析：每個 P0/P1 issue 的影響範圍、修改檔案、風險評估。
+
+## 輸入
+- doc4dev/20260328_issues.md (17 issues, P0:3 + P1:6)
+- 5 key source files already read
+
+## 輸出
+- doc4dev/20260328_SA_P0P1.md

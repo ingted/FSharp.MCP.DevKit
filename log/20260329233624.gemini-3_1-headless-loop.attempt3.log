@@ -1,0 +1,19 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+I am registering a fresh agent and reading the context document to determine the correct host creation parameters.
+I am now creating the fresh net10 remote host with the necessary deployment arguments from the document.
+Agent ID: `gemini-e2e-agent`
+Host ID: `gemini-e2e-host-1`

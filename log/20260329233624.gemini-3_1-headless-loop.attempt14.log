@@ -1,0 +1,36 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+{"type":"init","timestamp":"2026-03-30T00:14:33.282Z","session_id":"50f10c09-98b5-453b-8fe1-ba1e9de5fa30","model":"gemini-3.1-pro-preview"}
+{"type":"message","timestamp":"2026-03-30T00:14:33.283Z","role":"user","content":"Use only mcp_fsharp-devkit_* tools. Do not delegate. Do not use generalist. Do not read any files.\nYour FIRST tool call must be mcp_fsharp-devkit_get_async_status.\n\nExisting ids:\n- agentId: gemini-e2e-agent-001101-a13\n- hostId: gemini-e2e-host-001101-a13\n- sessionId: gemini-e2e-session-001101-a13\n- asyncId: b5b01c5fe6ed468badde6b60443b8961\n\nRequired behavior:\n1. Call mcp_fsharp-devkit_get_async_status(asyncId).\n2. If isCompleted=false, call mcp_fsharp-devkit_get_async_status(asyncId) up to 5 more times.\n3. If the async job becomes completed and successful, call mcp_fsharp-devkit_evaluate_f_sharp_expression_routed with:\n   expression = cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c\n4. Output only compact JSON.\n5. If the async job never completes within those polls, output only compact JSON with the latest async status.\n6. If any tool errors, stop immediately and output only the exact tool error."}
+{"type":"tool_use","timestamp":"2026-03-30T00:14:39.225Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774829679225_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:14:39.363Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774829679225_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+{"type":"tool_use","timestamp":"2026-03-30T00:14:43.821Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774829683821_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:14:43.958Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774829683821_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+{"type":"tool_use","timestamp":"2026-03-30T00:14:48.438Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774829688438_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:14:48.575Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774829688438_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+{"type":"tool_use","timestamp":"2026-03-30T00:14:52.960Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774829692960_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:14:53.096Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774829692960_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+AbortError: The user aborted a request.
+    at abort (/usr/lib/node_modules/@google/gemini-cli/node_modules/node-fetch/lib/index.js:1458:16)
+    at AbortSignal.abortAndFinalize (/usr/lib/node_modules/@google/gemini-cli/node_modules/node-fetch/lib/index.js:1473:4)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:486:10)
+    at abortSignal (node:internal/abort_controller:463:5)
+    at AbortController.abort (node:internal/abort_controller:505:5)
+    at GeminiClient._recoverFromLoop (file:///usr/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/core/client.js:824:28)
+    at GeminiClient.processTurn (file:///usr/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/core/client.js:524:32)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

@@ -1,0 +1,23 @@
+背景:
+- 使用者已重新部署 `fsharp-devkit`。
+- 目標是驗證 deployed `fsharp-devkit` 是否能在單一 remote host/session 中完成 CFar 初始化與後續分次查詢。
+
+目標:
+- 建立 fresh remote net10 host。
+- 建立 fresh session。
+- 執行 `generate_real_charts.inspect_930k_vs_30k.fsx` 第 1~76 行的 rewritten code。
+- 在同一 session 分次取值：
+  - `cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c`
+- 若上述流程順利，再測 headless `gemini-3.1-pro-preview`。
+
+計畫步驟:
+1. 讀取 AGENTS 與 E2E 文件，確認本輪追溯規則與路徑改寫規則。
+2. 用 deployed HTTP MCP 建 fresh host/session。
+3. 送入 rewritten 1..76 行，優先走 async execute，再輪詢完成。
+4. 在同一 session 做 evaluate。
+5. 若成功，再用 Gemini headless 重跑同案例。
+
+關聯文件:
+- `doc/E2EScenarioTest_gemini.md`
+- `doc/Runbook.md`
+- `doc/DevLog.md`

@@ -1,0 +1,26 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+{"type":"init","timestamp":"2026-03-30T00:16:29.188Z","session_id":"6f631b18-f7b3-4afb-8d07-3367ccfd8bc7","model":"gemini-3.1-pro-preview"}
+{"type":"message","timestamp":"2026-03-30T00:16:29.188Z","role":"user","content":"Use only mcp_fsharp-devkit_* tools. Do not delegate. Do not use generalist. Do not read any files.\nYour FIRST and ONLY required tool call is mcp_fsharp-devkit_get_async_status with asyncId b5b01c5fe6ed468badde6b60443b8961.\nIf that single status says isCompleted=true and successful, then call mcp_fsharp-devkit_evaluate_f_sharp_expression_routed with:\ncfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c\nOtherwise stop immediately and output only compact JSON with the latest async status.\nNo repeated polling in this turn."}
+{"type":"message","timestamp":"2026-03-30T00:16:34.106Z","role":"assistant","content":"I will check the status","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:16:34.159Z","role":"assistant","content":" of the async execution.","delta":true}
+{"type":"tool_use","timestamp":"2026-03-30T00:16:34.236Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774829794236_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:16:34.387Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774829794236_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+{"type":"message","timestamp":"2026-03-30T00:16:38.969Z","role":"assistant","content":"```json\n{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:16:39.012Z","role":"assistant","content":"415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:16:39.128Z","role":"assistant","content":"\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:16:39.228Z","role":"assistant","content":"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}\n```","delta":true}
+{"type":"result","timestamp":"2026-03-30T00:16:39.373Z","status":"success","stats":{"total_tokens":51280,"input_tokens":50676,"output_tokens":289,"cached":43687,"input":6989,"duration_ms":10186,"tool_calls":1,"models":{"gemini-3.1-pro-preview":{"total_tokens":51280,"input_tokens":50676,"output_tokens":289,"cached":43687,"input":6989}}}}

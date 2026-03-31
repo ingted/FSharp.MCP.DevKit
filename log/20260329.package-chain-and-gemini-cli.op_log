@@ -1,0 +1,35 @@
+[2026-03-29T00:00:00Z] topic=package-chain-and-gemini-cli
+thought=push PCSL package, rebuild FSharp.MCP.DevKit against local/nuget chain, then investigate Gemini CLI headless MCP exposure.
+plan=1) nuget push PCSL with skip-duplicate 2) restore/build/test FSharp.MCP.DevKit via local feed 3) inspect gemini version 4) browse official docs/issues
+[2026-03-29T00:00:00Z] step=build-summary done
+pcsl_nupkg=already_exists_on_nuget
+restore_server=ok
+build_server=ok
+tests=current_failures=3 (InProcBackend batch, Smoke old tools, RealNet10HostIsolation timeout)
+[2026-03-29T00:00:00Z] step=gemini-fqn-probe start
+model=gemini-2.5-pro
+cmd=use exact FQN mcp_fsharp-devkit_register_fsi_agent with allowed-mcp-server-names
+[2026-03-29T00:00:00Z] step=gemini-local-registry-inspect done
+gemini_version=0.35.3
+settings_path=~/.gemini/settings.json
+mcp_server=fsharp-devkit connected=true
+total_tools=71
+total_mcp_tools=57
+has_mcp_fsharp-devkit_register_fsi_agent=true
+has_mcp_fsharp-devkit_execute_f_sharp_code_async_routed=true
+has_mcp_fsharp-devkit_get_async_status=true
+conclusion=headless Config.initialize loads MCP tools correctly; tool registry absence is not the root cause
+[2026-03-29T00:00:00Z] step=gemini-headless-minimal-call done
+model=gemini-2.5-flash
+prompt=call exactly mcp_fsharp-devkit_register_fsi_agent and nothing else
+observed=Gemini no longer reported tool-not-found; it attempted MCP tool execution and drifted to mcp_fsharp-devkit_ensure_fsi_route before timeout
+exit_code=124
+conclusion=tool exposure is working; remaining issue is model tool selection/headless execution stability, not MCP registration
+[2026-03-29T00:00:00Z] step=package-version-bump done
+csharp_sdk_main=498de08
+pcsl_ifilesystem_version=10.0.201.1 pushed=true
+fakka_fsi_supervisor_version=1.562.101.201-dgx.15 pushed=true
+fakka_proc_supervisor_version=1.562.101.201-dgx.19 pushed=true
+fsharp_mcp_devkit_refs_updated=true
+fsharp_mcp_devkit_release_build=ok
+notes=remaining warnings include Suave/FSharp.Core NU1608, NuGet.* NU1701, and FS3511 in McpFsiTools

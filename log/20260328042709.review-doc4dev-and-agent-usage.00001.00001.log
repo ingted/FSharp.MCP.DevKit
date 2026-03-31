@@ -1,0 +1,38 @@
+[20260328042709] 主題: 檢視 20260328 issue/SA/SD、Runbook 與 00044+ agent 使用紀錄，收斂 fsharp-devkit 的真實缺陷與 agent 指引缺口。
+[想法] 先比對 doc4dev 議題、現行 Runbook、WBS 優化項與真實使用失敗案例；若問題在產品層就修 code+測試+部署驗證，若核心沒壞則補 Runbook 讓 agent 依正確順序操作。
+[執行計畫] 1. 閱讀 doc4dev/20260328_* 與 Runbook/WBS。 2. 閱讀 notes/00044+ 真實互動紀錄。 3. 重現指定 remote host/session + script line 1~76 + expression 取值流程。 4. 判斷是 server 缺陷還是 agent 說明不足。 5. 若需修 code，補 unit/regression/live MCP 驗證。 6. 更新 Runbook/DevLog/WBS。
+[2026-03-28T04:40:00Z] topic=review real remote workflow
+[plan] 1) reproduce target remote host/session workflow 2) isolate product vs guidance issue 3) patch code/runbook if needed 4) record devlog/log/op_log
+[2026-03-28T04:47:00Z] 更新 doc4dev/20260328_issues.md：逐條補上已解/部分解/未解 NOTE，並新增 remote volume path mismatch issue。
+[2026-03-28T04:52:00Z] 調整 issue 修復策略：不再用「可視為已解」這類模糊分類；先按 P0/P1 收斂 faulted session / stale generic error / invalidOp / async enqueue failure 等實質問題。
+[2026-03-28T05:00:00Z] P0/P1修正：direct dispatch get/reset/restart、faulted session 前置攔截、akka config fallback、proc supervisor timeout env、graceful shutdown、search_in_file 結果摘要。
+[2026-03-28T05:01:00Z] 驗證：McpExecutionToolsTests / McpSurfaceTests / FsiMcpServiceTests / SmokeRegressionTests (net10.0) 通過。
+[2026-03-28T05:05:00Z] 下一步: 更新 Runbook，聚焦 agent 真實踩坑：volume path 對應、remote #I/#r、fresh host/session 流程、指定案例操作指引。
+
+[2026-03-28T00:00:00Z] Topic: Remote net10 host execute succeeds but follow-up evaluate loses bindings in same session.
+Thoughts:
+- The live MCP path can create host/session and execute the script fragment successfully once mount paths are corrected.
+- Subsequent routed evaluate fails with 'scale/cfar is not defined', so the remaining product bug is likely in the remote evaluate dispatch path, not in container mounts.
+- Focus only on Net10HostBackend/FsiSupervisorClient/FAkka.FSI.Supervisor expression handling until root cause and fix are confirmed.
+Plan:
+1. Inspect remote evaluate contracts and backend mapping.
+2. Reproduce locally against supervisor/backend path if needed.
+3. Patch the incorrect evaluate dispatch or supervisor handling.
+4. Add targeted unit/regression coverage.
+5. Re-run live MCP scenario and then update Runbook/DevLog.
+[2026-03-28T06:00:00Z] Topic: Fix multi-interaction execution truncation in in-proc and remote FSI paths, then validate exact live MCP workflow.
+Thoughts:
+- The real failure was not mount paths alone: ExecuteCode only ran the first interaction before ';;', so later bindings never existed.
+- Fix must land in both FSharp.MCP.DevKit.Core FSIService and FAkka.FSI.Supervisor worker path.
+- After code/test validation, rerun the exact host/session MCP workflow against live deployment.
+Plan:
+1. Validate/finish multi-interaction code changes locally.
+2. Restore/test FSharp.MCP.DevKit against local dgx.10 package if nuget propagation lags.
+3. Update Runbook/DevLog/logs with the exact failure mode and corrected usage.
+4. Deploy if runtime binaries changed, then rerun live MCP workflow end-to-end.
+[2026-03-28T06:08:00Z] Topic: resolve live remote-host Argu assembly conflict.
+[2026-03-28T06:08:00Z] Thoughts: prior live repro proved multi-interaction batching is fixed; remaining blocker is procnode preloading incompatible Argu into default load context.
+[2026-03-28T06:08:00Z] Plan: 1) finish local targeted validation with local package feeds; 2) if green, rebuild host image and restart service-managed container; 3) rerun exact MCP workflow against live deployment; 4) record outcome in DevLog/doc4dev.
+
+[2026-03-28T06:04:16Z] Topic: PCSL/IFileSystem upgrade chain for live fsharp-devkit remote host execution.
+Thoughts: Current live blocker is assembly mismatch from Akka.FSI.Supervisor deep dependency on PersistedConcurrentSortedList(+IFileSystem). Plan: 1) bump PersistedConcurrentSortedList.IFileSystem to 10.0.201 and align references, 2) rebuild/publish packages for Akka.FSI.Supervisor and Akka.Proc.Supervisor, 3) update FSharp.MCP.DevKit refs, 4) rebuild/redeploy container and rerun live MCP scenario, 5) write DevLog/README updates if behavior changes.

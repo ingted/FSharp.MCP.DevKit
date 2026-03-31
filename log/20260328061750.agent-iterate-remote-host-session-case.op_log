@@ -28,3 +28,7 @@
 [2026-03-28T00:00:00Z] op=write doc/E2EScenarioTest.md and preserve original fsx by transforming only transmitted snippet content
 [2026-03-28T00:00:00Z] op=run gemini -m gemini-3.1-pro-preview once with fail-fast prompt grounded on doc/E2EScenarioTest.md
 [2026-03-28T00:00:00Z] conclusion=gemini run stopped after first failure; root cause is upstream model capacity, not E2EScenarioTest.md nor prompt quality
+[2026-03-28T00:00:00Z] op=gemini retry plan: 3.1-pro-preview once, then 2.5-pro once if needed, no prompt/md edits between attempts
+[2026-03-28T00:00:00Z] op=clarify server-vs-client resource-read gap; revise E2EScenarioTest.md to avoid curl/heredoc quoting traps for multi-line F# payloads
+[2026-03-28T00:00:00Z] op=refine container path mapping wording in E2EScenarioTest.md to distinguish ro source tree mount from rw workspace mount
+[2026-03-28T00:00:00Z] conclusion=E2EScenarioTest.md was actionable enough for gemini-2.5-pro to perform path rewrite + HTTP fallback + host/session creation; next failure surface is async resource visibility/retention rather than prompt comprehension

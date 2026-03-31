@@ -1,0 +1,12 @@
+[Start]
+2026-03-30T08:37:04Z 開始整理 FSI Supervisor session cache 修正的發版鏈：FSI -> Proc -> FSharp.MCP.DevKit。
+
+[Expected]
+- 發出新的 FAKka.FSI.Supervisor 與 FAKka.Proc.Supervisor nupkg。
+- FSharp.MCP.DevKit 改引用新版本並 release build 成功。
+- 兩邊 repo 各自 commit + push，只收本輪相關檔案。
+
+[Progress]
+- `FAkka.FSI.Supervisor` 升至 `1.562.101.201-dgx.17`。
+- `FAkka.Proc.Supervisor` 升至 `1.562.101.201-dgx.21`，並更新 release 依賴到 `FAkka.FSI.Supervisor dgx.17`。
+- `FSharp.MCP.DevKit` 已改引用上述兩版。

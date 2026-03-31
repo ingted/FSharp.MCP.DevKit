@@ -1,28 +1,31 @@
-# FSharp.MCP.DevKit Documentation 📚
+# FSharp.MCP.DevKit Documentation
 
-Welcome to the comprehensive documentation for the **FSharp.MCP.DevKit** project. This section provides detailed technical documentation, architecture guides, and implementation references.
+## Table of Contents
 
-> 💡 **For a quick overview and getting started guide, see the [main project README](../README.md)**
+### System Documentation
+- **[Architecture](./Architecture.md)** - System design, components, and communication mechanisms
+- **[Features](./Features.md)** - Feature documentation with implementation details
+- **[Code Editing](./FSharpCodeEditing.md)** - Code manipulation tools and safety features
+- **[Known Issues](./ISSUES.md)** - Current bugs, limitations, and tracking
+- **[.NET Tool Usage](./DOTNET_TOOL_USAGE.md)** - Installation and usage as .NET tool
 
-## 📋 Table of Contents
+### Project-Specific Documentation
+- **[All Projects](./projects/README.md)** - Overview of all projects in the solution
+  - [Core](./projects/Core/) - Foundation layer and FSI session management
+  - [Analysis](./projects/Analysis/) - Code analysis and symbol detection
+  - [Communication](./projects/Communication/) - Named pipe IPC infrastructure
+  - [CodeEditing](./projects/CodeEditing/) - Safe code manipulation and formatting
+  - [Server](./projects/Server/) - MCP server implementation and tools
+  - [Documentation](./projects/Documentation/) - API documentation generation
 
-### 🏗️ System Documentation
-- **[🏗️ Architecture](./Architecture.md)** - Detailed system design, components, and communication mechanisms
-- **[✨ Features](./Features.md)** - Comprehensive feature documentation with implementation details
-- **[📝 Design & Analysis](./DESIGN_AND_ANALYSIS.md)** - Design decisions and architectural analysis
+### Agent Development Strategies
+- **[Agent-Instructions-Strategies](./Agent-Instructions-Strategies/)** - Development approach guides
+  - [REPL-Driven](./Agent-Instructions-Strategies/REPL-Driven-Default/)
+  - [Script-Driven](./Agent-Instructions-Strategies/Script-Driven-Default/)
+  - [Signature-Driven](./Agent-Instructions-Strategies/Signature-Driven-Default/)
+  - [Multi-Agent Roles](./Agent-Instructions-Strategies/Multi-Agents-Roles/)
 
-### 📂 Project-Specific Documentation  
-- **[📚 All Projects](./projects/README.md)** - Organized documentation for each project in the solution
-  - **[🔧 Core](./projects/Core/)** - Foundation layer and FSI session management ([Roadmap](./projects/Core/ROADMAP.md))
-  - **[🔍 Analysis](./projects/Analysis/)** - Code analysis and symbol detection ([Roadmap](./projects/Analysis/ROADMAP.md))
-  - **[📡 Communication](./projects/Communication/)** - Named pipe IPC infrastructure ([Roadmap](./projects/Communication/ROADMAP.md))
-  - **[✏️ CodeEditing](./projects/CodeEditing/)** - Safe code manipulation and formatting ([Roadmap](./projects/CodeEditing/ROADMAP.md))
-  - **[🌐 Server](./projects/Server/)** - MCP server implementation and tools ([Roadmap](./projects/Server/ROADMAP.md))
-  - **[📚 Documentation](./projects/Documentation/)** - API documentation generation ([Roadmap](./projects/Documentation/ROADMAP.md))
-
-### 📋 Project Management & Development
-- **[🗺️ Roadmap](./ROADMAP.md)** - Development milestones and future plans
-- **[🐛 Known Issues](./ISSUES.md)** - Current bugs, limitations, and tracking
-- **[🤝 Contributing](../CONTRIBUTING.md)** - Guidelines for contributing to the project
-- **[📊 Implementation Summary](./Implementation-Summary.md)** - Detailed implementation status and progress
-- **[🗂️ Plans & Specifications](./plans/)** - Development roadmaps and technical specifications
+### Operational Documentation
+- **[Runbook](../doc/Runbook.md)** - Agent 使用指南（建 host、建 session、執行程式碼）
+- **[SA](../doc/SA.md)** - System Analysis
+- **[SD](../doc/SD.md)** - System Design

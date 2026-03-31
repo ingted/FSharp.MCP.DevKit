@@ -1,4 +1,4 @@
-[summary] single-shot gemini validation terminated on first attempt
+MCP issues detected. Run /mcp list for status.ated on first attempt
 [summary] model=gemini-3.1-pro-preview
 [summary] failure=HTTP 429 MODEL_CAPACITY_EXHAUSTED
 [summary] interpretation=upstream model capacity issue; E2EScenarioTest.md and prompt were not actually exercised

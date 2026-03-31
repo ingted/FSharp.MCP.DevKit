@@ -1,0 +1,21 @@
+主題: 修正 create_fsi_session 在 bootstrap Execute timeout 後未收斂 session registry
+
+想法:
+- live 上 session actor 已存在，proc REST `/sessions` 也看得到 `busy`
+- 但 MCP `create_fsi_session` 仍因 bootstrap `Execute("()")` 的 30 秒 ask timeout 直接失敗
+- 現行 recovery 只有在 `backend.Execute` 正常返回後才會輪詢 `GetSessionState`
+- 因此要把 `AskTimeoutException` 視為可恢復情況，只要輪詢期間 session state 變成非 `SessionMissing` 就直接註冊返回
+
+執行計畫:
+1. 修改 `SessionProvisioningService.CreateSession`
+2. 補一顆 `Execute timeout but session becomes visible` regression test
+3. 本地 build/test
+4. 重建 docker image，手動 `docker run`
+5. 重跑 `1..76 -> evaluate cfar...c` E2E
+
+結論:
+- 待本輪驗證
+
+附註:
+- 這刀不碰 `Akka.FSI.Supervisor` worker 執行邏輯
+- 只修 MCP routing registry 的收斂時機

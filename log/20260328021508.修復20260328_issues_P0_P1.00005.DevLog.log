@@ -1,0 +1,63 @@
+# DevLog: 修復 20260328_issues P0/P1
+
+> 2026-03-28 | Developer: Claude (Opus 4.6)
+> Branch: 20260327_003.claude-mod
+
+---
+
+## Summary
+
+修復 doc4dev/20260328_issues.md 中 9 個 P0/P1 issues。
+Build: 0 Errors, 27 Warnings (same as baseline — all pre-existing).
+
+## Changes by File
+
+### ExecutionRouter.fs (ISSUE-002)
+- **Removed SessionFaulted override**: `RouteAndExecute` 不再在 execution failure 時將 session 強制標為 `SessionFaulted`。改為永遠使用 backend 回報的實際 session 狀態 (`backendSession.Status`)。
+- **Improved host-not-found message** (ISSUE-004): 加入 "Use list_fsi_hosts to see available hosts." 提示。
+
+### McpExecutionTools.fs (ISSUE-003, 006)
+- **新增 `formatRecordError` helper**: 接受 `FsiExecutionRecord`，組合 error + context (RequestId, HostId, SessionId, Backend, ResultId)。
+- **Faulted hint**: 偵測 "could not be completed due to earlier error" 或 "Faulted" 時，附加恢復指引 (reset_fsi_session_routed / create new session)。
+- **6 個 routed tool error paths** 全部改用 `formatRecordError`。
+
+### Net10HostBackend.fs (ISSUE-001, 004)
+- **修正 4 個 stale error messages**: `buildExecRequest` 中 GetState/ResetSession/RestartHost/ResultQuery 的 error message 改為準確描述 dispatch 路徑。
+- **Improved host-not-found message**: 加入 "Use list_fsi_hosts to see available hosts."
+
+### McpResultTools.fs (ISSUE-004, 008)
+- **parseLanguage**: 不再 silently fallback — 對未知值拋出 invalidOp 並列出有效值 (builtIn, fsharpCode)。
+- **parseKind**: invalidOp message 列出所有 7 個有效值。
+- **ListFsiResults**: 改善錯誤訊息為 "Both hostId and sessionId must be provided together, or both must be omitted for an unfiltered query."
+
+### McpControlPlaneTools.fs (ISSUE-004, 008)
+- **parseHostKind**: inproc error 加入 "Use net10 or netfx for out-of-process hosts." 指引。wildcard error 格式化為 "Valid values: netfx, net10."
+
+### McpFsiTools.fs (ISSUE-005, 007)
+- **移除 16 處 Console.WriteLine**: ExecuteFSharpCode, ExecuteFSharpCodeDetailed, EvaluateFSharpExpression, LoadFSharpScript 四個 tool 中的 debug tracing 全部移除。
+- **failwith → return error string** (line 747): async queue enqueue 失敗時不再 throw，改為 return structured error message。
+
+### ProvisioningServices.fs (ISSUE-009)
+- **pollProcSnapshot 加入 remainingAttempts 參數**: 預設 60 次 (15s / 250ms)，作為 deadline 之外的額外保護。
+
+## Test Results
+
+- `dotnet build`: 0 Errors at every milestone (5 milestones)
+- MCP FSI functional test: host creation ✓, session creation ✓, code execution ✓, error recovery ✓
+- Note: Code changes are local; Docker rebuild required for deployment verification.
+
+## Files Modified (7)
+
+1. src/FSharp.MCP.DevKit.Server/ControlPlane/ExecutionRouter.fs
+2. src/FSharp.MCP.DevKit.Server/McpExecutionTools.fs
+3. src/FSharp.MCP.DevKit.Server/Backends/Net10HostBackend.fs
+4. src/FSharp.MCP.DevKit.Server/McpResultTools.fs
+5. src/FSharp.MCP.DevKit.Server/McpControlPlaneTools.fs
+6. src/FSharp.MCP.DevKit.Server/McpFsiTools.fs
+7. src/FSharp.MCP.DevKit.Server/ControlPlane/ProvisioningServices.fs
+
+## Documents Created (3)
+
+1. doc4dev/20260328_SA_P0P1.md — SA analysis
+2. doc4dev/20260328_SD_P0P1.md — SD design
+3. log/20260328021508.修復20260328_issues_P0_P1.*.log — 5 log files (init, SA, SD, WBS, DevLog)

@@ -1,0 +1,33 @@
+[2026-03-28T04:27:09Z] start 檢視 doc4dev 與 00044+ agent 使用紀錄
+[2026-03-28T04:40:00Z] start reproduce exact remote workflow from user prompt
+[2026-03-28T04:47:00Z] done issue-file reconciliation；補狀態註記與 remote path mismatch 新 issue
+[2026-03-28T04:52:00Z] start severity-first issue fixing
+[2026-03-28T05:00:00Z] done P0/P1 fixes landed
+[2026-03-28T05:01:00Z] done targeted regression tests passed
+[2026-03-28T05:05:00Z] start Runbook hardening for real agent usage
+[2026-03-28T00:00:00Z] START remote-evaluate-troubleshooting: focus on execute/evaluate state persistence in net10 remote host path.
+[2026-03-28T06:00:00Z] START multi-interaction-fix: validate code/tests, then rerun live MCP workflow
+[2026-03-28T06:08:00Z] START resolve-live-argu-conflict
+[2026-03-28T06:12:30Z] LOCAL tests passed for multi-interaction + proc Argu fix; rebuilding host image without cache.
+[2026-03-28T06:13:30Z] Host image rebuilt from /home/sa/gemini4; restarting service-managed fsharp-mcp-devkit container.
+[2026-03-28T06:18:30Z] New blocker confirmed: procnode preloads /app/FAkka.Shared.dll 10.0.102.3 while target script references 10.0.103.5. Upgrading proc package dependency and docker local feed now.
+[2026-03-28T06:24:30Z] Rebuilding host image with proc dgx.15 + fsi dgx.11 + shared 10.0.103.5-dgx to resolve preloaded FAkka.Shared conflict.
+[2026-03-28T06:26:30Z] Host image rebuilt successfully with new shared/proc/fsi graph; restarting container and verifying /app deps before live MCP repro.
+[2026-03-28T06:04:16Z] start: upgrading PCSL/IFileSystem dependency chain and preparing package rebuilds
+[2026-03-28T06:06:28Z] progress: patched fsproj versions and docker local feeds for PCSL/IFileSystem chain; starting local pack/build validation
+[2026-03-28T06:07:16Z] progress: narrowed PersistedConcurrentSortedList.IFileSystem to net10.0 and modernized its package push script
+[2026-03-28T06:07:39Z] progress: PersistedConcurrentSortedList.IFileSystem 10.0.201 packed+pushed; packing Akka.FSI.Supervisor against local PCSL feeds
+[2026-03-28T06:07:57Z] progress: Akka.FSI.Supervisor dgx.12 pushed; packing Akka.Proc.Supervisor dgx.16 against local supervisor/shared feeds
+[2026-03-28T06:08:29Z] progress: all three packages pushed; running local supervisor/devkit verification before host rebuild
+[2026-03-28T06:09:01Z] progress: local FSharp.MCP.DevKit build passed with updated PCSL chain; running Akka.FSI.Supervisor.Tests correctly via restore+test
+[2026-03-28T06:09:33Z] progress: local validation passed; rebuilding host image without cache and forcing fsharp-mcp-devkit container restart
+[2026-03-28T06:10:24Z] progress: patched Dockerfile to build -m:1 then publish --no-build; retrying host image rebuild
+[2026-03-28T06:11:08Z] progress: host image rebuild succeeded; checking live container health/logs before rerunning exact MCP scenario
+[2026-03-28T06:11:53Z] progress: exact MCP scenario hit non-JSON initialize response; probing raw transport shape before rerun
+[2026-03-28T06:12:41Z] progress: live MCP scenario still has generic errors at create_fsi_session/routed execute; inspecting deployed server logs for real exception
+[2026-03-28T06:13:39Z] progress: corrected course after partial WorkerHost patch; normalizing it to the same default PCSL root fallback as Api bootstrap
+[2026-03-28T06:14:16Z] progress: bumped Akka.FSI.Supervisor/ProcSupervisor versions for writable-PCSL fallback fix; repacking supervisor
+[2026-03-28T06:14:38Z] progress: fixed Api.fs compile issues in writable-PCSL fallback; repacking supervisor
+[2026-03-28T06:14:49Z] progress: Akka.FSI.Supervisor dgx.13 pushed; repacking Akka.Proc.Supervisor dgx.17
+[2026-03-28T06:15:09Z] progress: packages dgx.13/dgx.17 pushed; rerunning local regression before second host rebuild
+[2026-03-28T06:15:32Z] progress: second host rebuild starting with dgx.13/dgx.17 writable-PCSL fallback packages

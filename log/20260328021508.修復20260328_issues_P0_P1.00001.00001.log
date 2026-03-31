@@ -1,0 +1,42 @@
+# Log: 修復 20260328_issues.md P0/P1 Issues
+
+## 背景
+Code review 發現 17 個 issues（P0:3, P1:6, P2:8）。本輪聚焦 P0 與 P1 共 9 個 issues 的修復。
+
+## 目標
+依照 AGENTS.md SOP 流程（SA → SD → WBS → 開發 → DevLog）修復 P0/P1 issues。
+
+## 計畫步驟 (Planned Steps)
+1. SA：分析每個 P0/P1 issue 的影響範圍、修改檔案、風險
+2. SD：設計具體修復方案（type/function 層級）
+3. WBS：拆分為可執行的 task
+4. 開發：逐個 task 實作
+5. 測試：每個 milestone 用 MCP FSI host 驗證
+6. DevLog：記錄變更
+
+## P0 Issues
+- ISSUE-001: Net10HostBackend.buildExecRequest 錯誤攔截 ResetSession
+- ISSUE-002: Session Faulted 無自動恢復
+- ISSUE-003: 模糊錯誤訊息無上下文
+
+## P1 Issues
+- ISSUE-004: invalidOp 用於業務邏輯失敗
+- ISSUE-005: Console.WriteLine 散落在 service 方法
+- ISSUE-006: 錯誤回傳缺乏執行上下文
+- ISSUE-007: Async queue failwith
+- ISSUE-008: case-sensitive enum 缺文件
+- ISSUE-009: ProvisioningServices polling 無 max-retries
+
+## 環境限制
+- 本機無 dotnet SDK，無法 `dotnet build`
+- 測試需透過 MCP FSI host 驗證
+- Docker build 需在 /workspace/home/mcp/docker/FSharp.MCP.DevKit 執行
+
+## 關聯文件
+- doc4dev/20260328_issues.md
+- doc/SA.md
+- doc/SD.md
+- doc/Runbook.md
+
+## 使用者 prompt 摘要
+依照 20260328_issues.md 進行 SA→SD→WBS→開發→DevLog SOP。每個動作前寫 .log，tee 到 op_log。每個 milestone 執行測試。-dgx.x 系列是正式 DGX Spark package。

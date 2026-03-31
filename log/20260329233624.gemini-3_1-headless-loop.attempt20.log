@@ -1,0 +1,25 @@
+YOLO mode is enabled. All tool calls will be automatically approved.
+Keychain initialization encountered an error: libsecret-1.so.0: cannot open shared object file: No such file or directory
+Using FileKeychain fallback for secure storage.
+Loaded cached credentials.
+YOLO mode is enabled. All tool calls will be automatically approved.
+Registering notification handlers for server 'fsharp-devkit'. Capabilities: {
+  logging: {},
+  resources: { listChanged: true },
+  tools: { listChanged: true }
+}
+Server 'fsharp-devkit' supports tool updates. Listening for changes...
+Server 'fsharp-devkit' supports resource updates. Listening for changes...
+Scheduling MCP context refresh...
+Executing MCP context refresh...
+MCP context refresh complete.
+{"type":"init","timestamp":"2026-03-30T00:24:07.239Z","session_id":"9130c74a-6e6b-4d4f-9f88-c73e742f7909","model":"gemini-3.1-pro-preview"}
+{"type":"message","timestamp":"2026-03-30T00:24:07.239Z","role":"user","content":"Use only mcp_fsharp-devkit_* tools. Do not delegate. Do not use generalist. Do not read any files.\nCall mcp_fsharp-devkit_get_async_status exactly once for asyncId b5b01c5fe6ed468badde6b60443b8961.\nIf isCompleted=true and successful, then call mcp_fsharp-devkit_evaluate_f_sharp_expression_routed with expression cfar.Cfarta.[int scale].[set [Scale scale; USING 7; MACD [decimal 13; decimal 21; decimal 7]], false, CFTAMode.CFTAMin].c\nOutput only one raw compact JSON object."}
+{"type":"tool_use","timestamp":"2026-03-30T00:24:36.593Z","tool_name":"mcp_fsharp-devkit_get_async_status","tool_id":"mcp_fsharp-devkit_get_async_status_1774830276593_0","parameters":{"asyncId":"b5b01c5fe6ed468badde6b60443b8961"}}
+{"type":"tool_result","timestamp":"2026-03-30T00:24:36.742Z","tool_id":"mcp_fsharp-devkit_get_async_status_1774830276593_0","status":"success","output":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b8961\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:10.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":false,\"result\":null}"}
+{"type":"message","timestamp":"2026-03-30T00:24:43.543Z","role":"assistant","content":"{\"asyncId\":\"b5b01c5fe6ed468badde6b60443b896","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:24:43.588Z","role":"assistant","content":"1\",\"requestId\":\"fefb35cdb911415bb08aa9f5892e208d\",\"agentId\":\"gemini-e2e-agent-001101-a13\",\"hostId\":\"gemini-e2","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:24:43.760Z","role":"assistant","content":"e-host-001101-a13\",\"sessionId\":\"gemini-e2e-session-001101-a13\",\"operationKind\":\"ExecuteCode\",\"submittedAt\":\"2026-03-30T00:12:1","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:24:43.789Z","role":"assistant","content":"0.0175556Z\",\"startedAt\":\"2026-03-30T00:12:10.0189336Z\",\"completedAt\":null,\"status\":\"Running\",\"resultId\":null,\"exists\":true,\"isCompleted\":","delta":true}
+{"type":"message","timestamp":"2026-03-30T00:24:43.866Z","role":"assistant","content":"false,\"result\":null}","delta":true}
+{"type":"result","timestamp":"2026-03-30T00:24:43.989Z","status":"success","stats":{"total_tokens":53179,"input_tokens":50618,"output_tokens":274,"cached":41656,"input":8962,"duration_ms":36751,"tool_calls":1,"models":{"gemini-3.1-pro-preview":{"total_tokens":53179,"input_tokens":50618,"output_tokens":274,"cached":41656,"input":8962}}}}

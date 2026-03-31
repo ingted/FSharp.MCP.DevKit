@@ -1,0 +1,3 @@
+[2026-03-30T00:02:29Z] start create_fsi_session registry convergence
+[2026-03-30T00:03:32Z] running ProvisioningServicesTests after session convergence patch
+[2026-03-30T00:04:24Z] ProvisioningServicesTests passed (8/8); starting Release build

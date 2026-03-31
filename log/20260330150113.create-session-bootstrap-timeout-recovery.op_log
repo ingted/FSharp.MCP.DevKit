@@ -1,0 +1,9 @@
+2026-03-30T15:01:13Z start
+- 觀察 live: host running, session visible in proc REST, create_fsi_session timeout
+- 判斷 root cause: bootstrap execute timeout prevents later sessionRegistry upsert
+
+2026-03-30T15:01:13Z plan
+- catch AskTimeoutException from backend.Execute during CreateSession bootstrap
+- continue polling backend session state
+- if visible, upsert + return
+- else preserve timeout failure
