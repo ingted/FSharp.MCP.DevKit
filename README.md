@@ -44,6 +44,25 @@ The main use case is:
 
 This is useful when plain `dotnet fsi some.fsx` would force you to pay the full initialization cost on every query.
 
+## Akka.NET-Based Isolation
+
+This fork does use **Akka.NET** in the remote execution path.
+
+In practice the isolation model is:
+
+- `Akka.Proc.Supervisor` manages remote procnode processes
+- each remote host is provisioned as a separate procnode process
+- inside that procnode, `Akka.FSI.Supervisor` manages the FSI control plane
+- each FSI session is represented and coordinated through actors
+
+This gives useful operational isolation:
+
+- process-level isolation between remote hosts
+- session-level isolation inside a host
+- actor-based control messages for execution, health checks, listing sessions, reset, and evaluation routing
+
+It is not “just using Akka for branding”; the remote host/session model really is built around actor boundaries and message routing.
+
 ## Core MCP Tools
 
 The minimal tool flow is:
