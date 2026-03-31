@@ -1,446 +1,212 @@
-# FSharp.MCP.DevKit 🚀
+# FSharp.MCP.DevKit
 
-[![.NET](https://img.shields.io/badge/.NET-9.0-512BD4?style=flat-square)](https://dotnet.microsoft.com/)
-[![F#](https://img.shields.io/badge/F%23-6.0-378BBA?style=flat-square)](https://fsharp.org/)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-00AA88?style=flat-square)](https://modelcontextprotocol.io/)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+`FSharp.MCP.DevKit` is an MCP server for running **remote out-of-process F# Interactive hosts and sessions**.  
+The practical focus of this fork is:
 
-An experimental prototype of an F# development toolkit delivered via the **Model Context Protocol (MCP)**. It provides F# Interactive (FSI) capabilities, code documentation, safe code manipulation, and analysis tools with language server features. Integration with the FAKE build system is under development.
+- create a remote FSI host
+- create one or more remote sessions on that host
+- run expensive initialization once
+- keep the initialized state alive
+- query that state repeatedly from later MCP calls
 
-## ⚠️ Disclaimer (by EHotwagner)
+## Upstream / Author
 
-The project is on hold for the moment since everything is moving very fast and it makes sense to wait for things to settle down a bit and see what makes sense then. Just this july update https://code.visualstudio.com/updates/v1_103 brought tons of new features that might change the workflow considerably. 
+This project was originally created by **EHotwagner**. The upstream/original repository is:
 
-This project has been developed with significant reliance on AI-driven tools. While it has proven to be surprisingly effective—largely by leveraging robust libraries like **F# Compiler Services** and **Fantomas**—it will contain inaccuracies or incomplete features. Especially regarding Documentation, the agent tends to insert tons of industry buzzword BS whenever you look away for a second.
-This project has been developed with significant reliance on AI-driven tools. While it has proven to be surprisingly effective—largely by leveraging robust libraries like **F# Compiler Services** and **Fantomas**—it will contain inaccuracies or incomplete features. Especially regarding Documentation, the agent tends to insert tons of industry buzzword BS whenever you look away for a second.
+- <https://github.com/ehotw/FSharp.MCP.DevKit>
 
-### Please Note
+The upstream README states that the project is currently **on hold**. This fork keeps the remote host / remote session workflow working because it is still useful for long-running, stateful F# workloads.
 
-### Please Note
+## What This Fork Is For
 
-- **Code Verification**: The entire codebase and its documentation have not been manually verified for correctness or completeness. However, the core features described should be functional (as in I have seen them work at least once).
-- **Agent Stability**: The AI agent's instructions are generally initially effective, but after it deviates, restarting the agent to reset its context is recommended.
-- **DevEnvironment**: This project has been developed in VSCode with GH Copilot, mostly using Claude Sonnet 4 and a bit of Gemini 2.5 Pro for planning and design. <https://austen.info/blog/github-copilot-agent-mcp/>
-- **DevEnvironment**: This project has been developed in VSCode with GH Copilot, mostly using Claude Sonnet 4 and a bit of Gemini 2.5 Pro for planning and design. <https://austen.info/blog/github-copilot-agent-mcp/>
-- **Design**: Documentation is written somewhat with REPL-driven development in mind, allowing for interactive code generation and testing. I am currently tending towards a more script-driven development approach, which allows for structured experimentation and reproducible testing. A new, more rigorous approach, **Signature-Driven Development**, is also being considered.
-  - [REPL-Driven Development](./docs/Agent-Instructions-Strategies/REPL-Driven-Default/Design.md)
-  - [Script-Driven Development](./docs/Agent-Instructions-Strategies/Script-Driven-Default/Design.md)
-  - [Signature-Driven Development](./docs/Agent-Instructions-Strategies/Signature-Driven-Default/Design.md)
+The main use case is:
 
-- REPL works with hosted FSI sessions, which in this context are not easy to configure, a bit fragile with some Input, have no nice output (only MCP-Tools output terminal and agent chat window). Letting the agent start a standard fsi process in an agent observed terminal is of course possible but cumbersome in VSCode since terminal actions need approval. This project should be neutral to the chosen approach in the future. VsCode Insiders has <https://github.com/microsoft/vscode/issues/253103> which changes the ergonomics a lot. Needs consideration.
-- **Get Started**: There are no releases yet. For VSCode use this <https://devblogs.microsoft.com/dotnet/build-a-model-context-protocol-mcp-server-in-csharp/> approach. Add the project to the mcp.json file. Later a dotnet tool might be the best way to distribute this project.
+1. create a remote out-of-process host
+2. create a session on that host
+3. run heavy setup once
+4. keep the session alive
+5. evaluate multiple follow-up expressions against the same initialized session
 
-## ✨ Features
+This is useful when plain `dotnet fsi some.fsx` would force you to pay the full initialization cost on every query.
 
-### 🔧 F# Interactive Integration
+## Core MCP Tools
 
-- **Persistent FSI Session**: Stateful F# Interactive session management
-- **Code Execution**: Execute F# code with comprehensive error handling and validation
-- **Script Loading**: Load and manage F# script files with dependency tracking
-- **Package Management**: Reference .NET assemblies and NuGet packages seamlessly
-- **Expression Evaluation**: Evaluate F# expressions with full type information
+The minimal tool flow is:
 
-### 📚 Documentation Generation & Search
+1. `register_fsi_agent`
+2. `create_fsi_host`
+3. `create_fsi_session`
+4. `execute_f_sharp_code_routed` or `execute_f_sharp_code_async_routed`
+5. `get_async_status` if using async execution
+6. `evaluate_f_sharp_expression_routed`
 
-- **📦 Package Documentation**: Generate comprehensive API docs for NuGet packages
-- **🔍 Smart Search**: Search through generated documentation with context-aware results
-- **📖 API Reference**: Create structured markdown documentation for modules and types
-- **🏗️ Project Documentation**: Bulk documentation generation for entire F# projects
-- **💾 Package Discovery**: Browse and explore available NuGet packages in local cache
-- **⚙️ Configuration Management**: Runtime configuration of documentation settings
+Useful companion tools:
 
-### ✏️ Safe Code Manipulation
+- `get_fsi_host_health`
+- `get_fsi_state_routed`
+- `reset_fsi_session_routed`
+- `restart_fsi_session`
+- `add_search_path_routed`
+- `reference_assembly_routed`
+- `get_lines`
 
-- **🛡️ Safe Code Insertion**: Insert F# code with AST validation and type checking
-- **🎨 Code Formatting**: Deep integration with Fantomas for consistent code formatting
-- **🔍 Structure Analysis**: Analyze F# code structure, dependencies, and syntax
-- **👀 Preview Capabilities**: Preview code changes before applying them
-- **⚡ Atomic Operations**: Atomic file operations with backup/rollback support
+## Recommended Execution Pattern
 
-### 🧠 Advanced Analysis Tools
+For short setup and quick probes:
 
-- **🔍 Symbol Detection**: Advanced symbol detection and resolution
-  - *Powered by*: `SmartSymbolDetectionService` - Uses F# Compiler Services to identify and resolve symbols, functions, types, and modules within F# code
-  - *How it works*: Parses source code into AST, performs semantic analysis to resolve symbol bindings, their scope, and provides position-sensitive symbol lookup
-  - *MCP Tools*: `GetAllSymbols`, `GetSymbolAtPosition`, `WhatIsAtPosition`, `GetSymbolSignatureAtPosition`
+- use `execute_f_sharp_code_routed`
 
-- **📊 Syntax Validation**: Comprehensive F# syntax analysis and error reporting
-  - *Powered by*: `ParseAndCheckFSharpCode` - Validates F# syntax and performs type checking with detailed diagnostics
-  - *How it works*: Uses F# Compiler Services via IPC to parse source code, check for syntax errors, type mismatches, and compiler warnings with line-level error locations
+For heavy initialization:
 
-- **🗂️ Dependency Analysis**: Track and analyze code dependencies and relationships
-  - *Powered by*: `AnalyzeCodeStructure` - Provides basic file analysis including line count, character count, and diagnostic summaries
-  - *How it works*: Performs F# Compiler Services parsing to identify errors, warnings, and structural issues in F# files
-  - *Current scope*: File-level analysis rather than deep dependency graph analysis
+- use `execute_f_sharp_code_async_routed`
+- poll with `get_async_status`
+- once completed, query values using `evaluate_f_sharp_expression_routed`
 
-- **🎯 Position-Sensitive Analysis**: Context-aware code analysis based on cursor position
+This is the intended pattern for expensive initialization followed by many cheap queries.
 
-## 🏗️ Architecture
+## Remote Path Mapping: The Main Trap
 
-The FSharp.MCP.DevKit follows a **modular, layered architecture** with clear separation of concerns:
+The most common failure is **path confusion between containers**.
 
-```
-├── 🔧 FSharp.MCP.DevKit.Core/          # Foundation layer
-│   ├── FSI session management & execution
-│   ├── File system utilities & helpers  
-│   └── Core types & configurations
-│
-├── 🔍 FSharp.MCP.DevKit.Analysis/      # Code intelligence layer
-│   ├── F# syntax validation & analysis
-│   ├── Symbol detection & resolution
-│   └── Code structure analysis
-│
-├── 📡 FSharp.MCP.DevKit.Communication/ # IPC infrastructure
-│   ├── High-performance named pipes
-│   └── Persistent REPL server
-│
-├── ✏️ FSharp.MCP.DevKit.CodeEditing/   # Code manipulation layer
-│   ├── Safe code insertion & editing
-│   ├── Fantomas formatting integration
-│   └── Atomic file operations
-│
-├── 📚 FSharp.MCP.DevKit.Documentation/ # Documentation generation
-│   ├── .NET assembly analysis
-│   ├── NuGet package documentation
-│   └── Markdown API reference generation
-│
-└── 🌐 FSharp.MCP.DevKit.Server/        # MCP server & tools
-    ├── MCP protocol implementation
-    ├── 30+ specialized F# tools
-    └── Server runtime & hosting
-```
+In the typical deployment used here:
 
-### 🔄 Data Flow Architecture
+- host path `/home/sa/gemini4/...`
+- mounted into `fsharp-devkit` container as `/gemini4/...` (read-only)
+- mounted into `fsharp-devkit` container as `/workspace/...` for writable workspace data
 
-```mermaid
-graph TB
-    subgraph "🤖 AI Assistant Layer"
-        Assistant["`**AI Assistant**
-        (Claude, GPT, etc.)
-        • F# Development Support
-        • Code Generation
-        • Interactive Analysis`"]
-    end
-    
-    subgraph "📡 MCP Protocol Layer"
-        MCPServer["`**MCP Server**
-        • 30+ F# Tools
-        • Stdio Transport
-        • JSON-RPC Protocol`"]
-    end
-    
-    subgraph "🌐 Application Layer"
-        Server["`**FSharp.MCP.DevKit.Server**
-        • Tool Implementation
-        • Request Routing
-        • Error Handling`"]
-    end
-    
-    subgraph "🛠️ Service Layers"
-        Documentation["`**📚 Documentation**
-        • Package Documentation
-        • API Reference Generation
-        • Smart Search & Discovery`"]
-        
-        DocumentationTool["`**🔧 Documentation Tool**
-        • CLI for Doc Generation`"]
+Practical rule:
 
-        CodeEditing["`**✏️ Code Editing**
-        • Safe Code Insertion
-        • Fantomas Integration
-        • Atomic Operations`"]
-        
-        Communication["`**📡 Communication**
-        • Named Pipes IPC
-        • Concurrent Processing
-        • REPL Server`"]
-        
-        Analysis["`**🔍 Analysis**
-        • Symbol Detection
-        • Syntax Validation
-        • Structure Analysis`"]
-    end
-    
-    subgraph "🔧 Foundation Layer"
-        Core["`**FSharp.MCP.DevKit.Core**
-        • FSI Session Management
-        • File Operations
-        • Configuration`"]
-    end
-    
-    subgraph "🔗 External Dependencies"
-        FCS["`**F# Compiler Services**
-        • Code Compilation
-        • Type Checking
-        • AST Analysis`"]
-        
-        Fantomas["`**Fantomas**
-        • Code Formatting
-        • Style Enforcement`"]
-        
-        FSI["`**F# Interactive**
-        • Code Execution
-        • REPL Environment`"]
-    end
-    
-    %% Connections
-    Assistant <--> MCPServer
-    MCPServer <--> Server
-    Server --> Documentation
-    Server --> CodeEditing
-    Server --> Communication
-    Server --> Analysis
-    Documentation --> Core
-    DocumentationTool --> Documentation
-    CodeEditing --> Core
-    Communication --> Core
-    Analysis --> Core
-    
-    %% External integrations
-    Core --> FCS
-    Core --> FSI
-    CodeEditing --> Fantomas
-    Analysis --> FCS
-    Documentation --> FCS
-    
-    %% Styling
-    classDef aiLayer fill:#4B0082,stroke:#ffffff,stroke-width:3px,color:#ffffff
-    classDef mcpLayer fill:#8B0000,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef appLayer fill:#000080,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef serviceLayer fill:#006400,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef foundationLayer fill:#2F4F4F,stroke:#ffffff,stroke-width:2px,color:#ffffff
-    classDef externalDep fill:#FF8C00,stroke:#000000,stroke-width:2px,color:#000000
-    
-    class Assistant aiLayer
-    class MCPServer mcpLayer
-    class Server appLayer
-    class Documentation,CodeEditing,Communication,Analysis,DocumentationTool serviceLayer
-    class Core foundationLayer
-    class FCS,Fantomas,FSI externalDep
+- use `/gemini4/...` for reading source trees, `.fsx`, referenced DLLs, and data already present on the host
+- use `/workspace/...` only for writable outputs or temporary files inside the devkit container
+
+If your agent runs in a different container and sees `/workspace/home/...`, that **does not mean** the remote FSI host sees the same path.  
+When sending code into the remote host, rewrite paths to the paths visible **inside the `fsharp-devkit` container**.
+
+Typical examples:
+
+- local/agent-visible path:
+  - `/workspace/home/work/coldfar-symbolics/...`
+- remote host-visible path:
+  - `/gemini4/work/coldfar-symbolics/...`
+
+- local/agent-visible path:
+  - `/workspace/home/work/sharftrade7/實驗/SharFTrade.Exp/bin/net10.0`
+- remote host-visible path:
+  - `/gemini4/work/sharftrade7/實驗/SharFTrade.Exp/bin/net10.0`
+
+If you need this workflow, in practice you usually want:
+
+- local machine
+- Docker
+- explicit `-v <host-path>:<container-path>` mounts
+
+Without correct path mapping, `#I` / `#r` for non-NuGet assemblies will fail.
+
+## Basic Service Example
+
+Below is a basic `systemd` service example for running the server in Docker with host networking and the two important mounts:
+
+```ini
+[Unit]
+Description=FSharp MCP DevKit Docker Service
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+EnvironmentFile=-/etc/default/fsdevkit
+
+ExecStartPre=/usr/bin/bash -lc '\
+  if /usr/bin/docker ps -aq --filter name=^fsharp-mcp-devkit$$ | grep -q .; then \
+    exec /usr/bin/docker rm -f fsharp-mcp-devkit; \
+  fi'
+
+ExecStart=/usr/bin/bash -lc '\
+  set -- $$(hostname -I); \
+  HOST_IP="$${FSDEVKIT_HOST_IP:-$$1}"; \
+  if [ -z "$$HOST_IP" ]; then \
+    echo "fsdevkit.service: unable to determine FSDEVKIT_HOST_IP" >&2; \
+    exit 1; \
+  fi; \
+  exec /usr/bin/docker run --name fsharp-mcp-devkit \
+    --network host \
+    -e ASPNETCORE_URLS=http://0.0.0.0:15000 \
+    -e MCP_ENABLE_STDIO=false \
+    -e FSI_ENABLE_REMOTE_CLIENT=true \
+    -e FSI_ENABLE_PROC_SUPERVISOR=true \
+    -e FSI_PROC_SUPERVISOR_HOST=$$HOST_IP \
+    -e FSI_PROC_SUPERVISOR_PORT=8110 \
+    -e FSI_PROC_SUPERVISOR_WEB_HOST=$$HOST_IP \
+    -e FSI_PROC_SUPERVISOR_WEB_PORT=6001 \
+    -e FSI_PROC_SUPERVISOR_SYSTEM_NAME=proc-system \
+    -e FSI_PROC_SUPERVISOR_PATH=akka.tcp://proc-system@$$HOST_IP:8110/user/proc-supervisor \
+    -v /path/to/repo-root:/gemini4:ro \
+    -v /path/to/devkit-workspace:/workspace \
+    fsharp-mcp-devkit:ai-v0.6.2'
+
+ExecStop=/usr/bin/docker stop -t 10 fsharp-mcp-devkit
+
+ExecStopPost=/usr/bin/bash -lc '\
+  if /usr/bin/docker ps -aq --filter name=^fsharp-mcp-devkit$$ | grep -q .; then \
+    exec /usr/bin/docker rm -f fsharp-mcp-devkit; \
+  fi'
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-## 🛠️ MCP Tools Overview
+Notes:
 
-The server provides **30+ specialized MCP tools** organized into categories:
+- `/gemini4` is the read-only mount exposing your checked-out source/data tree
+- `/workspace` is the writable mount for runtime workspace usage
+- the remote `net10` procnode host arguments usually reference `/app/Akka.Proc.Supervisor...` inside the container
 
-### 📚 Documentation Tools (New!)
+## Example: Create a Remote net10 Host
 
-- `GeneratePackageDocumentation` - Generate comprehensive API docs for NuGet packages
-- `GenerateProjectDocumentation` - Bulk documentation for entire F# projects  
-- `SearchDocumentation` - Search through generated documentation with context
-- `ListCachedPackages` - Browse available NuGet packages in local cache
-- `ShowPackageInfo` - Get detailed information about specific packages
-- `SetDocumentationOutputDirectory` - Configure documentation output settings
-- `ShowDocumentationConfig` - Display current documentation configuration
+Typical `create_fsi_host` arguments for the out-of-process `net10` path look like:
 
-### 🔧 FSI Management
-
-- `CheckFSIServerStatus` - Check FSI server status and availability
-- `ResetFSISession` - Reset the FSI session clearing all state
-- `RestartFSISession` - Restart FSI session (stop and start fresh)
-- `GetFSIState` - Get current FSI state and bindings
-
-### ⚡ Code Execution
-
-- `ExecuteFSharpCode` - Execute F# code with comprehensive error handling
-- `ExecuteFSharpCodeDetailed` - Execute with detailed error information
-- `EvaluateFSharpExpression` - Evaluate expressions with type information
-- `LoadFSharpScript` - Load F# script files with dependency tracking
-- `ReferenceAssembly` - Reference .NET assemblies
-- `ReferenceNuGetPackage` - Reference NuGet packages dynamically
-- `AddSearchPath` - Add directories to F# search path
-
-### ✏️ Code Manipulation & File Operations
-
-- `InsertCode` - Unified code insertion with validation and formatting
-- `PreviewCodeInjection` - Preview code changes before applying
-- `FormatFile` - Format entire F# files using Fantomas
-- `DeleteLines` - Delete specific lines from files
-- `ReplaceTextRange` - Replace text in specific line ranges
-- `SearchAndReplace` - Search and replace with pattern matching
-- `MoveCodeBlock` - Move code blocks between locations
-- `GetLines` - Extract specific lines for inspection
-- `CountLines` - Count lines and characters in files
-- `SearchInFile` - Search for patterns with line numbers
-
-### 🔍 Analysis & Structure
-
-- `AnalyzeCodeStructure` - Analyze F# code structure and dependencies
-- `ParseAndCheckFSharpCode` - Parse and validate F# syntax and types
-- `ParseSourceToAST` - Parse code to Abstract Syntax Tree
-
-### 🛠️ Utility & Management
-
-- `KillAll` - Kill all MCP server processes for clean restarts (temporary till FAKE integration)
-
-## 🚀 Usage Examples
-
-### Documentation Generation
-
-
-```bash
-# Generate documentation for a NuGet package
-GeneratePackageDocumentation "System.Text.Json" "./docs" true
-
-# Search through generated documentation  
-SearchDocumentation "./docs" "JsonSerializer"
-
-# List available packages
-ListCachedPackages "System"
+```text
+exec --runtimeconfig /app/Akka.Proc.Supervisor.runtimeconfig.json --depsfile /app/Akka.Proc.Supervisor.deps.json /app/Akka.Proc.Supervisor.dll --mode procnode --systemname fsi-proc --host <HOST_IP> --port 0 --supervisor akka.tcp://proc-system@<HOST_IP>:8110/user/proc-supervisor --procid <HOST_ID>
 ```
 
-### Code Execution
+`probeMessage` and `probeIntervalMs` are optional. Leave them empty until basic host/session flow is confirmed.
 
+## notifications/initialized
 
-```fsharp
-// Execute F# code
-ExecuteFSharpCode "let x = 1 + 2; printfn \"Result: %d\" x"
+If you talk to the server over raw MCP Streamable HTTP:
 
-// Evaluate expressions with type info
-EvaluateFSharpExpression "List.map ((*) 2) [1..5]"
+- call `initialize` first
+- then send `notifications/initialized`
+- `notifications/initialized` must be a **notification**, so do **not** include `id`
 
-// Reference packages
-ReferenceNuGetPackage "FSharp.Data"
-```
+Expected behavior:
 
-### Safe Code Insertion
+- `initialize` returns the session id header
+- `notifications/initialized` returns HTTP `202` with an empty body
 
+## If You Do Not Trust the Published NuGet Packages
 
-```fsharp
-// Insert code with formatting, validation disabled by default for performance
-InsertCode "let newFunction x = x * 2" "MyScript.fsx" 10 1 true false
+The repository root contains zipped dependency source snapshots that can be built locally instead of consuming NuGet packages:
 
-// Enable validation for small, critical code pieces  
-InsertCode "let helper = x + 1" "MyScript.fsx" 5 1 true true
+- [Akka.FSI.Supervisor.zip](./Akka.FSI.Supervisor.zip)
+- [Akka.FSI.Supervisor.Tests.zip](./Akka.FSI.Supervisor.Tests.zip)
+- [Akka.Proc.Supervisor.zip](./Akka.Proc.Supervisor.zip)
+- [Akka.Proc.Supervisor.Tests.zip](./Akka.Proc.Supervisor.Tests.zip)
+- [FAkka.Fsi.Contracts.zip](./FAkka.Fsi.Contracts.zip)
 
-// Preview changes first
-PreviewCodeInjection "let helper = ..." "MyScript.fsx" 15
-```
+These are the main dependency source bundles relevant to the remote host/session stack.
 
-## 🤖 Agent Development Strategies
+## Related Documents
 
-This project provides **comprehensive strategies** for AI agents to work effectively with F# development through different methodologies:
+For concrete end-to-end instructions:
 
-### 📋 Available Development Approaches
+- [doc/Runbook.md](./doc/Runbook.md)
+- [doc/E2EScenarioTest.md](./doc/E2EScenarioTest.md)
+- [doc/E2EScenarioTest_gemini.md](./doc/E2EScenarioTest_gemini.md)
 
-The toolkit supports multiple development philosophies, each optimized for different scenarios and agent capabilities:
+For current issue tracking:
 
-#### 🎯 [Script-Driven Development](docs/Agent-Instructions-Strategies/Script-Driven-Default/)
-
-
-**Recommended for: Production workflows, complex validation, agent-driven development**
-
-
-- **[📖 Design Philosophy](docs/Agent-Instructions-Strategies/Script-Driven-Default/Design.md)** - Comprehensive guide to script-based development methodology
-- **[🛠️ Copilot Instructions](docs/Agent-Instructions-Strategies/Script-Driven-Default/copilot-instructions.md)** - Detailed agent instructions for script-driven workflows
-- **Key Characteristics**: Reproducible execution, structured output, comprehensive validation, audit trails
-
-#### 🔄 [REPL-Driven Development](docs/Agent-Instructions-Strategies/REPL-Driven-Default/)
-
-
-**Recommended for: Exploration, prototyping, interactive development**
-
-
-- **[📖 Design Philosophy](docs/Agent-Instructions-Strategies/REPL-Driven-Default/Design.md)** - Deep dive into REPL-based development patterns
-- **[🛠️ Copilot Instructions](docs/Agent-Instructions-Strategies/REPL-Driven-Default/copilot-instructions.md)** - Agent guidance for interactive REPL workflows
-- **Key Characteristics**: Immediate feedback, live debugging, exploratory programming, state preservation
-
-#### 📜 [Signature-Driven Development](docs/Agent-Instructions-Strategies/Signature-Driven-Default/)
-
-
-**Recommended for: Contract-first development, rigorous validation, clear interfaces**
-
-- **[📖 Design Philosophy](docs/Agent-Instructions-Strategies/Signature-Driven-Default/Design.md)** - In-depth exploration of signature-driven development principles
-- **[🛠️ Copilot Instructions](docs/Agent-Instructions-Strategies/Signature-Driven-Default/copilot-instructions.md)** - Instructions for implementing signature-driven workflows
-- **Key Characteristics**: Explicit contracts, enhanced validation, clear module boundaries, improved collaboration
-
-#### 📜 [Signature-Driven Development](docs/Agent-Instructions-Strategies/Signature-Driven-Default/)
-
-**Recommended for: Contract-first development, rigorous validation, clear interfaces**
-
-- **[📖 Design Philosophy](docs/Agent-Instructions-Strategies/Signature-Driven-Default/Design.md)** - In-depth exploration of signature-driven development principles
-- **[🛠️ Copilot Instructions](docs/Agent-Instructions-Strategies/Signature-Driven-Default/copilot-instructions.md)** - Instructions for implementing signature-driven workflows
-- **Key Characteristics**: Explicit contracts, enhanced validation, clear module boundaries, improved collaboration
-
-## 📖 Documentation
-
-### 📂 Project Documentation
-
-Comprehensive documentation organized by project:
-
-- **[📚 All Projects Documentation](docs/projects/)** - Complete documentation index
-- **[🔧 Core](docs/projects/Core/)** - Foundation layer documentation
-- **[🔍 Analysis](docs/projects/Analysis/)** - Code analysis and intelligence
-- **[📡 Communication](docs/projects/Communication/)** - IPC infrastructure
-- **[✏️ CodeEditing](docs/projects/CodeEditing/)** - Code manipulation capabilities
-- **[🌐 Server](docs/projects/Server/)** - MCP server implementation
-- **[📚 Documentation](docs/projects/Documentation/)** - Documentation generation
-
-### 📋 General Documentation
-
-- **[🏗️ Architecture](docs/Architecture.md)** - System design and architecture
-- **[✨ Features](docs/Features.md)** - Detailed feature documentation
-- **[🎯 Terminal Code Execution](docs/Terminal-Code-Execution.md)** - Multi-terminal F# execution and session targeting
-- **[🎯 Terminal Code Execution](docs/Terminal-Code-Execution.md)** - Proposal for Multi-terminal F# execution and session targeting
-- **[📝 Design & Analysis](docs/DESIGN_AND_ANALYSIS.md)** - Design decisions and analysis
-- **[📋 Implementation Summary](docs/Implementation-Summary.md)** - Implementation details
-- **[🗂️ Plans & Specifications](docs/plans/)** - Development roadmaps
-
-## �️ Development Roadmap
-
-### 🎯 Near-term Enhancements
-
-**🔄 Currently In Progress:**
-
-- 📚 **Cross-reference linking** - Automatic linking between types in documentation (maybe <https://marketplace.visualstudio.com/items?itemName=foam.foam-vscode> )
-- **Fake Integration**
-- **Planning Tools** - Adding some deterministic planning tools and Knowledge bases to help the AI agent generate more structured code.
-- **Increase performance and robustness of text, file handling and code insertion.**
-
-## �🔗 Key Technologies
-
-- **[F# Compiler Services](https://fsharp.github.io/fsharp-compiler-docs/)** - F# language analysis and compilation
-- **[Fantomas](https://github.com/fsprojects/fantomas)** - F# code formatting
-- **[Model Context Protocol](https://modelcontextprotocol.io/)** - AI assistant integration protocol
-- **Named Pipes** - High-performance inter-process communication
-- **.NET 9.0** - Modern .NET runtime and libraries
-
-For current development status and known issues, see:
-
-- 🐛 **[Known Issues](docs/ISSUES.md)** - Current bugs and limitations
-
-## � Communication & Contact
-
-We welcome your feedback, questions, and contributions! Here's how to get in touch:
-
-### 🎮 Discord Community
-
-Join the F# community discussions:
-
-- **[F# Discord - #tools-and-libraries](https://discord.com/channels/196693847965696000/524660202864377896)** - Get help, share ideas, and discuss F# tooling
-
-### 🐛 Issues & Bug Reports
-
-Found a bug or have a feature request?
-
-- **[GitHub Issues](https://github.com/ehotw/FSharp.MCP.DevKit/issues)** - Report bugs, request features, or ask questions
-
-## �📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔗 Resources
-
-- **[Build a Model Context Protocol Server in C#](https://devblogs.microsoft.com/dotnet/build-a-model-context-protocol-mcp-server-in-csharp/)** - Microsoft DevBlogs guide
-- **[Model Context Protocol Documentation](https://modelcontextprotocol.io/)** - Official MCP documentation
-- **[F# Documentation](https://docs.microsoft.com/en-us/dotnet/fsharp/)** - Official F# documentation
-
----
-
-<div align="center">
-
- **[📚 Documentation](.md)** • **[🛠️ Tools](#-mcp-tools-overview)** • **[🏗️ Architecture](#-architecture)**
-
-*Built with ❤️ using F# and the Model Context Protocol*
-
-</div>
+- [doc4dev/20260328_issues.md](./doc4dev/20260328_issues.md)
