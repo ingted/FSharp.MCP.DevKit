@@ -21,6 +21,17 @@ This project was originally created by **EHotwagner**. The upstream/original rep
 
 The upstream README states that the project is currently **on hold**. This fork keeps the remote host / remote session workflow working because it is still useful for long-running, stateful F# workloads.
 
+## csharp-sdk Dependency
+
+This project uses the official `ModelContextProtocol` C# SDK source tree (`csharp-sdk`), not a private fork of the protocol surface.
+
+- upstream repository:
+  - <https://github.com/modelcontextprotocol/csharp-sdk>
+- local commit used in this workspace:
+  - `498de089fc3d42d9dfd28b0e26bee21e6b89b174`
+
+If you want to build this project yourself, make sure you obtain a compatible checkout of `csharp-sdk` first.
+
 ## What This Fork Is For
 
 The main use case is:
