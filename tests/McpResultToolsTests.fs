@@ -187,3 +187,41 @@ let ``McpResultTools output tools and resources expose live broker state`` () =
         let unsubscribed = FSharpJson.deserialize<bool> unsubscribeJson
         Assert.True(unsubscribed)
     }
+
+[<Fact>]
+let ``McpResultTools session output resources keep same read path after archive seal`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let _ = service.ResolveRoute()
+
+        let _ = service.PublishSessionOutput("stdout", "archived-alpha", executionId = "exec-archive-2")
+        let _ = service.PublishSessionOutput("stderr", "archived-beta", executionId = "exec-archive-2")
+        let archive = service.SealSessionOutputArchive()
+
+        let outputJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                0L,
+                0
+            )
+
+        let resultResource = ResultResources(service)
+        let outputResourceJson = resultResource.SessionOutput("default-host", "default-session")
+        let outputAfterResourceJson = resultResource.SessionOutputAfter("default-host", "default-session", 1L)
+
+        let events = FSharpJson.deserialize<OutputEventRecord list> outputJson
+        let resourceEvents = FSharpJson.deserialize<OutputEventRecord list> outputResourceJson
+        let resourceEventsAfter = FSharpJson.deserialize<OutputEventRecord list> outputAfterResourceJson
+
+        Assert.Equal("default-session", archive.SessionId)
+        Assert.Equal(2, archive.EventCount)
+        Assert.Equal(2, events.Length)
+        Assert.Equal(events.Length, resourceEvents.Length)
+        Assert.Equal<int64 array>([| 1L; 2L |], resourceEvents |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
+        Assert.Single(resourceEventsAfter) |> ignore
+        Assert.Equal("archived-beta", resourceEventsAfter[0].Payload)
+    }

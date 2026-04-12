@@ -51,12 +51,23 @@ type OutputEventRecord =
       Payload: string
       IsReplay: bool }
 
+type SessionOutputArchiveRecord =
+    { SessionId: string
+      ArchivedAt: DateTime
+      EventCount: int
+      MaxSequenceNo: int64 option }
+
 type IOutputSubscriberBroker =
     abstract member Subscribe: OutputSubscriberRecord -> OutputSubscriberRecord
     abstract member Unsubscribe: sessionId: string * subscriberId: string -> bool
     abstract member ListSubscribers: sessionId: string -> OutputSubscriberRecord list
     abstract member Publish: OutputEventRecord -> OutputEventRecord * OutputSubscriberRecord list
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+
+type ISessionOutputArchiveStore =
+    abstract member Seal: sessionId: string * events: OutputEventRecord list * archivedAt: DateTime -> SessionOutputArchiveRecord
+    abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+    abstract member TryGetArchive: sessionId: string -> SessionOutputArchiveRecord option
 
 type IAsyncJobRegistry =
     abstract member Create: AsyncFsiJob -> AsyncFsiJob

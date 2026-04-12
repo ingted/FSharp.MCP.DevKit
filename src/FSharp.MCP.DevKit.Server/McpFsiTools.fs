@@ -300,6 +300,7 @@ module McpFsiTools =
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
         let inventoryEventStore = InMemoryInventoryEventStore() :> IInventoryEventStore
         let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+        let sessionOutputArchiveStore = InMemorySessionOutputArchiveStore() :> ISessionOutputArchiveStore
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
@@ -468,7 +469,21 @@ module McpFsiTools =
                 ?requestedRoute: ExecutionRoute
             ) =
             let route = resolveRoute requestedRoute
-            outputSubscriberBroker.ListEvents(route.SessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+            let afterSequenceNo = defaultArg afterSequenceNo 0L
+            let limit = defaultArg limit Int32.MaxValue
+
+            let liveEvents =
+                outputSubscriberBroker.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
+
+            let archivedEvents =
+                sessionOutputArchiveStore.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
+
+            [ archivedEvents; liveEvents ]
+            |> List.concat
+            |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
+            |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
+            |> List.map (fun (_, grouped) -> grouped |> List.last)
+            |> List.truncate limit
 
         member _.UnsubscribeSessionOutput(subscriberId: string, ?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
@@ -492,6 +507,15 @@ module McpFsiTools =
                   TimestampUtc = DateTime.UtcNow
                   Payload = payload
                   IsReplay = defaultArg isReplay false }
+
+        member _.SealSessionOutputArchive(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            let events = outputSubscriberBroker.ListEvents(route.SessionId)
+            sessionOutputArchiveStore.Seal(route.SessionId, events, DateTime.UtcNow)
+
+        member _.TryGetSessionOutputArchive(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            sessionOutputArchiveStore.TryGetArchive(route.SessionId)
 
         member _.ExecuteOperation
             (

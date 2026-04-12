@@ -45,6 +45,7 @@
     <Compile Include="ControlPlane\SessionRegistry.fs" />
     <Compile Include="ControlPlane\InventoryEventStore.fs" />
     <Compile Include="ControlPlane\OutputSubscriberBroker.fs" />
+    <Compile Include="ControlPlane\SessionOutputArchiveStore.fs" />
     <Compile Include="ControlPlane\AsyncJobRegistry.fs" />
     <Compile Include="ControlPlane\ResultRegistry.fs" />
     <Compile Include="ControlPlane\PathMappingRegistry.fs" />

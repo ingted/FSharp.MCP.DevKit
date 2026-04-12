@@ -92,3 +92,22 @@ let ``FsiMcpService output subscriber broker publishes monotonic sequence and su
     Assert.Single(secondSubscribers) |> ignore
     Assert.True(removed)
     Assert.Empty(thirdSubscribers)
+
+[<Fact>]
+let ``FsiMcpService unified session output read returns archived events through same API`` () =
+    let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    use _cleanup = service :> IDisposable
+
+    let _ = service.PublishSessionOutput("stdout", "alpha", executionId = "exec-archive-1")
+    let _ = service.PublishSessionOutput("stderr", "beta", executionId = "exec-archive-1")
+    let archive = service.SealSessionOutputArchive()
+    let events = service.ListSessionOutput()
+    let eventsAfter = service.ListSessionOutput(afterSequenceNo = 1L)
+
+    Assert.Equal("default-session", archive.SessionId)
+    Assert.Equal(2, archive.EventCount)
+    Assert.Equal(Some 2L, archive.MaxSequenceNo)
+    Assert.Equal(2, events.Length)
+    Assert.Equal<int64 array>([| 1L; 2L |], events |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
+    Assert.Single(eventsAfter) |> ignore
+    Assert.Equal("beta", eventsAfter[0].Payload)
