@@ -130,3 +130,62 @@ type McpResultTools =
               Materialization = parseMaterialization (if String.IsNullOrWhiteSpace materialization then None else Some materialization) }
 
         fsiService.QueryResults(request) |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "subscribe_session_output"); Description("Subscribe to live session output for a specific route.")>]
+    static member SubscribeSessionOutput
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("Subscriber id.")>] subscriberId: string,
+            [<Description("Optional starting sequence number. Use 0 to start from the beginning of the live cache.")>] fromSequenceNo: int64,
+            [<Description("Whether the subscriber expects replay from the requested sequence number.")>] includeHistory: bool
+        ) : string =
+        fsiService.SubscribeSessionOutput(
+            subscriberId,
+            fromSequenceNo = fromSequenceNo,
+            includeHistory = includeHistory,
+            requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "list_session_output_subscribers"); Description("List live output subscribers for a specific route.")>]
+    static member ListSessionOutputSubscribers
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.ListSessionOutputSubscribers(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "get_session_output_events"); Description("Read live session output events for a specific route.")>]
+    static member GetSessionOutputEvents
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("Optional starting sequence number. Use 0 to read all cached live events.")>] afterSequenceNo: int64,
+            [<Description("Optional maximum number of events to return. Use 0 for default.")>] limit: int
+        ) : string =
+        let limitOpt = if limit <= 0 then None else Some limit
+
+        fsiService.ListSessionOutput(
+            afterSequenceNo = afterSequenceNo,
+            ?limit = limitOpt,
+            requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "unsubscribe_session_output"); Description("Remove a live output subscriber from a specific route.")>]
+    static member UnsubscribeSessionOutput
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("Subscriber id.")>] subscriberId: string
+        ) : string =
+        fsiService.UnsubscribeSessionOutput(subscriberId, requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize

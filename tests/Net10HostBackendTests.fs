@@ -48,16 +48,19 @@ type private FakeFsiSupervisorClient
     (
         execFactory: HostRecord * FsiSupervisorExecRequest -> FsiSupervisorExecutionResult,
         sessionFactory: HostRecord * string -> FsiSupervisorSessionSnapshot,
+        ensureFactory: HostRecord * string -> FsiSupervisorEnsureResult,
         resetFactory: HostRecord * string -> FsiSupervisorResetResult,
         ?listFactory: HostRecord -> FsiSupervisorSessionSnapshot list
     ) =
     let mutable executeRequests : (HostRecord * FsiSupervisorExecRequest) list = []
     let mutable sessionRequests : (HostRecord * string) list = []
+    let mutable ensureRequests : (HostRecord * string) list = []
     let mutable resetRequests : (HostRecord * string) list = []
     let listFactory = defaultArg listFactory (fun _ -> [])
 
     member _.ExecuteRequests = List.rev executeRequests
     member _.SessionRequests = List.rev sessionRequests
+    member _.EnsureRequests = List.rev ensureRequests
     member _.ResetRequests = List.rev resetRequests
 
     interface IFsiSupervisorClient with
@@ -70,6 +73,10 @@ type private FakeFsiSupervisorClient
             Task.FromResult(sessionFactory (host, sessionId))
 
         member _.ListSessions(host: HostRecord) = Task.FromResult(listFactory host)
+
+        member _.EnsureSession(host: HostRecord, sessionId: string) =
+            ensureRequests <- (host, sessionId) :: ensureRequests
+            Task.FromResult(ensureFactory (host, sessionId))
 
         member _.ResetSession(host: HostRecord, sessionId: string) =
             resetRequests <- (host, sessionId) :: resetRequests
@@ -118,6 +125,10 @@ let ``Net10HostBackend maps nuget and path operations into supervisor execution 
                       Variables = []
                       LastCheckpointId = None
                       RunningSinceUtc = Some DateTime.UtcNow }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = false
+                      Status = "created" }),
                 (fun (_, sessionId) ->
                     { SessionId = sessionId
                       Existed = true
@@ -200,6 +211,10 @@ let ``Net10HostBackend maps session snapshot into SessionRecord`` () =
                 (fun (_, sessionId) ->
                     { SessionId = sessionId
                       Existed = true
+                      Status = "ready" }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
                       Status = "reset" })
             )
 
@@ -258,6 +273,10 @@ let ``Net10HostBackend health check and restart delegate to ProcSupervisor`` () 
                 (fun (_, sessionId) ->
                     { SessionId = sessionId
                       Existed = true
+                      Status = "ready" }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
                       Status = "reset" })
             )
 
@@ -308,6 +327,10 @@ let ``Net10HostBackend health check falls back to ListProcInfo when direct looku
                       Variables = []
                       LastCheckpointId = None
                       RunningSinceUtc = Some DateTime.UtcNow }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
+                      Status = "ready" }),
                 (fun (_, sessionId) ->
                     { SessionId = sessionId
                       Existed = true
@@ -363,6 +386,10 @@ let ``Net10HostBackend reset session delegates to supervisor and returns success
                 (fun (_, sessionId) ->
                     { SessionId = sessionId
                       Existed = true
+                      Status = "ready" }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
                       Status = "reset" })
             )
 
@@ -400,4 +427,69 @@ let ``Net10HostBackend reset session delegates to supervisor and returns success
         Assert.Single(resetRequests) |> ignore
         Assert.Equal(host.HostId, fst resetRequests.[0] |> fun value -> value.HostId)
         Assert.Equal(route.SessionId, snd resetRequests.[0])
+    }
+
+[<Fact>]
+let ``Net10HostBackend ensure session delegates to supervisor and returns hydrated session state`` () =
+    task {
+        let hostRegistry, host = createHostRegistry ()
+
+        let fakeFsiClient =
+            FakeFsiSupervisorClient(
+                (fun (_, request) ->
+                    { SessionId = request.SessionId
+                      RawErrorType = None
+                      Result = FsiResult.empty }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Status = "ready"
+                      Refs = [ "A.dll" ]
+                      Loads = [ "init.fsx" ]
+                      SearchPaths = [ "c:/fsi" ]
+                      Variables = [ "x", "42" ]
+                      LastCheckpointId = Some "cp-1"
+                      RunningSinceUtc = Some DateTime.UtcNow }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = false
+                      Status = "created" }),
+                (fun (_, sessionId) ->
+                    { SessionId = sessionId
+                      Existed = true
+                      Status = "reset" })
+            )
+
+        let fakeProcClient =
+            FakeProcSupervisorClient(fun _ ->
+                Task.FromResult(
+                    Some
+                        { ProcId = host.HostId
+                          Status = "running"
+                          ProcessId = host.ProcId
+                          FsiSupervisorPath = host.Address
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:8110"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None }))
+
+        let backend =
+            Net10HostBackend(hostRegistry, fakeFsiClient :> IFsiSupervisorClient, fakeProcClient :> IProcSupervisorClient)
+            :> IFsiExecutionBackend
+
+        let route =
+            { AgentId = "agent-net10"
+              HostId = host.HostId
+              SessionId = "session-ensure" }
+
+        let! state = backend.EnsureSession(route)
+
+        Assert.Equal(SessionReady, state.Status)
+        Assert.Contains("A.dll", state.Refs)
+        Assert.Contains("init.fsx", state.Loads)
+        Assert.Contains("c:/fsi", state.SearchPaths)
+        Assert.Equal(Some "42", state.Variables |> List.tryFind (fun (name, _) -> name = "x") |> Option.map snd)
+        Assert.Single(fakeFsiClient.EnsureRequests |> List.toArray) |> ignore
+        Assert.Single(fakeFsiClient.SessionRequests |> List.toArray) |> ignore
     }

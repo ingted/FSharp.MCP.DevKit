@@ -48,6 +48,7 @@
     <Compile Include="McpSurfaceTests.fs" />
     <Compile Include="NetFxHostBackendTests.fs" />
     <Compile Include="Net10HostBackendTests.fs" />
+    <Compile Include="ProcSupervisorDiscoveryTests.fs" />
     <Compile Include="ProvisioningServicesTests.fs" />
     <Compile Include="RealNet10HostIsolationTests.fs" />
     <Compile Include="RemoteMessageContractTests.fs" />

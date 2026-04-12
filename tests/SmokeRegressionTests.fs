@@ -214,6 +214,26 @@ type private StatefulFakeFsiSupervisorClient() =
                 |> Seq.toList
             )
 
+        member _.EnsureSession(host: HostRecord, sessionId: string) =
+            let key = (host.HostId, sessionId)
+            let existed, _ =
+                match sessions.TryGetValue(key) with
+                | true, value -> true, value
+                | false, _ ->
+                    let created =
+                        { RunningSinceUtc = DateTime.UtcNow
+                          Refs = ResizeArray()
+                          Loads = ResizeArray()
+                          SearchPaths = ResizeArray()
+                          Variables = System.Collections.Concurrent.ConcurrentDictionary() }
+                    let actual = sessions.GetOrAdd(key, created)
+                    false, actual
+
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = existed
+                  Status = "ready" })
+
         member _.ResetSession(host: HostRecord, sessionId: string) =
             let existed = sessions.TryRemove((host.HostId, sessionId)) |> fst
 
@@ -413,3 +433,19 @@ let ``Smoke result queries support exists forall and compare`` () =
         Assert.Contains(first.ResultId, compareResponse.MaterializedJson.Value)
         Assert.Contains(second.ResultId, compareResponse.MaterializedJson.Value)
     }
+
+[<Fact>]
+let ``Smoke FsiService path directives accept Windows style paths`` () =
+    let service = FsiService(FsiConfig.defaultConfig)
+    service.Start()
+
+    try
+        let assemblyPath = typeof<FsiResult>.Assembly.Location
+        let searchPath = System.IO.Path.GetDirectoryName assemblyPath
+        let referenceResult = service.ReferenceAssembly(assemblyPath)
+        let addPathResult = service.AddSearchPath(searchPath)
+
+        Assert.True(referenceResult.IsSuccess, referenceResult.Errors)
+        Assert.True(addPathResult.IsSuccess, addPathResult.Errors)
+    finally
+        service.Stop()

@@ -14,6 +14,12 @@
 - `uninstall-local-service.ps1`
   - Windows local uninstall script.
   - Stops and deletes `fsharp-devkit` plus any legacy `fsihost` service registration, and can optionally remove the deploy root.
+- `deploy-local-win-service.ps1`
+  - Windows local deployment script aligned with the `FSharp.MCP.DevKit.exe` Windows Service path.
+  - Publishes `FSharp.MCP.DevKit.Server`, registers `fsharp-devkit` as an auto-start service, and verifies `/healthz`.
+- `uninstall-local-win-service.ps1`
+  - Windows local uninstall script aligned with `deploy-local-win-service.ps1`.
+  - Stops and deletes the `fsharp-devkit` service registration, and can optionally remove the staged service directory or deploy root.
 
 ## Placeholder / demo only
 

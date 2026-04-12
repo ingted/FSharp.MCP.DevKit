@@ -35,6 +35,7 @@
     <Compile Include="Backends\BackendSelector.fs" />
     <Compile Include="Backends\BackendAdapters.fs" />
     <Compile Include="Integration\ProcSupervisorClient.fs" />
+    <Compile Include="Integration\ProcSupervisorDiscovery.fs" />
     <Compile Include="Integration\FsiSupervisorClient.fs" />
     <Compile Include="Backends\InProcBackend.fs" />
     <Compile Include="Backends\NetFxHostBackend.fs" />
@@ -42,6 +43,8 @@
     <Compile Include="ControlPlane\AgentRegistry.fs" />
     <Compile Include="ControlPlane\HostRegistry.fs" />
     <Compile Include="ControlPlane\SessionRegistry.fs" />
+    <Compile Include="ControlPlane\InventoryEventStore.fs" />
+    <Compile Include="ControlPlane\OutputSubscriberBroker.fs" />
     <Compile Include="ControlPlane\AsyncJobRegistry.fs" />
     <Compile Include="ControlPlane\ResultRegistry.fs" />
     <Compile Include="ControlPlane\PathMappingRegistry.fs" />
@@ -76,10 +79,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.5.62" />
-    <PackageReference Include="Akka.Remote" Version="1.5.62" />
-    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.562.101.201-dgx.21" />
-    <PackageReference Include="FAkka.Proc.Supervisor" Version="1.562.101.201-dgx.25" />
+    <PackageReference Include="Akka" Version="1.5.64" />
+    <PackageReference Include="Akka.Remote" Version="1.5.64" />
+    <PackageReference Include="FAkka.Fsi.Contracts" Version="10.1.201.5" />
+    <PackageReference Include="FAkka.FSI.Supervisor" Version="1.564.101.201-win1" />
+    <PackageReference Include="FAkka.Proc.Supervisor" Version="1.564.101.201-win1" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />

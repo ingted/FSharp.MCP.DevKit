@@ -298,6 +298,8 @@ module McpFsiTools =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
+        let inventoryEventStore = InMemoryInventoryEventStore() :> IInventoryEventStore
+        let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
@@ -332,8 +334,11 @@ module McpFsiTools =
         let backendSelector = BackendSelector(registeredBackends)
         let executionRouter =
             ExecutionRouter(agentRegistry, hostRegistry, sessionRegistry, resultRegistry, backendSelector)
-        let hostProvisioningService = procSupervisorClientOpt |> Option.map (fun client -> HostProvisioningService(agentRegistry, hostRegistry, client))
-        let sessionProvisioningService = SessionProvisioningService(hostRegistry, sessionRegistry, backendSelector)
+        let hostProvisioningService =
+            procSupervisorClientOpt
+            |> Option.map (fun client -> HostProvisioningService(agentRegistry, hostRegistry, client, inventoryEventStore))
+
+        let sessionProvisioningService = SessionProvisioningService(hostRegistry, sessionRegistry, backendSelector, inventoryEventStore)
 
         let asyncResultCache = AsyncFsiResultCache()
         let asyncRequestChannel = Channel.CreateUnbounded<AsyncFsiExecutionRequest>()
@@ -435,6 +440,58 @@ module McpFsiTools =
         member this.DefaultTimeout = defaultTimeout
 
         member _.ResolveRoute(?requestedRoute: ExecutionRoute) = resolveRoute requestedRoute
+
+        member _.SubscribeSessionOutput
+            (
+                subscriberId: string,
+                ?fromSequenceNo: int64,
+                ?includeHistory: bool,
+                ?requestedRoute: ExecutionRoute
+            ) =
+            let route = resolveRoute requestedRoute
+
+            outputSubscriberBroker.Subscribe
+                { SessionId = route.SessionId
+                  SubscriberId = subscriberId
+                  FromSequenceNo = defaultArg fromSequenceNo 0L
+                  IncludeHistory = defaultArg includeHistory false
+                  SubscribedAt = DateTime.UtcNow }
+
+        member _.ListSessionOutputSubscribers(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            outputSubscriberBroker.ListSubscribers(route.SessionId)
+
+        member _.ListSessionOutput
+            (
+                ?afterSequenceNo: int64,
+                ?limit: int,
+                ?requestedRoute: ExecutionRoute
+            ) =
+            let route = resolveRoute requestedRoute
+            outputSubscriberBroker.ListEvents(route.SessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.UnsubscribeSessionOutput(subscriberId: string, ?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            outputSubscriberBroker.Unsubscribe(route.SessionId, subscriberId)
+
+        member _.PublishSessionOutput
+            (
+                streamKind: string,
+                payload: string,
+                ?executionId: string,
+                ?isReplay: bool,
+                ?requestedRoute: ExecutionRoute
+            ) =
+            let route = resolveRoute requestedRoute
+
+            outputSubscriberBroker.Publish
+                { SessionId = route.SessionId
+                  ExecutionId = executionId
+                  SequenceNo = 0L
+                  StreamKind = streamKind
+                  TimestampUtc = DateTime.UtcNow
+                  Payload = payload
+                  IsReplay = defaultArg isReplay false }
 
         member _.ExecuteOperation
             (
@@ -654,6 +711,9 @@ module McpFsiTools =
         member _.TryGetSession(hostId: string, sessionId: string) = sessionRegistry.TryGet(hostId, sessionId)
 
         member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+
+        member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =
+            inventoryEventStore.List(?afterSequenceId = afterSequenceId, ?limit = limit)
 
         member _.ListPathMappings(?agentId: string, ?hostId: string) =
             match agentId, hostId with

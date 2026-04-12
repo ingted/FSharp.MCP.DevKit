@@ -22,6 +22,7 @@ type BackendHealth =
 type IFsiExecutionBackend =
     abstract member BackendKind: BackendKind
     abstract member Execute: ExecutionRequest -> Task<FsiExecutionRecord>
+    abstract member EnsureSession: ExecutionRoute -> Task<SessionRecord>
     abstract member GetSessionState: ExecutionRoute -> Task<SessionRecord>
     abstract member ResetSession: ExecutionRoute -> Task<FsiExecutionRecord>
     abstract member RestartHost: HostRecord -> Task<unit>

@@ -9,6 +9,8 @@ open FSharp.MCP.DevKit.Server.Backends
 open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.Integration
 
+let private createInventoryStore () = InMemoryInventoryEventStore() :> IInventoryEventStore
+
 type private FakeProcSupervisorClient
     (
         startFactory: string * ProcHostSpec -> Task<ProcHostSnapshot>,
@@ -31,10 +33,18 @@ type private FakeProcSupervisorClient
         member _.ListProcInfo() = listFactory ()
         member _.RestartProc(_) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("RestartProc is not used in this test."))
 
-type private FakeSessionProvisioningBackend(initialStateFactory: ExecutionRoute -> SessionRecord, executeFactory: ExecutionRequest -> FsiExecutionRecord) =
+type private FakeSessionProvisioningBackend
+    (
+        initialStateFactory: ExecutionRoute -> SessionRecord,
+        executeFactory: ExecutionRequest -> FsiExecutionRecord,
+        ?ensureStateFactory: ExecutionRoute -> SessionRecord
+    ) =
     let mutable executeRequests : ExecutionRequest list = []
+    let mutable ensureRequests : ExecutionRoute list = []
+    let ensureStateFactory = defaultArg ensureStateFactory initialStateFactory
 
     member _.ExecuteRequests = List.rev executeRequests
+    member _.EnsureRequests = List.rev ensureRequests
 
     interface IFsiExecutionBackend with
         member _.BackendKind = Net10Remote
@@ -42,6 +52,10 @@ type private FakeSessionProvisioningBackend(initialStateFactory: ExecutionRoute 
         member _.Execute(request: ExecutionRequest) =
             executeRequests <- request :: executeRequests
             Task.FromResult(executeFactory request)
+
+        member _.EnsureSession(route: ExecutionRoute) =
+            ensureRequests <- route :: ensureRequests
+            Task.FromResult(ensureStateFactory route)
 
         member _.GetSessionState(route: ExecutionRoute) = Task.FromResult(initialStateFactory route)
         member _.ResetSession(route: ExecutionRoute) = Task.FromResult(executeFactory { RequestId = Guid.NewGuid().ToString("N"); Route = route; OperationKind = ResetSession; Payload = ""; Timeout = None; UsePackageTargets = None })
@@ -57,7 +71,7 @@ let ``HostProvisioningService rejects explicit inproc host creation`` () =
             FakeProcSupervisorClient(fun _ ->
                 Task.FromException<ProcHostSnapshot>(InvalidOperationException("StartProc should not be called for InProcHost")))
 
-        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient, createInventoryStore ())
 
         let spec =
             { ExecutablePath = "dotnet"
@@ -95,7 +109,8 @@ let ``HostProvisioningService starts proc and stores ready net10 host`` () =
                       Spec = Some spec
                       LastError = None }))
 
-        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+        let eventStore = createInventoryStore ()
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient, eventStore)
 
         let spec =
             { ExecutablePath = "dotnet"
@@ -114,6 +129,9 @@ let ``HostProvisioningService starts proc and stores ready net10 host`` () =
         Assert.Equal(Some 9020, host.ProcId)
         Assert.Equal(Some "akka.tcp://FsiExecutionSystem@localhost:9020/user/fsi/supervisor", host.Address)
         Assert.Equal(host.HostId, stored.HostId)
+        let events = eventStore.List()
+        Assert.Single(events) |> ignore
+        Assert.Equal("host.upserted", events.Head.EventKind)
     }
 
 [<Fact>]
@@ -154,7 +172,7 @@ let ``HostProvisioningService recovers from StartProc ask timeout by polling pro
                                   Spec = Some spec
                                   LastError = None })))
 
-        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient, createInventoryStore ())
 
         let! host = provisioning.CreateHost("agent-recover", Net10Host, spec, requestedHostId = "host-recover")
 
@@ -197,7 +215,7 @@ let ``HostProvisioningService waits for supervisor address after successful Star
                     else
                         Task.FromResult(Some finalizedSnapshot)))
 
-        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient, createInventoryStore ())
 
         let spec =
             { ExecutablePath = "dotnet"
@@ -247,7 +265,7 @@ let ``HostProvisioningService falls back to ListProcInfo when GetProcInfo ask ti
                             Spec = Some spec
                             LastError = None } ])))
 
-        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient)
+        let provisioning = HostProvisioningService(agentRegistry, hostRegistry, procClient :> IProcSupervisorClient, createInventoryStore ())
 
         let! host = provisioning.CreateHost("agent-list-fallback", Net10Host, spec, requestedHostId = "host-list-fallback")
 
@@ -257,7 +275,7 @@ let ``HostProvisioningService falls back to ListProcInfo when GetProcInfo ask ti
     }
 
 [<Fact>]
-let ``SessionProvisioningService lazily registers missing session without backend bootstrap execute`` () =
+let ``SessionProvisioningService ensures missing session through backend without bootstrap execute`` () =
     task {
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
@@ -277,39 +295,21 @@ let ``SessionProvisioningService lazily registers missing session without backen
         )
         |> ignore
 
-        let mutable firstLookup = true
-
         let backend =
             FakeSessionProvisioningBackend(
                 (fun route ->
-                    if firstLookup then
-                        firstLookup <- false
-
-                        { SessionId = route.SessionId
-                          AgentId = route.AgentId
-                          HostId = route.HostId
-                          SessionName = route.SessionId
-                          Status = SessionMissing
-                          Refs = []
-                          Loads = []
-                          SearchPaths = []
-                          Variables = []
-                          LastCheckpointId = None
-                          RunningSinceUtc = None
-                          LastExecutionAt = None }
-                    else
-                        { SessionId = route.SessionId
-                          AgentId = route.AgentId
-                          HostId = route.HostId
-                          SessionName = route.SessionId
-                          Status = SessionReady
-                          Refs = []
-                          Loads = []
-                          SearchPaths = []
-                          Variables = []
-                          LastCheckpointId = None
-                          RunningSinceUtc = Some DateTime.UtcNow
-                          LastExecutionAt = Some DateTime.UtcNow }),
+                    { SessionId = route.SessionId
+                      AgentId = route.AgentId
+                      HostId = route.HostId
+                      SessionName = route.SessionId
+                      Status = SessionMissing
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = None
+                      LastExecutionAt = None }),
                 (fun request ->
                     { ResultId = "result-bootstrap"
                       RequestId = request.RequestId
@@ -328,12 +328,26 @@ let ``SessionProvisioningService lazily registers missing session without backen
                           IsSuccess = true
                           ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
                           Diagnostics = [||]
-                          Value = None } })
+                          Value = None } }),
+                (fun route ->
+                    { SessionId = route.SessionId
+                      AgentId = route.AgentId
+                      HostId = route.HostId
+                      SessionName = route.SessionId
+                      Status = SessionReady
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = Some DateTime.UtcNow
+                      LastExecutionAt = Some DateTime.UtcNow })
             )
             :> IFsiExecutionBackend
 
         let selector = BackendSelector([ backend ])
-        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+        let eventStore = createInventoryStore ()
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector, eventStore)
 
         let! session =
             provisioning.CreateSession("agent-net10", "host-net10", sessionId = "session-c", sessionName = "Session C")
@@ -344,7 +358,11 @@ let ``SessionProvisioningService lazily registers missing session without backen
         Assert.Equal(SessionReady, session.Status)
         Assert.Equal("Session C", session.SessionName)
         Assert.Equal("session-c", stored.SessionId)
+        Assert.Single(fakeBackend.EnsureRequests) |> ignore
         Assert.Empty(fakeBackend.ExecuteRequests)
+        let events = eventStore.List()
+        Assert.Single(events) |> ignore
+        Assert.Equal("session.upserted", events.Head.EventKind)
     }
 
 [<Fact>]
@@ -406,7 +424,7 @@ let ``SessionProvisioningService keeps backend-visible session state when it alr
             :> IFsiExecutionBackend
 
         let selector = BackendSelector([ backend ])
-        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector, createInventoryStore ())
 
         let! session =
             provisioning.CreateSession("agent-delayed", "host-delayed", sessionId = "session-delayed")
@@ -417,7 +435,7 @@ let ``SessionProvisioningService keeps backend-visible session state when it alr
     }
 
 [<Fact>]
-let ``SessionProvisioningService ignores bootstrap execute timeout because no bootstrap execute is sent`` () =
+let ``SessionProvisioningService ignores bootstrap execute timeout because ensure path does not call Execute`` () =
     task {
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
@@ -447,6 +465,22 @@ let ``SessionProvisioningService ignores bootstrap execute timeout because no bo
                 member _.Execute(_request: ExecutionRequest) =
                     executeCalls <- executeCalls + 1
                     Task.FromException<FsiExecutionRecord>(AskTimeoutException("Timeout after 30.00 seconds"))
+
+                member _.EnsureSession(route: ExecutionRoute) =
+                    lookupCount <- lookupCount + 1
+                    Task.FromResult(
+                        { SessionId = route.SessionId
+                          AgentId = route.AgentId
+                          HostId = route.HostId
+                          SessionName = route.SessionId
+                          Status = SessionReady
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = Some DateTime.UtcNow
+                          LastExecutionAt = None })
 
                 member _.GetSessionState(route: ExecutionRoute) =
                     lookupCount <- lookupCount + 1
@@ -513,7 +547,7 @@ let ``SessionProvisioningService ignores bootstrap execute timeout because no bo
                           CheckedAt = DateTime.UtcNow }) }
 
         let selector = BackendSelector([ backend ])
-        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector, createInventoryStore ())
 
         let! session =
             provisioning.CreateSession("agent-exec-timeout", "host-exec-timeout", sessionId = "session-timeout")
@@ -525,7 +559,7 @@ let ``SessionProvisioningService ignores bootstrap execute timeout because no bo
     }
 
 [<Fact>]
-let ``SessionProvisioningService still registers missing session when backend has not materialized it yet`` () =
+let ``SessionProvisioningService registers ensured session when registry was empty`` () =
     task {
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
@@ -578,12 +612,25 @@ let ``SessionProvisioningService still registers missing session when backend ha
                           IsSuccess = true
                           ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
                           Diagnostics = [||]
-                          Value = None } })
+                          Value = None } }),
+                (fun route ->
+                    { SessionId = route.SessionId
+                      AgentId = route.AgentId
+                      HostId = route.HostId
+                      SessionName = route.SessionId
+                      Status = SessionReady
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = Some DateTime.UtcNow
+                      LastExecutionAt = None })
             )
             :> IFsiExecutionBackend
 
         let selector = BackendSelector([ backend ])
-        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector)
+        let provisioning = SessionProvisioningService(hostRegistry, sessionRegistry, selector, createInventoryStore ())
 
         let! session =
             provisioning.CreateSession("agent-missing", "host-missing", sessionId = "session-missing")

@@ -35,10 +35,16 @@ type FsiSupervisorResetResult =
       Existed: bool
       Status: string }
 
+type FsiSupervisorEnsureResult =
+    { SessionId: string
+      Existed: bool
+      Status: string }
+
 type IFsiSupervisorClient =
     abstract member Execute: host: HostRecord * request: FsiSupervisorExecRequest -> Task<FsiSupervisorExecutionResult>
     abstract member GetSessionInfo: host: HostRecord * sessionId: string -> Task<FsiSupervisorSessionSnapshot>
     abstract member ListSessions: host: HostRecord -> Task<FsiSupervisorSessionSnapshot list>
+    abstract member EnsureSession: host: HostRecord * sessionId: string -> Task<FsiSupervisorEnsureResult>
     abstract member ResetSession: host: HostRecord * sessionId: string -> Task<FsiSupervisorResetResult>
 
 module private FsiSupervisorAdapters =
@@ -84,6 +90,11 @@ module private FsiSupervisorAdapters =
           RunningSinceUtc = session.runningSinceUtc }
 
     let toResetResult (result: ResetSessionResult) : FsiSupervisorResetResult =
+        { SessionId = result.session
+          Existed = result.existed
+          Status = result.status }
+
+    let toEnsureResult (result: EnsureSessionResult) : FsiSupervisorEnsureResult =
         { SessionId = result.session
           Existed = result.existed
           Status = result.status }
@@ -136,6 +147,14 @@ type FsiSupervisorClient(actorSystem: ActorSystem, ?defaultTimeout: TimeSpan) =
                 let request: ListSessions = { all = true }
                 let! sessions = supervisor.Ask<Sessions>(request, TimeSpan.FromSeconds 5.0)
                 return sessions.items |> List.map FsiSupervisorAdapters.toSessionSnapshot
+            }
+
+        member _.EnsureSession(host: HostRecord, sessionId: string) =
+            task {
+                let! supervisor = resolveSupervisor host
+                let request: EnsureSession = { session = sessionId }
+                let! result = supervisor.Ask<EnsureSessionResult>(request, TimeSpan.FromSeconds 5.0)
+                return FsiSupervisorAdapters.toEnsureResult result
             }
 
         member _.ResetSession(host: HostRecord, sessionId: string) =

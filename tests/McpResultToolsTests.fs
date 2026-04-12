@@ -5,6 +5,7 @@ open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
 
@@ -88,8 +89,9 @@ let ``McpResultTools get list query compare and resources work`` () =
         Assert.True(mapResponse.IsSuccess)
         Assert.Equal("[\"10\",\"11\"]", mapResponse.MaterializedJson.Value)
         Assert.True(compareResponse.IsSuccess)
-        Assert.Contains(first.ResultId, compareResponse.MaterializedJson.Value)
-        Assert.Contains(second.ResultId, compareResponse.MaterializedJson.Value)
+        Assert.True(compareResponse.MaterializedJson.IsSome)
+        Assert.Contains("\"leftValue\":\"10\"", compareResponse.MaterializedJson.Value)
+        Assert.Contains("\"rightValue\":\"11\"", compareResponse.MaterializedJson.Value)
         Assert.True(fsharpResponse.IsSuccess)
         Assert.Equal("[\"10\",\"11\"]", fsharpResponse.MaterializedJson.Value)
         Assert.True(materializedResponse.IsSuccess)
@@ -99,4 +101,89 @@ let ``McpResultTools get list query compare and resources work`` () =
         Assert.Contains(first.ResultId, resultResourceJson)
         Assert.Contains(first.ResultId, agentResultsJson)
         Assert.Contains(second.ResultId, sessionResultsJson)
+    }
+
+[<Fact>]
+let ``McpResultTools output tools and resources expose live broker state`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let _ = service.ResolveRoute()
+
+        let subscribeJson =
+            McpResultTools.SubscribeSessionOutput(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "mgmt2-reader",
+                0L,
+                true
+            )
+
+        let _ = service.PublishSessionOutput("stdout", "alpha", executionId = "exec-out-1")
+        let _ = service.PublishSessionOutput("stderr", "beta", executionId = "exec-out-1")
+
+        let subscribersJson =
+            McpResultTools.ListSessionOutputSubscribers(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let outputJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                0L,
+                0
+            )
+
+        let outputAfterJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                1L,
+                0
+            )
+
+        let resultResource = ResultResources(service)
+        let outputResourceJson = resultResource.SessionOutput("default-host", "default-session")
+        let outputAfterResourceJson = resultResource.SessionOutputAfter("default-host", "default-session", 1L)
+        let subscribersResourceJson = resultResource.SessionOutputSubscribers("default-host", "default-session")
+
+        let subscribed = FSharpJson.deserialize<OutputSubscriberRecord> subscribeJson
+        let subscribers = FSharpJson.deserialize<OutputSubscriberRecord list> subscribersJson
+        let events = FSharpJson.deserialize<OutputEventRecord list> outputJson
+        let eventsAfter = FSharpJson.deserialize<OutputEventRecord list> outputAfterJson
+        let resourceEvents = FSharpJson.deserialize<OutputEventRecord list> outputResourceJson
+        let resourceEventsAfter = FSharpJson.deserialize<OutputEventRecord list> outputAfterResourceJson
+        let resourceSubscribers = FSharpJson.deserialize<OutputSubscriberRecord list> subscribersResourceJson
+
+        Assert.Equal("mgmt2-reader", subscribed.SubscriberId)
+        Assert.Single(subscribers) |> ignore
+        Assert.Equal(2, events.Length)
+        Assert.Equal(1L, events[0].SequenceNo)
+        Assert.Equal(2L, events[1].SequenceNo)
+        Assert.Single(eventsAfter) |> ignore
+        Assert.Equal("beta", eventsAfter[0].Payload)
+        Assert.Equal(events.Length, resourceEvents.Length)
+        Assert.Single(resourceEventsAfter) |> ignore
+        Assert.Single(resourceSubscribers) |> ignore
+        let unsubscribeJson =
+            McpResultTools.UnsubscribeSessionOutput(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "mgmt2-reader"
+            )
+
+        let unsubscribed = FSharpJson.deserialize<bool> unsubscribeJson
+        Assert.True(unsubscribed)
     }

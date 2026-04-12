@@ -10,6 +10,7 @@ type private FakeBackend(kind: BackendKind) =
     interface IFsiExecutionBackend with
         member _.BackendKind = kind
         member _.Execute _ = Task.FromException<FsiExecutionRecord>(NotImplementedException())
+        member _.EnsureSession _ = Task.FromException<SessionRecord>(NotImplementedException())
         member _.GetSessionState _ = Task.FromException<SessionRecord>(NotImplementedException())
         member _.ResetSession _ = Task.FromException<FsiExecutionRecord>(NotImplementedException())
         member _.RestartHost _ = Task.FromException<unit>(NotImplementedException())

@@ -42,6 +42,13 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
 
         member _.ListSessions(_) = Task.FromResult([])
 
+        member _.EnsureSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = false
+                  Status = "created" }
+            )
+
         member _.ResetSession(_, sessionId: string) =
             Task.FromResult(
                 { SessionId = sessionId
@@ -287,12 +294,16 @@ let ``ControlPlaneResources expose registered host and session`` () =
         let hostJson = resources.Host("host-r")
         let hostSessionsJson = resources.HostSessions("host-r")
         let sessionJson = resources.HostSession("host-r", "session-r")
+        let inventoryEventsJson = resources.InventoryEvents()
+        let inventoryEventsAfterJson = resources.InventoryEventsAfter(0L)
         let mappingsJson = resources.PathMappings()
 
         Assert.Contains("agent-r", agentJson)
         Assert.Contains("host-r", hostJson)
         Assert.Contains("session-r", hostSessionsJson)
         Assert.Contains("session-r", sessionJson)
+        Assert.Contains("host.upserted", inventoryEventsJson)
+        Assert.Contains("session.upserted", inventoryEventsAfterJson)
         Assert.Equal("[]", mappingsJson)
     }
 

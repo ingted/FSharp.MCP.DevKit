@@ -116,6 +116,19 @@ type NetFxHostBackend(remoteClient: IRemoteFsiClient) =
                 return toSessionRecord route response.SessionState
             }
 
+        member this.EnsureSession(route: ExecutionRoute) =
+            task {
+                let! state = (this :> IFsiExecutionBackend).GetSessionState(route)
+
+                if state.Status <> SessionMissing then
+                    return state
+                else
+                    return
+                        { state with
+                            Status = SessionReady
+                            RunningSinceUtc = Some DateTime.UtcNow }
+            }
+
         member this.ResetSession(route: ExecutionRoute) =
             task {
                 let request =

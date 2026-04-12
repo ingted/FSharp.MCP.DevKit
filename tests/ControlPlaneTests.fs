@@ -125,3 +125,36 @@ let ``DefaultRouting rejects route when host belongs to another agent`` () =
             |> ignore)
 
     Assert.Contains("does not belong to agent", ex.Message)
+
+[<Fact>]
+let ``InMemoryInventoryEventStore appends ordered events and supports after sequence filtering`` () =
+    let store = InMemoryInventoryEventStore() :> IInventoryEventStore
+
+    let first =
+        store.Append
+            { SequenceId = 0L
+              EventKind = "host.upserted"
+              SubjectKind = "host"
+              AgentId = Some "agent-a"
+              HostId = Some "host-a"
+              SessionId = None
+              CreatedAt = DateTime.UtcNow
+              Message = Some "host created" }
+
+    let second =
+        store.Append
+            { SequenceId = 0L
+              EventKind = "session.upserted"
+              SubjectKind = "session"
+              AgentId = Some "agent-a"
+              HostId = Some "host-a"
+              SessionId = Some "session-a"
+              CreatedAt = DateTime.UtcNow
+              Message = Some "session created" }
+
+    let filtered = store.List(afterSequenceId = first.SequenceId)
+
+    Assert.Equal(1L, first.SequenceId)
+    Assert.Equal(2L, second.SequenceId)
+    Assert.Single(filtered) |> ignore
+    Assert.Equal(second.SequenceId, filtered.Head.SequenceId)

@@ -191,6 +191,12 @@ type InProcBackend(?config: FsiConfig) as this =
                 return toSessionRecord handle
             }
 
+        member _.EnsureSession(route: ExecutionRoute) =
+            task {
+                let handle = getOrCreateHandle route
+                return toSessionRecord handle
+            }
+
         member _.ResetSession(route: ExecutionRoute) =
             task {
                 let request =

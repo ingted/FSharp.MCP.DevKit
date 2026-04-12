@@ -11,7 +11,8 @@ type HostProvisioningService
     (
         agentRegistry: IAgentRegistry,
         hostRegistry: IHostRegistry,
-        procSupervisorClient: IProcSupervisorClient
+        procSupervisorClient: IProcSupervisorClient,
+        inventoryEventStore: IInventoryEventStore
     ) =
 
     let mapBackendKind hostKind =
@@ -95,6 +96,18 @@ type HostProvisioningService
         | NetFxHost -> snapshot.FsiSupervisorPath |> Option.exists (String.IsNullOrWhiteSpace >> not)
         | InProcHost -> true
 
+    let appendHostEvent eventKind message (record: HostRecord) =
+        inventoryEventStore.Append
+            { SequenceId = 0L
+              EventKind = eventKind
+              SubjectKind = "host"
+              AgentId = Some record.AgentId
+              HostId = Some record.HostId
+              SessionId = None
+              CreatedAt = DateTime.UtcNow
+              Message = message }
+        |> ignore
+
     member _.CreateHost
         (
             agentId: string,
@@ -175,6 +188,7 @@ type HostProvisioningService
                         LastError = finalizedSnapshot.LastError }
 
                 hostRegistry.Update readyRecord
+                appendHostEvent "host.upserted" (Some $"Host '{readyRecord.HostId}' status = {readyRecord.Status}") readyRecord
                 return readyRecord
             with ex ->
                 let failedRecord =
@@ -184,6 +198,7 @@ type HostProvisioningService
                         LastError = Some ex.Message }
 
                 hostRegistry.Update failedRecord
+                appendHostEvent "host.upserted" (Some ex.Message) failedRecord
                 return raise ex
         }
 
@@ -191,7 +206,8 @@ type SessionProvisioningService
     (
         hostRegistry: IHostRegistry,
         sessionRegistry: ISessionRegistry,
-        backendSelector: BackendSelector
+        backendSelector: BackendSelector,
+        inventoryEventStore: IInventoryEventStore
     ) =
 
     let upsertSession (record: SessionRecord) =
@@ -199,37 +215,17 @@ type SessionProvisioningService
         | Some _ -> sessionRegistry.Update record
         | None -> sessionRegistry.Create record |> ignore
 
-    let tryGetBackendSessionState
-        (backend: IFsiExecutionBackend)
-        (route: ExecutionRoute)
-        : Task<SessionRecord option> =
-        task {
-            try
-                let! state = backend.GetSessionState(route)
-                return Some state
-            with
-            | :? AskTimeoutException
-            | :? InvalidOperationException -> return None
-        }
-
-    let rec pollBackendSessionState
-        (backend: IFsiExecutionBackend)
-        (route: ExecutionRoute)
-        (deadlineUtc: DateTime)
-        (remainingAttempts: int)
-        : Task<SessionRecord option> =
-        task {
-            if DateTime.UtcNow >= deadlineUtc || remainingAttempts <= 0 then
-                return None
-            else
-                let! stateOpt = tryGetBackendSessionState backend route
-
-                match stateOpt with
-                | Some state when state.Status <> SessionMissing -> return Some state
-                | _ ->
-                    do! Task.Delay 250
-                    return! pollBackendSessionState backend route deadlineUtc (remainingAttempts - 1)
-        }
+    let appendSessionEvent eventKind message (record: SessionRecord) =
+        inventoryEventStore.Append
+            { SequenceId = 0L
+              EventKind = eventKind
+              SubjectKind = "session"
+              AgentId = Some record.AgentId
+              HostId = Some record.HostId
+              SessionId = Some record.SessionId
+              CreatedAt = DateTime.UtcNow
+              Message = message }
+        |> ignore
 
     member _.CreateSession
         (
@@ -257,46 +253,21 @@ type SessionProvisioningService
                       SessionId = resolvedSessionId }
 
                 let backend = backendSelector.Resolve(host.BackendKind)
-                let! initialStateOpt = tryGetBackendSessionState backend route
-
-                let initialState =
-                    initialStateOpt
-                    |> Option.defaultValue
-                        { SessionId = resolvedSessionId
-                          AgentId = agentId
-                          HostId = hostId
-                          SessionName = resolvedSessionId
-                          Status = SessionMissing
-                          Refs = []
-                          Loads = []
-                          SearchPaths = []
-                          Variables = []
-                          LastCheckpointId = None
-                          RunningSinceUtc = None
-                          LastExecutionAt = None }
-
-                let! hydratedState =
-                    if initialState.Status = SessionMissing then
-                        Task.FromResult
-                            { SessionId = resolvedSessionId
-                              AgentId = agentId
-                              HostId = hostId
-                              SessionName = resolvedSessionId
-                              Status = SessionReady
-                              Refs = []
-                              Loads = []
-                              SearchPaths = []
-                              Variables = []
-                              LastCheckpointId = None
-                              RunningSinceUtc = None
-                              LastExecutionAt = None }
-                    else
-                        Task.FromResult initialState
+                let! ensuredState = backend.EnsureSession(route)
 
                 let record =
-                    { hydratedState with
-                        SessionName = defaultArg sessionName hydratedState.SessionName }
+                    { ensuredState with
+                        AgentId = agentId
+                        HostId = hostId
+                        SessionId = resolvedSessionId
+                        SessionName =
+                            let preferredName = defaultArg sessionName ensuredState.SessionName
+                            if String.IsNullOrWhiteSpace preferredName then
+                                resolvedSessionId
+                            else
+                                preferredName }
 
                 upsertSession record
+                appendSessionEvent "session.upserted" (Some $"Session '{record.SessionId}' status = {record.Status}") record
                 return record
         }

@@ -14,6 +14,7 @@ open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Microsoft.Extensions.Hosting.WindowsServices
+open System.Net.Http
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.Integration
@@ -84,14 +85,21 @@ let getServerUrls (argv: string array) =
     |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
     |> Option.defaultValue "http://0.0.0.0:5000"
 
-let getProcSupervisorPath (argv: string array) =
+let tryGetProcSupervisorPath (argv: string array) =
     let envValue = Environment.GetEnvironmentVariable("FSI_PROC_SUPERVISOR_PATH")
     let argValue = tryGetCommandLineValue "--proc-supervisor-path" argv
 
     [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
     |> List.choose id
     |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
-    |> Option.defaultValue "akka.tcp://proc-system@127.0.0.1:8110/user/proc-supervisor"
+
+let tryGetProcSupervisorBaseUrl (argv: string array) =
+    let envValue = Environment.GetEnvironmentVariable("FSI_PROC_SUPERVISOR_BASE_URL")
+    let argValue = tryGetCommandLineValue "--proc-supervisor-base-url" argv
+
+    [ argValue; if not (String.IsNullOrWhiteSpace(envValue)) then Some envValue ]
+    |> List.choose id
+    |> List.tryFind (fun value -> not (String.IsNullOrWhiteSpace(value)))
 
 let getAkkaClientConfig () =
     let configPath = IO.Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
@@ -154,8 +162,15 @@ let main argv =
                 || value.Equals("no", StringComparison.OrdinalIgnoreCase))
 
     let enableProcSupervisor = getEnableProcSupervisor ()
-    let procSupervisorPath = getProcSupervisorPath argv
+    let procSupervisorPathInput = tryGetProcSupervisorPath argv
+    let procSupervisorBaseUrlInput = tryGetProcSupervisorBaseUrl argv
     let procSupervisorTimeoutSeconds = getProcSupervisorTimeoutSeconds argv
+    let procSupervisorResolution =
+        use httpClient = new HttpClient()
+        httpClient.Timeout <- TimeSpan.FromSeconds 2.0
+        ProcSupervisorDiscovery.resolveActorPath httpClient procSupervisorPathInput procSupervisorBaseUrlInput
+        |> fun task -> task.GetAwaiter().GetResult()
+    let procSupervisorPath = procSupervisorResolution.ActorPath
 
     if enableRemoteClient || enableProcSupervisor then
         builder.Services.AddSingleton<ActorSystem>(fun _ ->
@@ -244,6 +259,8 @@ let main argv =
                    remoteClient = if enableRemoteClient then "enabled" else "disabled"
                    procSupervisor = if enableProcSupervisor then "enabled" else "disabled"
                    procSupervisorPath = procSupervisorPath
+                   procSupervisorBaseUrl = procSupervisorResolution.BaseUrl
+                   procSupervisorPathSource = procSupervisorResolution.Source
                    procSupervisorTimeoutSeconds = procSupervisorTimeoutSeconds
                    isWindowsService = isWindowsService
                    serviceName = serviceName |}))

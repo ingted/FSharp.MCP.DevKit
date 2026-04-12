@@ -21,6 +21,43 @@ type ISessionRegistry =
     abstract member TryGet: string * string -> SessionRecord option
     abstract member ListByHost: string -> SessionRecord list
 
+type InventoryEventRecord =
+    { SequenceId: int64
+      EventKind: string
+      SubjectKind: string
+      AgentId: string option
+      HostId: string option
+      SessionId: string option
+      CreatedAt: DateTime
+      Message: string option }
+
+type IInventoryEventStore =
+    abstract member Append: InventoryEventRecord -> InventoryEventRecord
+    abstract member List: ?afterSequenceId: int64 * ?limit: int -> InventoryEventRecord list
+
+type OutputSubscriberRecord =
+    { SessionId: string
+      SubscriberId: string
+      FromSequenceNo: int64
+      IncludeHistory: bool
+      SubscribedAt: DateTime }
+
+type OutputEventRecord =
+    { SessionId: string
+      ExecutionId: string option
+      SequenceNo: int64
+      StreamKind: string
+      TimestampUtc: DateTime
+      Payload: string
+      IsReplay: bool }
+
+type IOutputSubscriberBroker =
+    abstract member Subscribe: OutputSubscriberRecord -> OutputSubscriberRecord
+    abstract member Unsubscribe: sessionId: string * subscriberId: string -> bool
+    abstract member ListSubscribers: sessionId: string -> OutputSubscriberRecord list
+    abstract member Publish: OutputEventRecord -> OutputEventRecord * OutputSubscriberRecord list
+    abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+
 type IAsyncJobRegistry =
     abstract member Create: AsyncFsiJob -> AsyncFsiJob
     abstract member MarkRunning: string * DateTime -> unit

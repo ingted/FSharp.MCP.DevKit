@@ -46,6 +46,20 @@ type Net10HostBackend
           RunningSinceUtc = snapshot.RunningSinceUtc
           LastExecutionAt = None }
 
+    let createReadySessionRecord (route: ExecutionRoute) (sessionName: string) =
+        { SessionId = route.SessionId
+          AgentId = route.AgentId
+          HostId = route.HostId
+          SessionName = sessionName
+          Status = SessionReady
+          Refs = []
+          Loads = []
+          SearchPaths = []
+          Variables = []
+          LastCheckpointId = None
+          RunningSinceUtc = Some DateTime.UtcNow
+          LastExecutionAt = None }
+
     let buildExecRequest (request: ExecutionRequest) =
         match request.OperationKind with
         | ExecuteCode
@@ -162,6 +176,18 @@ type Net10HostBackend
                 let host = requireHost route.HostId
                 let! snapshot = fsiSupervisorClient.GetSessionInfo(host, route.SessionId)
                 return toSessionRecord route snapshot
+            }
+
+        member _.EnsureSession(route: ExecutionRoute) =
+            task {
+                let host = requireHost route.HostId
+                let! ensured = fsiSupervisorClient.EnsureSession(host, route.SessionId)
+
+                try
+                    let! snapshot = fsiSupervisorClient.GetSessionInfo(host, route.SessionId)
+                    return toSessionRecord route snapshot
+                with _ ->
+                    return createReadySessionRecord route ensured.SessionId
             }
 
         member _.ResetSession(route: ExecutionRoute) =

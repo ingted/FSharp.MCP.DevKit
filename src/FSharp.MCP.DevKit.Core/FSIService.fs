@@ -181,6 +181,9 @@ type FsiService(config: FsiConfig) =
     let mutable sbOut: StringBuilder option = None
     let mutable sbErr: StringBuilder option = None
 
+    let escapeForVerbatimDirectiveLiteral (value: string) =
+        value.Replace("\"", "\"\"")
+
     /// Start the FSI session
     member this.Start() =
         if isStarted then
@@ -647,12 +650,12 @@ type FsiService(config: FsiConfig) =
 
     /// Reference an assembly file using #r directive
     member this.ReferenceAssembly(assemblyPath: string) : FsiResult =
-        let refCommand = $"#r \"{assemblyPath}\""
+        let refCommand = $"#r @\"{escapeForVerbatimDirectiveLiteral assemblyPath}\""
         this.ExecuteInteraction(refCommand)
 
     /// Add an assembly search path using #I directive
     member this.AddSearchPath(path: string) : FsiResult =
-        let pathCommand = $"#I \"{path}\""
+        let pathCommand = $"#I @\"{escapeForVerbatimDirectiveLiteral path}\""
         this.ExecuteInteraction(pathCommand)
 
     /// Get help for a function using #help directive

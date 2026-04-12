@@ -32,6 +32,18 @@ type ControlPlaneResources(fsiService: FsiMcpService) =
         fsiService.TryGetSession(hostId, sessionId)
         |> FSharpJson.serialize
 
+    [<McpServerResource(Name = "fsiInventoryEvents", Title = "FSI Inventory Events", MimeType = "application/json", UriTemplate = "fsi/inventory-events")>]
+    [<Description("List inventory events for hosts and sessions.")>]
+    member _.InventoryEvents() =
+        fsiService.ListInventoryEvents()
+        |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiInventoryEventsAfter", Title = "FSI Inventory Events After Sequence", MimeType = "application/json", UriTemplate = "fsi/inventory-events/{afterSequenceId}")>]
+    [<Description("List inventory events after the specified sequence id.")>]
+    member _.InventoryEventsAfter(afterSequenceId: int64) =
+        fsiService.ListInventoryEvents(afterSequenceId = afterSequenceId)
+        |> FSharpJson.serialize
+
     [<McpServerResource(Name = "fsiPathMappings", Title = "FSI Path Mappings", MimeType = "application/json", UriTemplate = "fsi/path-mappings")>]
     [<Description("List all registered path mappings.")>]
     member _.PathMappings() =
