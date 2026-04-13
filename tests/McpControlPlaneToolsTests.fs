@@ -501,11 +501,17 @@ let ``ControlPlaneResources expose session liveness resource with reachable and 
 
         Assert.True(reachable.IsSome)
         Assert.True(reachable.Value.IsReachable)
+        Assert.False(reachable.Value.IsStale)
         Assert.Equal("SessionReady", reachable.Value.Status)
+        Assert.Equal(0, reachable.Value.ConsecutiveFailures)
+        Assert.True(reachable.Value.NextProbeNotBeforeUtc.IsSome)
 
         Assert.True(unreachable.IsSome)
         Assert.False(unreachable.Value.IsReachable)
         Assert.Equal("Unreachable", unreachable.Value.Status)
+        Assert.False(unreachable.Value.IsStale)
+        Assert.Equal(1, unreachable.Value.ConsecutiveFailures)
+        Assert.True(unreachable.Value.NextProbeNotBeforeUtc.IsSome)
         Assert.Contains("remote timeout", unreachable.Value.ErrorMessage.Value)
     }
 

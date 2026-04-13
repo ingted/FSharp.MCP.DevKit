@@ -43,7 +43,10 @@ module McpFsiTools =
         { SessionId: string
           Status: string
           IsReachable: bool
+          IsStale: bool
           ObservedAtUtc: DateTime
+          NextProbeNotBeforeUtc: DateTime option
+          ConsecutiveFailures: int
           RunningSinceUtc: DateTime option
           LastExecutionAt: DateTime option
           LastCheckpointId: string option
@@ -322,7 +325,8 @@ module McpFsiTools =
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
             ?sessionLivenessSuccessTtl: TimeSpan,
             ?sessionLivenessFailureBaseBackoff: TimeSpan,
-            ?sessionLivenessFailureMaxBackoff: TimeSpan
+            ?sessionLivenessFailureMaxBackoff: TimeSpan,
+            ?sessionLivenessStaleAfter: TimeSpan
         ) =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
@@ -386,6 +390,7 @@ module McpFsiTools =
         let sessionLivenessSuccessTtl = defaultArg sessionLivenessSuccessTtl (TimeSpan.FromSeconds(3.0))
         let sessionLivenessFailureBaseBackoff = defaultArg sessionLivenessFailureBaseBackoff (TimeSpan.FromSeconds(5.0))
         let sessionLivenessFailureMaxBackoff = defaultArg sessionLivenessFailureMaxBackoff (TimeSpan.FromSeconds(30.0))
+        let sessionLivenessStaleAfter = defaultArg sessionLivenessStaleAfter (TimeSpan.FromSeconds(15.0))
         let sessionLivenessCache = Dictionary<string, SessionLivenessCacheEntry>(StringComparer.OrdinalIgnoreCase)
         let sessionLivenessCacheGate = obj()
 
@@ -410,7 +415,10 @@ module McpFsiTools =
                 { SessionId = record.SessionId
                   Status = sessionStatusToText record.Status
                   IsReachable = true
+                  IsStale = false
                   ObservedAtUtc = observedAt
+                  NextProbeNotBeforeUtc = Some(observedAt.Add(sessionLivenessSuccessTtl))
+                  ConsecutiveFailures = 0
                   RunningSinceUtc = record.RunningSinceUtc
                   LastExecutionAt = record.LastExecutionAt
                   LastCheckpointId = record.LastCheckpointId
@@ -435,7 +443,14 @@ module McpFsiTools =
         let tryGetCachedSessionLiveness (hostId: string) (sessionId: string) (observedAt: DateTime) =
             lock sessionLivenessCacheGate (fun () ->
                 match sessionLivenessCache.TryGetValue($"{hostId}::{sessionId}") with
-                | true, entry when observedAt < entry.NextProbeNotBeforeUtc -> Some entry.Record
+                | true, entry when observedAt < entry.NextProbeNotBeforeUtc ->
+                    let isStale = observedAt - entry.Record.ObservedAtUtc >= sessionLivenessStaleAfter
+
+                    Some
+                        { entry.Record with
+                            IsStale = isStale
+                            NextProbeNotBeforeUtc = Some entry.NextProbeNotBeforeUtc
+                            ConsecutiveFailures = entry.ConsecutiveFailures }
                 | _ -> None)
 
         let recordUnreachableSessionLiveness (hostId: string) (sessionId: string) (observedAt: DateTime) (errorMessage: string) =
@@ -460,7 +475,10 @@ module McpFsiTools =
                     { SessionId = sessionId
                       Status = "Unreachable"
                       IsReachable = false
+                      IsStale = false
                       ObservedAtUtc = observedAt
+                      NextProbeNotBeforeUtc = Some(observedAt.Add(backoff))
+                      ConsecutiveFailures = nextFailureCount
                       RunningSinceUtc = None
                       LastExecutionAt = None
                       LastCheckpointId = None
@@ -929,7 +947,10 @@ module McpFsiTools =
                             { SessionId = sessionId
                               Status = "SessionMissing"
                               IsReachable = false
+                              IsStale = false
                               ObservedAtUtc = observedAt
+                              NextProbeNotBeforeUtc = None
+                              ConsecutiveFailures = 0
                               RunningSinceUtc = None
                               LastExecutionAt = None
                               LastCheckpointId = None
@@ -946,7 +967,10 @@ module McpFsiTools =
                                     { SessionId = state.SessionId
                                       Status = sessionStatusToText state.Status
                                       IsReachable = true
+                                      IsStale = false
                                       ObservedAtUtc = observedAt
+                                      NextProbeNotBeforeUtc = Some(observedAt.Add(sessionLivenessSuccessTtl))
+                                      ConsecutiveFailures = 0
                                       RunningSinceUtc = state.RunningSinceUtc
                                       LastExecutionAt = state.LastExecutionAt
                                       LastCheckpointId = state.LastCheckpointId
