@@ -57,6 +57,17 @@ type SessionOutputArchiveRecord =
       EventCount: int
       MaxSequenceNo: int64 option }
 
+type SessionOutputSealPendingRecord =
+    { SessionId: string
+      PendingAt: DateTime
+      EventCount: int
+      MaxSequenceNo: int64 option
+      ErrorMessage: string }
+
+type SessionOutputSealOutcome =
+    | Archived of SessionOutputArchiveRecord
+    | SealPending of SessionOutputSealPendingRecord
+
 type IOutputSubscriberBroker =
     abstract member Subscribe: OutputSubscriberRecord -> OutputSubscriberRecord
     abstract member Unsubscribe: sessionId: string * subscriberId: string -> bool
@@ -74,6 +85,11 @@ type ISessionOutputArchiveStore =
     abstract member Seal: sessionId: string * events: OutputEventRecord list * archivedAt: DateTime -> SessionOutputArchiveRecord
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
     abstract member TryGetArchive: sessionId: string -> SessionOutputArchiveRecord option
+    abstract member MarkSealPending:
+        sessionId: string * events: OutputEventRecord list * pendingAt: DateTime * errorMessage: string -> SessionOutputSealPendingRecord
+    abstract member ListPendingEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+    abstract member TryGetSealPending: sessionId: string -> SessionOutputSealPendingRecord option
+    abstract member RecoverSealPending: sessionId: string -> SessionOutputArchiveRecord option
 
 type IAsyncJobRegistry =
     abstract member Create: AsyncFsiJob -> AsyncFsiJob

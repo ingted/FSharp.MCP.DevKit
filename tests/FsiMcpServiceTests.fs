@@ -62,6 +62,32 @@ let ``FsiMcpService async queue completes and exposes status`` () =
         Assert.Equal(Some "21", evalRecord.Result.Value)
     }
 
+type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
+    let mutable shouldFail = true
+
+    interface ISessionOutputArchiveStore with
+        member _.Seal(sessionId: string, events: OutputEventRecord list, archivedAt: DateTime) =
+            if shouldFail then
+                shouldFail <- false
+                raise (InvalidOperationException("seal failed once"))
+            else
+                inner.Seal(sessionId, events, archivedAt)
+
+        member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetArchive(sessionId: string) = inner.TryGetArchive(sessionId)
+
+        member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
+            inner.MarkSealPending(sessionId, events, pendingAt, errorMessage)
+
+        member _.ListPendingEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListPendingEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetSealPending(sessionId: string) = inner.TryGetSealPending(sessionId)
+
+        member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
+
 [<Fact>]
 let ``FsiMcpService output subscriber broker tracks subscribers on default route`` () =
     let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
@@ -114,7 +140,10 @@ let ``FsiMcpService unified session output read returns archived events through 
 
     let _ = service.PublishSessionOutput("stdout", "alpha", executionId = "exec-archive-1")
     let _ = service.PublishSessionOutput("stderr", "beta", executionId = "exec-archive-1")
-    let archive = service.SealSessionOutputArchive()
+    let archive =
+        match service.SealSessionOutputArchive() with
+        | Archived value -> value
+        | SealPending pending -> failwithf "expected archived outcome but got pending: %s" pending.ErrorMessage
     let events = service.ListSessionOutput()
     let eventsAfter = service.ListSessionOutput(afterSequenceNo = 1L)
 
@@ -179,7 +208,10 @@ let ``FsiMcpService seal clears live cache and preserves monotonic sequence for 
 
     let _ = service.PublishSessionOutput("stdout", "alpha", executionId = "exec-seal-1")
     let _ = service.PublishSessionOutput("stderr", "beta", executionId = "exec-seal-1")
-    let archive = service.SealSessionOutputArchive()
+    let archive =
+        match service.SealSessionOutputArchive() with
+        | Archived value -> value
+        | SealPending pending -> failwithf "expected archived outcome but got pending: %s" pending.ErrorMessage
     let thirdEvent, _ = service.PublishSessionOutput("stdout", "gamma", executionId = "exec-seal-2")
     let events = service.ListSessionOutput()
 
@@ -218,6 +250,46 @@ let ``FsiMcpService restart host seals current session output before lifecycle r
         Assert.Equal(1, archive.Value.EventCount)
         Assert.Single(events) |> ignore
         Assert.Equal("before-restart", events[0].Payload)
+    }
+
+[<Fact>]
+let ``FsiMcpService reset marks seal pending and allows recovery when archive seal fails`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let baseArchiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+        let flakyArchiveStore = FailOnceArchiveStore(baseArchiveStore) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = flakyArchiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.PublishSessionOutput("stdout", "before-pending", executionId = "exec-pending-1")
+        let! record = service.ExecuteOperation(ResetSession, "", timeout = TimeSpan.FromSeconds 30.0)
+
+        let pending = service.TryGetSessionOutputSealPending()
+        let eventsWhilePending = service.ListSessionOutput()
+        let recovered = service.RecoverSessionOutputSealPending()
+        let archive = service.TryGetSessionOutputArchive()
+        let eventsAfterRecovery = service.ListSessionOutput()
+
+        Assert.True(record.Result.IsSuccess)
+        Assert.True(pending.IsSome)
+        Assert.Contains("seal failed once", pending.Value.ErrorMessage)
+        Assert.Single(eventsWhilePending) |> ignore
+        Assert.Equal("before-pending", eventsWhilePending[0].Payload)
+        Assert.True(recovered.IsSome)
+        Assert.True(archive.IsSome)
+        Assert.True(service.TryGetSessionOutputSealPending().IsNone)
+        Assert.Single(eventsAfterRecovery) |> ignore
+        Assert.Equal("before-pending", eventsAfterRecovery[0].Payload)
     }
 
 [<Fact>]

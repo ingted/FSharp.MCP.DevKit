@@ -12,6 +12,14 @@ type SessionOutputArchiveIndex =
       MaxSequenceNo: int64 option
       Segments: string list }
 
+type SessionOutputSealPendingIndex =
+    { SessionId: string
+      PendingAt: DateTime
+      EventCount: int
+      MaxSequenceNo: int64 option
+      ErrorMessage: string
+      Segments: string list }
+
 module SessionOutputArchivePath =
 
     let private tryFindRepoRootWithMisc (startPath: string) =
@@ -62,18 +70,29 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
 
     let archiveRoot = Path.Combine(executionStoreRoot, "output", "archive")
     let archiveIndexRoot = Path.Combine(executionStoreRoot, "archive-index")
+    let pendingRoot = Path.Combine(executionStoreRoot, "output", "seal-pending")
+    let pendingIndexRoot = Path.Combine(executionStoreRoot, "seal-pending-index")
 
     let archives = ConcurrentDictionary<string, SessionOutputArchiveRecord * OutputEventRecord array>()
+    let pendings = ConcurrentDictionary<string, SessionOutputSealPendingRecord * OutputEventRecord array>()
 
     let ensureDirectories () =
         Directory.CreateDirectory(archiveRoot) |> ignore
         Directory.CreateDirectory(archiveIndexRoot) |> ignore
+        Directory.CreateDirectory(pendingRoot) |> ignore
+        Directory.CreateDirectory(pendingIndexRoot) |> ignore
 
     let sessionArchiveDirectory (sessionId: string) =
         Path.Combine(archiveRoot, SessionOutputArchivePath.normalizePathToken sessionId)
 
     let sessionArchiveIndexPath (sessionId: string) =
         Path.Combine(archiveIndexRoot, $"{SessionOutputArchivePath.normalizePathToken sessionId}.json")
+
+    let sessionPendingDirectory (sessionId: string) =
+        Path.Combine(pendingRoot, SessionOutputArchivePath.normalizePathToken sessionId)
+
+    let sessionPendingIndexPath (sessionId: string) =
+        Path.Combine(pendingIndexRoot, $"{SessionOutputArchivePath.normalizePathToken sessionId}.json")
 
     let toIndex (record: SessionOutputArchiveRecord) (segments: string list) : SessionOutputArchiveIndex =
         { SessionId = record.SessionId
@@ -87,6 +106,21 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
           ArchivedAt = index.ArchivedAt
           EventCount = index.EventCount
           MaxSequenceNo = index.MaxSequenceNo }
+
+    let toPendingIndex (record: SessionOutputSealPendingRecord) (segments: string list) : SessionOutputSealPendingIndex =
+        { SessionId = record.SessionId
+          PendingAt = record.PendingAt
+          EventCount = record.EventCount
+          MaxSequenceNo = record.MaxSequenceNo
+          ErrorMessage = record.ErrorMessage
+          Segments = segments }
+
+    let toPendingRecord (index: SessionOutputSealPendingIndex) : SessionOutputSealPendingRecord =
+        { SessionId = index.SessionId
+          PendingAt = index.PendingAt
+          EventCount = index.EventCount
+          MaxSequenceNo = index.MaxSequenceNo
+          ErrorMessage = index.ErrorMessage }
 
     let loadEventsFromSegments (segments: string list) =
         segments
@@ -115,6 +149,18 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
         else
             None
 
+    let tryLoadPending sessionId =
+        let indexPath = sessionPendingIndexPath sessionId
+
+        if File.Exists(indexPath) then
+            let index = File.ReadAllText(indexPath) |> FSharpJson.deserialize<SessionOutputSealPendingIndex>
+            let events = loadEventsFromSegments index.Segments
+            let record = toPendingRecord index
+            pendings.[sessionId] <- (record, events)
+            Some(record, events)
+        else
+            None
+
     let persistArchive sessionId (record: SessionOutputArchiveRecord) (events: OutputEventRecord array) =
         ensureDirectories ()
 
@@ -131,6 +177,35 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
         let indexPath = sessionArchiveIndexPath sessionId
         let index = toIndex record [ segmentPath ]
         File.WriteAllText(indexPath, FSharpJson.serialize index)
+
+    let persistPending sessionId (record: SessionOutputSealPendingRecord) (events: OutputEventRecord array) =
+        ensureDirectories ()
+
+        let pendingDirectory = sessionPendingDirectory sessionId
+        Directory.CreateDirectory(pendingDirectory) |> ignore
+
+        let segmentFileName = $"{record.PendingAt:yyyyMMddHHmmssfff}.{events.Length:D5}.jsonl"
+        let segmentPath = Path.Combine(pendingDirectory, segmentFileName)
+
+        events
+        |> Array.map FSharpJson.serialize
+        |> fun lines -> File.WriteAllLines(segmentPath, lines)
+
+        let indexPath = sessionPendingIndexPath sessionId
+        let index = toPendingIndex record [ segmentPath ]
+        File.WriteAllText(indexPath, FSharpJson.serialize index)
+
+    let clearPendingArtifacts sessionId =
+        let pendingDirectory = sessionPendingDirectory sessionId
+        let pendingIndexPath = sessionPendingIndexPath sessionId
+
+        if Directory.Exists(pendingDirectory) then
+            Directory.Delete(pendingDirectory, true)
+
+        if File.Exists(pendingIndexPath) then
+            File.Delete(pendingIndexPath)
+
+        pendings.TryRemove(sessionId) |> ignore
 
     member _.ExecutionStoreRoot = executionStoreRoot
 
@@ -151,6 +226,7 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
                   MaxSequenceNo = orderedEvents |> Array.tryLast |> Option.map (fun eventRecord -> eventRecord.SequenceNo) }
 
             persistArchive sessionId record orderedEvents
+            clearPendingArtifacts sessionId
             archives.[sessionId] <- (record, orderedEvents)
             record
 
@@ -177,3 +253,65 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
             | false, _ ->
                 tryLoadArchive sessionId
                 |> Option.map fst
+
+        member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
+            let orderedEvents =
+                events
+                |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
+                |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
+                |> List.map (fun (_, grouped) -> grouped |> List.last)
+                |> List.toArray
+
+            let record =
+                { SessionId = sessionId
+                  PendingAt = if pendingAt = DateTime.MinValue then DateTime.UtcNow else pendingAt
+                  EventCount = orderedEvents.Length
+                  MaxSequenceNo = orderedEvents |> Array.tryLast |> Option.map (fun eventRecord -> eventRecord.SequenceNo)
+                  ErrorMessage = errorMessage }
+
+            persistPending sessionId record orderedEvents
+            pendings.[sessionId] <- (record, orderedEvents)
+            record
+
+        member _.ListPendingEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            let afterSequenceNo = defaultArg afterSequenceNo 0L
+            let limit = defaultArg limit Int32.MaxValue
+
+            let events =
+                match pendings.TryGetValue sessionId with
+                | true, (_, cachedEvents) -> cachedEvents
+                | false, _ ->
+                    match tryLoadPending sessionId with
+                    | Some (_, loadedEvents) -> loadedEvents
+                    | None -> [||]
+
+            events
+            |> Array.filter (fun eventRecord -> eventRecord.SequenceNo > afterSequenceNo)
+            |> Array.truncate limit
+            |> Array.toList
+
+        member _.TryGetSealPending(sessionId: string) =
+            match pendings.TryGetValue sessionId with
+            | true, (record, _) -> Some record
+            | false, _ ->
+                tryLoadPending sessionId
+                |> Option.map fst
+
+        member this.RecoverSealPending(sessionId: string) =
+            let pendingAndEvents =
+                match pendings.TryGetValue sessionId with
+                | true, value -> Some value
+                | false, _ -> tryLoadPending sessionId
+
+            pendingAndEvents
+            |> Option.map (fun (pending, events) ->
+                let archiveRecord =
+                    { SessionId = sessionId
+                      ArchivedAt = DateTime.UtcNow
+                      EventCount = events.Length
+                      MaxSequenceNo = pending.MaxSequenceNo }
+
+                persistArchive sessionId archiveRecord events
+                archives.[sessionId] <- (archiveRecord, events)
+                clearPendingArtifacts sessionId
+                archiveRecord)

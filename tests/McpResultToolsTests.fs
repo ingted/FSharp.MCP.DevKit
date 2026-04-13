@@ -222,7 +222,10 @@ let ``McpResultTools session output resources keep same read path after archive 
 
         let _ = service.PublishSessionOutput("stdout", "archived-alpha", executionId = "exec-archive-2")
         let _ = service.PublishSessionOutput("stderr", "archived-beta", executionId = "exec-archive-2")
-        let archive = service.SealSessionOutputArchive()
+        let archive =
+            match service.SealSessionOutputArchive() with
+            | Archived value -> value
+            | SealPending pending -> failwithf "expected archived outcome but got pending: %s" pending.ErrorMessage
 
         let outputJson =
             McpResultTools.GetSessionOutputEvents(

@@ -10,6 +10,7 @@ open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
+open FSharp.MCP.DevKit.Server.ControlPlane
 
 type private SessionState =
     { Variables: ConcurrentDictionary<string, string>
@@ -267,6 +268,32 @@ let private createNet10SmokeService () =
         fsiSupervisorClient = fsiClient
     )
 
+type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
+    let mutable shouldFail = true
+
+    interface ISessionOutputArchiveStore with
+        member _.Seal(sessionId: string, events: OutputEventRecord list, archivedAt: DateTime) =
+            if shouldFail then
+                shouldFail <- false
+                raise (InvalidOperationException("smoke seal failure"))
+            else
+                inner.Seal(sessionId, events, archivedAt)
+
+        member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetArchive(sessionId: string) = inner.TryGetArchive(sessionId)
+
+        member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
+            inner.MarkSealPending(sessionId, events, pendingAt, errorMessage)
+
+        member _.ListPendingEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListPendingEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetSealPending(sessionId: string) = inner.TryGetSealPending(sessionId)
+
+        member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
+
 [<Fact>]
 let ``Smoke old tools remain compatible on default route`` () =
     task {
@@ -312,6 +339,42 @@ let ``Smoke multi-host routed execution keeps host state isolated`` () =
 
         Assert.Equal("101", values.[0])
         Assert.Equal("202", values.[1])
+    }
+
+[<Fact>]
+let ``Smoke seal pending recovery keeps session output queryable`` () =
+    task {
+        let tempRoot = IO.Path.Combine(IO.Path.GetTempPath(), "PulseTrade.SmokeRegressionTests", Guid.NewGuid().ToString("N"))
+        IO.Directory.CreateDirectory(tempRoot) |> ignore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore =
+                    (FailOnceArchiveStore(JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
+                     :> ISessionOutputArchiveStore)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.PublishSessionOutput("stdout", "smoke-alpha", executionId = "exec-smoke-pending")
+        let! resetRecord = service.ExecuteOperation(ResetSession, "", timeout = TimeSpan.FromSeconds 30.0)
+
+        let pending = service.TryGetSessionOutputSealPending()
+        let pendingEvents = service.ListSessionOutput()
+        let recovered = service.RecoverSessionOutputSealPending()
+        let archive = service.TryGetSessionOutputArchive()
+        let archiveEvents = service.ListSessionOutput()
+
+        Assert.True(resetRecord.Result.IsSuccess)
+        Assert.True(pending.IsSome)
+        Assert.Contains("smoke seal failure", pending.Value.ErrorMessage)
+        Assert.Single(pendingEvents) |> ignore
+        Assert.True(recovered.IsSome)
+        Assert.True(archive.IsSome)
+        Assert.Equal("smoke-alpha", archiveEvents[0].Payload)
     }
 
 [<Fact>]

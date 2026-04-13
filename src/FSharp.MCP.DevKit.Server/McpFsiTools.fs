@@ -382,10 +382,20 @@ module McpFsiTools =
                 |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
                 |> List.map (fun (_, grouped) -> grouped |> List.last)
 
-            let archive = sessionOutputArchiveStore.Seal(sessionId, liveEvents, DateTime.UtcNow)
-            let _ = outputSubscriberBroker.ClearSessionEvents(sessionId)
-            sessionOutputLiveStore.ClearSession(sessionId)
-            archive
+            try
+                let archive = sessionOutputArchiveStore.Seal(sessionId, liveEvents, DateTime.UtcNow)
+                let _ = outputSubscriberBroker.ClearSessionEvents(sessionId)
+                sessionOutputLiveStore.ClearSession(sessionId)
+                Archived archive
+            with ex ->
+                logger.LogError(ex, "Failed to seal session output for session {SessionId}. Marking seal as pending.", sessionId)
+
+                let pending =
+                    sessionOutputArchiveStore.MarkSealPending(sessionId, liveEvents, DateTime.UtcNow, ex.ToString())
+
+                let _ = outputSubscriberBroker.ClearSessionEvents(sessionId)
+                sessionOutputLiveStore.ClearSession(sessionId)
+                SealPending pending
 
         let createRequest
             (requestedRoute: ExecutionRoute option)
@@ -505,7 +515,10 @@ module McpFsiTools =
             let archivedEvents =
                 sessionOutputArchiveStore.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
 
-            [ archivedEvents; persistedLiveEvents; liveEvents ]
+            let pendingEvents =
+                sessionOutputArchiveStore.ListPendingEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
+
+            [ archivedEvents; pendingEvents; persistedLiveEvents; liveEvents ]
             |> List.concat
             |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
             |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
@@ -547,6 +560,14 @@ module McpFsiTools =
         member _.TryGetSessionOutputArchive(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             sessionOutputArchiveStore.TryGetArchive(route.SessionId)
+
+        member _.TryGetSessionOutputSealPending(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            sessionOutputArchiveStore.TryGetSealPending(route.SessionId)
+
+        member _.RecoverSessionOutputSealPending(?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+            sessionOutputArchiveStore.RecoverSealPending(route.SessionId)
 
         member this.ExecuteOperation
             (
