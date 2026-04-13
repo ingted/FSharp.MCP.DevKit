@@ -1,6 +1,7 @@
 module McpResultToolsTests
 
 open System
+open System.IO
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
@@ -191,7 +192,17 @@ let ``McpResultTools output tools and resources expose live broker state`` () =
 [<Fact>]
 let ``McpResultTools session output resources keep same read path after archive seal`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputArchiveStore = archiveStore
+            )
+
         use _cleanup = service :> IDisposable
         let _ = service.ResolveRoute()
 

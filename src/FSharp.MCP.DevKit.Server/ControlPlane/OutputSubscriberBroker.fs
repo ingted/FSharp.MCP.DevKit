@@ -87,3 +87,11 @@ type InMemoryOutputSubscriberBroker() =
                 |> Array.toList
             else
                 []
+
+        member _.ClearSessionEvents(sessionId: string) =
+            let mutable bucket = Unchecked.defaultof<_>
+
+            if eventsBySession.TryRemove(sessionId, &bucket) then
+                bucket.Count
+            else
+                0

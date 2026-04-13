@@ -293,14 +293,20 @@ module McpFsiTools =
             logger: ILogger<FsiMcpService>,
             ?enableRemoteClient: bool,
             ?procSupervisorClient: IProcSupervisorClient,
-            ?fsiSupervisorClient: IFsiSupervisorClient
+            ?fsiSupervisorClient: IFsiSupervisorClient,
+            ?outputSubscriberBroker: IOutputSubscriberBroker,
+            ?sessionOutputArchiveStore: ISessionOutputArchiveStore
         ) =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
         let inventoryEventStore = InMemoryInventoryEventStore() :> IInventoryEventStore
-        let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
-        let sessionOutputArchiveStore = InMemorySessionOutputArchiveStore() :> ISessionOutputArchiveStore
+        let outputSubscriberBroker =
+            defaultArg outputSubscriberBroker (InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker)
+
+        let sessionOutputArchiveStore =
+            defaultArg sessionOutputArchiveStore (JsonLineSessionOutputArchiveStore() :> ISessionOutputArchiveStore)
+
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
@@ -362,6 +368,12 @@ module McpFsiTools =
             match sessionRegistry.TryGet(record.HostId, record.SessionId) with
             | Some _ -> sessionRegistry.Update record
             | None -> sessionRegistry.Create record |> ignore
+
+        let sealSessionOutputBySessionId (sessionId: string) =
+            let events = outputSubscriberBroker.ListEvents(sessionId)
+            let archive = sessionOutputArchiveStore.Seal(sessionId, events, DateTime.UtcNow)
+            let _ = outputSubscriberBroker.ClearSessionEvents(sessionId)
+            archive
 
         let createRequest
             (requestedRoute: ExecutionRoute option)
@@ -510,8 +522,7 @@ module McpFsiTools =
 
         member _.SealSessionOutputArchive(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
-            let events = outputSubscriberBroker.ListEvents(route.SessionId)
-            sessionOutputArchiveStore.Seal(route.SessionId, events, DateTime.UtcNow)
+            sealSessionOutputBySessionId route.SessionId
 
         member _.TryGetSessionOutputArchive(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
@@ -568,6 +579,10 @@ module McpFsiTools =
                     agentRegistry.Touch route.AgentId
                     return record
                 | RestartHost ->
+                    let _ =
+                        sessionRegistry.ListByHost(host.HostId)
+                        |> List.map (fun session -> sealSessionOutputBySessionId session.SessionId)
+
                     do! backend.RestartHost(host)
                     agentRegistry.Touch route.AgentId
 
