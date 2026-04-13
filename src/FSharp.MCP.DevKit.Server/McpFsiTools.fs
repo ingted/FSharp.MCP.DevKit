@@ -49,6 +49,11 @@ module McpFsiTools =
           LastCheckpointId: string option
           ErrorMessage: string option }
 
+    type private SessionLivenessCacheEntry =
+        { Record: SessionLivenessRecord
+          ConsecutiveFailures: int
+          NextProbeNotBeforeUtc: DateTime }
+
     let private getAkkaClientConfig () =
         let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
         let configContent = File.ReadAllText(configPath)
@@ -314,7 +319,10 @@ module McpFsiTools =
             ?fsiSupervisorClient: IFsiSupervisorClient,
             ?outputSubscriberBroker: IOutputSubscriberBroker,
             ?sessionOutputLiveStore: ISessionOutputLiveStore,
-            ?sessionOutputArchiveStore: ISessionOutputArchiveStore
+            ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
+            ?sessionLivenessSuccessTtl: TimeSpan,
+            ?sessionLivenessFailureBaseBackoff: TimeSpan,
+            ?sessionLivenessFailureMaxBackoff: TimeSpan
         ) =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
@@ -375,6 +383,11 @@ module McpFsiTools =
         let asyncProcessorCts = new CancellationTokenSource()
         let mutable asyncProcessor: Task option = None
         let mutable defaultTimeout = TimeSpan.FromSeconds(30.0)
+        let sessionLivenessSuccessTtl = defaultArg sessionLivenessSuccessTtl (TimeSpan.FromSeconds(3.0))
+        let sessionLivenessFailureBaseBackoff = defaultArg sessionLivenessFailureBaseBackoff (TimeSpan.FromSeconds(5.0))
+        let sessionLivenessFailureMaxBackoff = defaultArg sessionLivenessFailureMaxBackoff (TimeSpan.FromSeconds(30.0))
+        let sessionLivenessCache = Dictionary<string, SessionLivenessCacheEntry>(StringComparer.OrdinalIgnoreCase)
+        let sessionLivenessCacheGate = obj()
 
         let resolveRoute (requestedRoute: ExecutionRoute option) = executionRouter.ResolveRoute requestedRoute
 
@@ -390,6 +403,75 @@ module McpFsiTools =
             match sessionRegistry.TryGet(record.HostId, record.SessionId) with
             | Some _ -> sessionRegistry.Update record
             | None -> sessionRegistry.Create record |> ignore
+
+            let observedAt = DateTime.UtcNow
+
+            let liveness =
+                { SessionId = record.SessionId
+                  Status = sessionStatusToText record.Status
+                  IsReachable = true
+                  ObservedAtUtc = observedAt
+                  RunningSinceUtc = record.RunningSinceUtc
+                  LastExecutionAt = record.LastExecutionAt
+                  LastCheckpointId = record.LastCheckpointId
+                  ErrorMessage = None }
+
+            lock sessionLivenessCacheGate (fun () ->
+                sessionLivenessCache[$"{record.HostId}::{record.SessionId}"] <-
+                    { Record = liveness
+                      ConsecutiveFailures = 0
+                      NextProbeNotBeforeUtc = observedAt.Add(sessionLivenessSuccessTtl) })
+
+        let clearSessionLivenessCache (hostId: string) (sessionId: string) =
+            lock sessionLivenessCacheGate (fun () -> sessionLivenessCache.Remove($"{hostId}::{sessionId}") |> ignore)
+
+        let clearHostSessionLivenessCache (hostId: string) =
+            lock sessionLivenessCacheGate (fun () ->
+                sessionLivenessCache.Keys
+                |> Seq.filter (fun key -> key.StartsWith($"{hostId}::", StringComparison.OrdinalIgnoreCase))
+                |> Seq.toArray
+                |> Array.iter (fun key -> sessionLivenessCache.Remove(key) |> ignore))
+
+        let tryGetCachedSessionLiveness (hostId: string) (sessionId: string) (observedAt: DateTime) =
+            lock sessionLivenessCacheGate (fun () ->
+                match sessionLivenessCache.TryGetValue($"{hostId}::{sessionId}") with
+                | true, entry when observedAt < entry.NextProbeNotBeforeUtc -> Some entry.Record
+                | _ -> None)
+
+        let recordUnreachableSessionLiveness (hostId: string) (sessionId: string) (observedAt: DateTime) (errorMessage: string) =
+            lock sessionLivenessCacheGate (fun () ->
+                let cacheKey = $"{hostId}::{sessionId}"
+
+                let nextFailureCount =
+                    match sessionLivenessCache.TryGetValue(cacheKey) with
+                    | true, entry when not entry.Record.IsReachable -> entry.ConsecutiveFailures + 1
+                    | _ -> 1
+
+                let multiplier = Math.Pow(2.0, float (max 0 (nextFailureCount - 1)))
+
+                let backoff =
+                    TimeSpan.FromMilliseconds(
+                        min
+                            sessionLivenessFailureMaxBackoff.TotalMilliseconds
+                            (sessionLivenessFailureBaseBackoff.TotalMilliseconds * multiplier)
+                    )
+
+                let record =
+                    { SessionId = sessionId
+                      Status = "Unreachable"
+                      IsReachable = false
+                      ObservedAtUtc = observedAt
+                      RunningSinceUtc = None
+                      LastExecutionAt = None
+                      LastCheckpointId = None
+                      ErrorMessage = Some errorMessage }
+
+                sessionLivenessCache[cacheKey] <-
+                    { Record = record
+                      ConsecutiveFailures = nextFailureCount
+                      NextProbeNotBeforeUtc = observedAt.Add(backoff) }
+
+                record)
 
         let sealSessionOutputBySessionId (sessionId: string) =
             let liveEvents =
@@ -643,6 +725,7 @@ module McpFsiTools =
                         |> List.map (fun session -> sealSessionOutputBySessionId session.SessionId)
 
                     do! backend.RestartHost(host)
+                    clearHostSessionLivenessCache host.HostId
                     agentRegistry.Touch route.AgentId
 
                     let now = DateTime.UtcNow
@@ -803,7 +886,13 @@ module McpFsiTools =
         member _.TryGetHost(hostId: string) = hostRegistry.TryGet hostId
 
         member _.CreateSession(agentId: string, hostId: string, ?sessionId: string, ?sessionName: string) =
-            sessionProvisioningService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
+            task {
+                let! record =
+                    sessionProvisioningService.CreateSession(agentId, hostId, ?sessionId = sessionId, ?sessionName = sessionName)
+
+                clearSessionLivenessCache record.HostId record.SessionId
+                return record
+            }
 
         member _.ListHosts(agentId: string) = hostRegistry.ListByAgent(agentId)
 
@@ -833,6 +922,8 @@ module McpFsiTools =
 
                 match this.TryResolveRouteByHostSession(hostId, sessionId) with
                 | None ->
+                    clearSessionLivenessCache hostId sessionId
+
                     return
                         Some
                             { SessionId = sessionId
@@ -844,30 +935,24 @@ module McpFsiTools =
                               LastCheckpointId = None
                               ErrorMessage = Some $"Session '{sessionId}' was not found under host '{hostId}'." }
                 | Some route ->
-                    try
-                        let! state = this.GetSessionState(requestedRoute = route)
+                    match tryGetCachedSessionLiveness hostId sessionId observedAt with
+                    | Some cached -> return Some cached
+                    | None ->
+                        try
+                            let! state = this.GetSessionState(requestedRoute = route)
 
-                        return
-                            Some
-                                { SessionId = state.SessionId
-                                  Status = sessionStatusToText state.Status
-                                  IsReachable = true
-                                  ObservedAtUtc = observedAt
-                                  RunningSinceUtc = state.RunningSinceUtc
-                                  LastExecutionAt = state.LastExecutionAt
-                                  LastCheckpointId = state.LastCheckpointId
-                                  ErrorMessage = None }
-                    with ex ->
-                        return
-                            Some
-                                { SessionId = sessionId
-                                  Status = "Unreachable"
-                                  IsReachable = false
-                                  ObservedAtUtc = observedAt
-                                  RunningSinceUtc = None
-                                  LastExecutionAt = None
-                                  LastCheckpointId = None
-                                  ErrorMessage = Some ex.Message }
+                            return
+                                Some
+                                    { SessionId = state.SessionId
+                                      Status = sessionStatusToText state.Status
+                                      IsReachable = true
+                                      ObservedAtUtc = observedAt
+                                      RunningSinceUtc = state.RunningSinceUtc
+                                      LastExecutionAt = state.LastExecutionAt
+                                      LastCheckpointId = state.LastCheckpointId
+                                      ErrorMessage = None }
+                        with ex ->
+                            return Some(recordUnreachableSessionLiveness hostId sessionId observedAt ex.Message)
             }
 
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =
