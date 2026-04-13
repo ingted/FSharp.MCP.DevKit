@@ -53,6 +53,7 @@
     <Compile Include="RealNet10HostIsolationTests.fs" />
     <Compile Include="RemoteMessageContractTests.fs" />
     <Compile Include="SessionOutputArchiveStoreTests.fs" />
+    <Compile Include="SessionOutputLiveStoreTests.fs" />
     <Compile Include="SmokeRegressionTests.fs" />
     <Compile Include="SmartSymbolDetectionServiceTests.fs" />
   </ItemGroup>

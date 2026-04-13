@@ -65,6 +65,11 @@ type IOutputSubscriberBroker =
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
     abstract member ClearSessionEvents: sessionId: string -> int
 
+type ISessionOutputLiveStore =
+    abstract member Append: eventRecord: OutputEventRecord -> unit
+    abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+    abstract member ClearSession: sessionId: string -> unit
+
 type ISessionOutputArchiveStore =
     abstract member Seal: sessionId: string * events: OutputEventRecord list * archivedAt: DateTime -> SessionOutputArchiveRecord
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list

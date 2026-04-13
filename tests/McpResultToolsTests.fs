@@ -107,7 +107,19 @@ let ``McpResultTools get list query compare and resources work`` () =
 [<Fact>]
 let ``McpResultTools output tools and resources expose live broker state`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
         use _cleanup = service :> IDisposable
         let _ = service.ResolveRoute()
 
@@ -194,12 +206,14 @@ let ``McpResultTools session output resources keep same read path after archive 
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
         Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
         let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
 
         let service =
             new FsiMcpService(
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
                 sessionOutputArchiveStore = archiveStore
             )
 

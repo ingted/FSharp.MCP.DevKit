@@ -295,6 +295,7 @@ module McpFsiTools =
             ?procSupervisorClient: IProcSupervisorClient,
             ?fsiSupervisorClient: IFsiSupervisorClient,
             ?outputSubscriberBroker: IOutputSubscriberBroker,
+            ?sessionOutputLiveStore: ISessionOutputLiveStore,
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore
         ) =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
@@ -303,6 +304,9 @@ module McpFsiTools =
         let inventoryEventStore = InMemoryInventoryEventStore() :> IInventoryEventStore
         let outputSubscriberBroker =
             defaultArg outputSubscriberBroker (InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker)
+
+        let sessionOutputLiveStore =
+            defaultArg sessionOutputLiveStore (JsonLineSessionOutputLiveStore() :> ISessionOutputLiveStore)
 
         let sessionOutputArchiveStore =
             defaultArg sessionOutputArchiveStore (JsonLineSessionOutputArchiveStore() :> ISessionOutputArchiveStore)
@@ -370,9 +374,17 @@ module McpFsiTools =
             | None -> sessionRegistry.Create record |> ignore
 
         let sealSessionOutputBySessionId (sessionId: string) =
-            let events = outputSubscriberBroker.ListEvents(sessionId)
-            let archive = sessionOutputArchiveStore.Seal(sessionId, events, DateTime.UtcNow)
+            let liveEvents =
+                [ sessionOutputLiveStore.ListEvents(sessionId)
+                  outputSubscriberBroker.ListEvents(sessionId) ]
+                |> List.concat
+                |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
+                |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
+                |> List.map (fun (_, grouped) -> grouped |> List.last)
+
+            let archive = sessionOutputArchiveStore.Seal(sessionId, liveEvents, DateTime.UtcNow)
             let _ = outputSubscriberBroker.ClearSessionEvents(sessionId)
+            sessionOutputLiveStore.ClearSession(sessionId)
             archive
 
         let createRequest
@@ -487,10 +499,13 @@ module McpFsiTools =
             let liveEvents =
                 outputSubscriberBroker.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
 
+            let persistedLiveEvents =
+                sessionOutputLiveStore.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
+
             let archivedEvents =
                 sessionOutputArchiveStore.ListEvents(route.SessionId, afterSequenceNo = afterSequenceNo)
 
-            [ archivedEvents; liveEvents ]
+            [ archivedEvents; persistedLiveEvents; liveEvents ]
             |> List.concat
             |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
             |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
@@ -511,14 +526,19 @@ module McpFsiTools =
             ) =
             let route = resolveRoute requestedRoute
 
-            outputSubscriberBroker.Publish
-                { SessionId = route.SessionId
-                  ExecutionId = executionId
-                  SequenceNo = 0L
-                  StreamKind = streamKind
-                  TimestampUtc = DateTime.UtcNow
-                  Payload = payload
-                  IsReplay = defaultArg isReplay false }
+            let eventRecord, subscribers =
+                outputSubscriberBroker.Publish(
+                    { SessionId = route.SessionId
+                      ExecutionId = executionId
+                      SequenceNo = 0L
+                      StreamKind = streamKind
+                      TimestampUtc = DateTime.UtcNow
+                      Payload = payload
+                      IsReplay = defaultArg isReplay false }
+                )
+
+            sessionOutputLiveStore.Append(eventRecord)
+            eventRecord, subscribers
 
         member _.SealSessionOutputArchive(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute

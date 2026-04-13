@@ -99,12 +99,14 @@ let ``FsiMcpService output subscriber broker publishes monotonic sequence and su
 let ``FsiMcpService unified session output read returns archived events through same API`` () =
     let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(tempRoot) |> ignore
+    let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
     let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
 
     let service =
         new FsiMcpService(
             NullLogger<FsiMcpService>.Instance,
             enableRemoteClient = false,
+            sessionOutputLiveStore = liveStore,
             sessionOutputArchiveStore = archiveStore
         )
 
@@ -129,12 +131,14 @@ let ``FsiMcpService reset seals session output into archive before lifecycle res
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
         Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
         let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
 
         let service =
             new FsiMcpService(
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
                 sessionOutputArchiveStore = archiveStore
             )
 
@@ -158,6 +162,7 @@ let ``FsiMcpService reset seals session output into archive before lifecycle res
 let ``FsiMcpService seal clears live cache and preserves monotonic sequence for subsequent output`` () =
     let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory(tempRoot) |> ignore
+    let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
     let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
     let broker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
 
@@ -166,6 +171,7 @@ let ``FsiMcpService seal clears live cache and preserves monotonic sequence for 
             NullLogger<FsiMcpService>.Instance,
             enableRemoteClient = false,
             outputSubscriberBroker = broker,
+            sessionOutputLiveStore = liveStore,
             sessionOutputArchiveStore = archiveStore
         )
 
@@ -188,12 +194,14 @@ let ``FsiMcpService restart host seals current session output before lifecycle r
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
         Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
         let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
 
         let service =
             new FsiMcpService(
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
                 sessionOutputArchiveStore = archiveStore
             )
 
@@ -211,3 +219,40 @@ let ``FsiMcpService restart host seals current session output before lifecycle r
         Assert.Single(events) |> ignore
         Assert.Equal("before-restart", events[0].Payload)
     }
+
+[<Fact>]
+let ``FsiMcpService can read persisted live output after service recreation`` () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+    let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+    let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+    let service1 =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false,
+            sessionOutputLiveStore = liveStore,
+            sessionOutputArchiveStore = archiveStore
+        )
+
+    use _cleanup1 = service1 :> IDisposable
+
+    let _ = service1.PublishSessionOutput("stdout", "persisted-alpha", executionId = "exec-live-1")
+    let _ = service1.PublishSessionOutput("stderr", "persisted-beta", executionId = "exec-live-1")
+
+    let service2 =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false,
+            sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+            sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
+        )
+
+    use _cleanup2 = service2 :> IDisposable
+
+    let events = service2.ListSessionOutput()
+
+    Assert.Equal(2, events.Length)
+    Assert.Equal<int64 array>([| 1L; 2L |], events |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
+    Assert.Equal("persisted-alpha", events[0].Payload)
+    Assert.Equal("persisted-beta", events[1].Payload)
