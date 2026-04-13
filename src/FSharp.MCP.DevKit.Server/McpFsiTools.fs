@@ -517,7 +517,7 @@ module McpFsiTools =
             let route = resolveRoute requestedRoute
             sessionOutputArchiveStore.TryGetArchive(route.SessionId)
 
-        member _.ExecuteOperation
+        member this.ExecuteOperation
             (
                 operationKind: OperationKind,
                 payload: string,
@@ -559,6 +559,7 @@ module McpFsiTools =
                     resultRegistry.Put record
                     return record
                 | ResetSession ->
+                    let _ = this.SealSessionOutputArchive(requestedRoute = route)
                     let! record = backend.ResetSession(route)
                     resultRegistry.Put record
 

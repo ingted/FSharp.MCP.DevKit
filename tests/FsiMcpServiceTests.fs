@@ -111,3 +111,23 @@ let ``FsiMcpService unified session output read returns archived events through 
     Assert.Equal<int64 array>([| 1L; 2L |], events |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
     Assert.Single(eventsAfter) |> ignore
     Assert.Equal("beta", eventsAfter[0].Payload)
+
+[<Fact>]
+let ``FsiMcpService reset seals session output into archive before lifecycle reset`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let _ = service.PublishSessionOutput("stdout", "before-reset", executionId = "exec-reset-1")
+        let _ = service.PublishSessionOutput("stderr", "before-reset-err", executionId = "exec-reset-1")
+        let! _ = service.ExecuteOperation(ResetSession, "", timeout = TimeSpan.FromSeconds 30.0)
+
+        let archive = service.TryGetSessionOutputArchive()
+        let events = service.ListSessionOutput()
+
+        Assert.True(archive.IsSome)
+        Assert.Equal(2, archive.Value.EventCount)
+        Assert.Equal(2, events.Length)
+        Assert.Equal("before-reset", events[0].Payload)
+        Assert.Equal("before-reset-err", events[1].Payload)
+    }
