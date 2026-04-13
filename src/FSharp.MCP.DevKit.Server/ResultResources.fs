@@ -44,3 +44,9 @@ type ResultResources(fsiService: FsiMcpService) =
     member _.SessionOutputSubscribers(hostId: string, sessionId: string) =
         fsiService.ListSessionOutputSubscribers(requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
         |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiSessionOutputSealPending", Title = "FSI Session Output Seal Pending", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/seal-pending")>]
+    [<Description("Read the seal-pending status for a specific host/session route, if archive sealing previously failed.")>]
+    member _.SessionOutputSealPending(hostId: string, sessionId: string) =
+        fsiService.TryGetSessionOutputSealPending(requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize

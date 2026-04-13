@@ -189,3 +189,25 @@ type McpResultTools =
         ) : string =
         fsiService.UnsubscribeSessionOutput(subscriberId, requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
         |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "get_session_output_seal_pending"); Description("Read the seal-pending status for a specific route, if archive sealing previously failed.")>]
+    static member GetSessionOutputSealPending
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.TryGetSessionOutputSealPending(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "recover_session_output_seal_pending"); Description("Attempt to recover a previously seal-pending session output archive.")>]
+    static member RecoverSessionOutputSealPending
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.RecoverSessionOutputSealPending(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize

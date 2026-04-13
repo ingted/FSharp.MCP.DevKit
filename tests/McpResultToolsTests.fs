@@ -10,6 +10,32 @@ open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
 
+type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
+    let mutable shouldFail = true
+
+    interface ISessionOutputArchiveStore with
+        member _.Seal(sessionId: string, events: OutputEventRecord list, archivedAt: DateTime) =
+            if shouldFail then
+                shouldFail <- false
+                raise (InvalidOperationException("tool seal failure"))
+            else
+                inner.Seal(sessionId, events, archivedAt)
+
+        member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetArchive(sessionId: string) = inner.TryGetArchive(sessionId)
+
+        member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
+            inner.MarkSealPending(sessionId, events, pendingAt, errorMessage)
+
+        member _.ListPendingEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            inner.ListPendingEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
+
+        member _.TryGetSealPending(sessionId: string) = inner.TryGetSealPending(sessionId)
+
+        member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
+
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
     task {
@@ -252,4 +278,71 @@ let ``McpResultTools session output resources keep same read path after archive 
         Assert.Equal<int64 array>([| 1L; 2L |], resourceEvents |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
         Assert.Single(resourceEventsAfter) |> ignore
         Assert.Equal("archived-beta", resourceEventsAfter[0].Payload)
+    }
+
+[<Fact>]
+let ``McpResultTools seal pending tool and resource expose status and recovery`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore =
+            FailOnceArchiveStore(JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
+            :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+        let _ = service.ResolveRoute()
+
+        let _ = service.PublishSessionOutput("stdout", "pending-alpha", executionId = "exec-pending-tool")
+        let! _ = service.ExecuteOperation(ResetSession, "", timeout = TimeSpan.FromSeconds 30.0)
+
+        let pendingJson =
+            McpResultTools.GetSessionOutputSealPending(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let resultResource = ResultResources(service)
+        let pendingResourceJson = resultResource.SessionOutputSealPending("default-host", "default-session")
+
+        let recoveredJson =
+            McpResultTools.RecoverSessionOutputSealPending(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let eventsJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                0L,
+                0
+            )
+
+        let pending = FSharpJson.deserialize<SessionOutputSealPendingRecord option> pendingJson
+        let pendingResource = FSharpJson.deserialize<SessionOutputSealPendingRecord option> pendingResourceJson
+        let recovered = FSharpJson.deserialize<SessionOutputArchiveRecord option> recoveredJson
+        let events = FSharpJson.deserialize<OutputEventRecord list> eventsJson
+
+        Assert.True(pending.IsSome)
+        Assert.True(pendingResource.IsSome)
+        Assert.Contains("tool seal failure", pending.Value.ErrorMessage)
+        Assert.True(recovered.IsSome)
+        Assert.Equal(1, recovered.Value.EventCount)
+        Assert.Single(events) |> ignore
+        Assert.Equal("pending-alpha", events[0].Payload)
     }
