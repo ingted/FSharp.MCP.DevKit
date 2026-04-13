@@ -2,11 +2,13 @@ module McpResultToolsTests
 
 open System
 open System.IO
+open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.ControlPlane
+open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
 
@@ -35,6 +37,51 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
         member _.TryGetSealPending(sessionId: string) = inner.TryGetSealPending(sessionId)
 
         member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
+
+type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot, healthFactory: string -> ProcHostSnapshot option) =
+    interface IProcSupervisorClient with
+        member _.StartProc(procId: string, spec: ProcHostSpec) = Task.FromResult(startFactory (procId, spec))
+        member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("Not used"))
+        member _.GetProcInfo(procId: string) = Task.FromResult(healthFactory procId)
+        member _.ListProcInfo() = Task.FromResult([])
+        member _.RestartProc(procId: string) =
+            match healthFactory procId with
+            | Some value -> Task.FromResult(value)
+            | None -> Task.FromException<ProcHostSnapshot>(InvalidOperationException("Missing proc"))
+
+type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiSupervisorSessionSnapshot) =
+    interface IFsiSupervisorClient with
+        member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+            Task.FromResult(
+                { SessionId = request.SessionId
+                  RawErrorType = None
+                  Result =
+                    { Output = request.Code
+                      Errors = ""
+                      IsSuccess = true
+                      ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                      Diagnostics = [||]
+                      Value = None } }
+            )
+
+        member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+            Task.FromResult(sessionFactory (host, sessionId))
+
+        member _.ListSessions(_) = Task.FromResult([])
+
+        member _.EnsureSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = false
+                  Status = "created" }
+            )
+
+        member _.ResetSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = true
+                  Status = "reset" }
+            )
 
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
@@ -345,4 +392,90 @@ let ``McpResultTools seal pending tool and resource expose status and recovery``
         Assert.Equal(1, recovered.Value.EventCount)
         Assert.Single(events) |> ignore
         Assert.Equal("pending-alpha", events[0].Payload)
+    }
+
+[<Fact>]
+let ``ResultResources resolve host-session route from registry instead of assuming default agent`` () =
+    task {
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9400
+                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9400/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9400"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9400
+                          FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9400/user/fsi/supervisor"
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9400"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            FakeFsiSupervisorClient(fun (_, sessionId) ->
+                { SessionId = sessionId
+                  Status = "ready"
+                  Refs = []
+                  Loads = []
+                  SearchPaths = []
+                  Variables = []
+                  LastCheckpointId = None
+                  RunningSinceUtc = Some DateTime.UtcNow })
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+            )
+        use _cleanup = service :> IDisposable
+
+        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-output", "Agent Output")
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-output",
+                "net10",
+                "dotnet",
+                "--dll\nfsi-host.dll",
+                "/srv/fsi",
+                "host-output",
+                "",
+                0
+            )
+
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-output", "host-output", "session-output", "Session Output")
+
+        let route =
+            { AgentId = "agent-output"
+              HostId = "host-output"
+              SessionId = "session-output" }
+
+        let _ = service.PublishSessionOutput("stdout", "projected-output", requestedRoute = route, executionId = "exec-output")
+
+        let resources = ResultResources(service)
+        let eventsJson = resources.SessionOutput("host-output", "session-output")
+        let pendingJson = resources.SessionOutputSealPending("host-output", "session-output")
+
+        let events = FSharpJson.deserialize<OutputEventRecord list> eventsJson
+        let pending = FSharpJson.deserialize<SessionOutputSealPendingRecord option> pendingJson
+
+        Assert.Single(events) |> ignore
+        Assert.Equal("projected-output", events[0].Payload)
+        Assert.True(pending.IsNone)
     }

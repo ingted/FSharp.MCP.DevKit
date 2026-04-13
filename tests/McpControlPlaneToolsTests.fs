@@ -308,6 +308,87 @@ let ``ControlPlaneResources expose registered host and session`` () =
     }
 
 [<Fact>]
+let ``ControlPlaneResources expose backend session state resource`` () =
+    task {
+        let runningSince = DateTime.UtcNow.AddMinutes(-5.0)
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9250
+                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9250/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9250"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9250
+                          FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9250/user/fsi/supervisor"
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9250"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            FakeFsiSupervisorClient(fun (_, sessionId) ->
+                { SessionId = sessionId
+                  Status = "faulted"
+                  Refs = []
+                  Loads = []
+                  SearchPaths = []
+                  Variables = [ "x", "1" ]
+                  LastCheckpointId = Some "cp-1"
+                  RunningSinceUtc = Some runningSince })
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-state", "Agent State")
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-state",
+                "net10",
+                "dotnet",
+                "--dll\nfsi-host.dll",
+                "/srv/fsi",
+                "host-state",
+                "PING",
+                1000
+            )
+
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-state", "host-state", "session-state", "Session State")
+
+        let resources = ControlPlaneResources(service)
+        let! sessionStateJson = resources.HostSessionState("host-state", "session-state")
+        let sessionState = FSharpJson.deserialize<SessionRecord option> sessionStateJson
+
+        Assert.True(sessionState.IsSome)
+        Assert.Equal("session-state", sessionState.Value.SessionId)
+        Assert.Equal(SessionFaulted, sessionState.Value.Status)
+        Assert.Equal(Some "cp-1", sessionState.Value.LastCheckpointId)
+        Assert.Equal(Some runningSince, sessionState.Value.RunningSinceUtc)
+    }
+
+[<Fact>]
 let ``EnsureFsiRoute materializes legacy default route without ProcSupervisor`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)

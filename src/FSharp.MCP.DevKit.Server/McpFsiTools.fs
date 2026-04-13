@@ -793,6 +793,22 @@ module McpFsiTools =
 
         member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
 
+        member _.TryResolveRouteByHostSession(hostId: string, sessionId: string) : FSharp.MCP.DevKit.Core.ExecutionRoute option =
+            sessionRegistry.TryGet(hostId, sessionId)
+            |> Option.map (fun session ->
+                ({ AgentId = session.AgentId
+                   HostId = hostId
+                   SessionId = sessionId }: FSharp.MCP.DevKit.Core.ExecutionRoute))
+
+        member this.TryGetSessionStateForHostSession(hostId: string, sessionId: string) =
+            task {
+                match this.TryResolveRouteByHostSession(hostId, sessionId) with
+                | None -> return None
+                | Some route ->
+                    let! state = this.GetSessionState(requestedRoute = route)
+                    return Some state
+            }
+
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =
             inventoryEventStore.List(?afterSequenceId = afterSequenceId, ?limit = limit)
 

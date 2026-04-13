@@ -9,6 +9,9 @@ open FSharp.MCP.DevKit.Server.ControlPlane
 [<McpServerResourceType>]
 type ResultResources(fsiService: FsiMcpService) =
 
+    let tryResolveRoute (hostId: string) (sessionId: string) : ExecutionRoute option =
+        fsiService.TryResolveRouteByHostSession(hostId, sessionId)
+
     [<McpServerResource(Name = "fsiResult", Title = "FSI Result", MimeType = "application/json", UriTemplate = "fsi/results/{resultId}")>]
     [<Description("Read a single execution result by resultId.")>]
     member _.Result(resultId: string) =
@@ -30,23 +33,31 @@ type ResultResources(fsiService: FsiMcpService) =
     [<McpServerResource(Name = "fsiSessionOutput", Title = "FSI Session Output", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output")>]
     [<Description("List live session output events under a specific host/session route.")>]
     member _.SessionOutput(hostId: string, sessionId: string) =
-        fsiService.ListSessionOutput(requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
+        match tryResolveRoute hostId sessionId with
+        | Some route -> fsiService.ListSessionOutput(requestedRoute = route)
+        | None -> []
         |> FSharpJson.serialize
 
     [<McpServerResource(Name = "fsiSessionOutputAfter", Title = "FSI Session Output After Sequence", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/{afterSequenceNo}")>]
     [<Description("List live session output events after the specified sequence number.")>]
     member _.SessionOutputAfter(hostId: string, sessionId: string, afterSequenceNo: int64) =
-        fsiService.ListSessionOutput(afterSequenceNo = afterSequenceNo, requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
+        match tryResolveRoute hostId sessionId with
+        | Some route -> fsiService.ListSessionOutput(afterSequenceNo = afterSequenceNo, requestedRoute = route)
+        | None -> []
         |> FSharpJson.serialize
 
     [<McpServerResource(Name = "fsiSessionOutputSubscribers", Title = "FSI Session Output Subscribers", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/subscribers")>]
     [<Description("List live output subscribers under a specific host/session route.")>]
     member _.SessionOutputSubscribers(hostId: string, sessionId: string) =
-        fsiService.ListSessionOutputSubscribers(requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
+        match tryResolveRoute hostId sessionId with
+        | Some route -> fsiService.ListSessionOutputSubscribers(requestedRoute = route)
+        | None -> []
         |> FSharpJson.serialize
 
     [<McpServerResource(Name = "fsiSessionOutputSealPending", Title = "FSI Session Output Seal Pending", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/seal-pending")>]
     [<Description("Read the seal-pending status for a specific host/session route, if archive sealing previously failed.")>]
     member _.SessionOutputSealPending(hostId: string, sessionId: string) =
-        fsiService.TryGetSessionOutputSealPending(requestedRoute = { AgentId = DefaultRouting.DefaultAgentId; HostId = hostId; SessionId = sessionId })
+        match tryResolveRoute hostId sessionId with
+        | Some route -> fsiService.TryGetSessionOutputSealPending(requestedRoute = route)
+        | None -> None
         |> FSharpJson.serialize

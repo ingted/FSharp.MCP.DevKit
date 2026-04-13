@@ -1,6 +1,7 @@
 namespace FSharp.MCP.DevKit.Server
 
 open System.ComponentModel
+open System.Threading.Tasks
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -31,6 +32,14 @@ type ControlPlaneResources(fsiService: FsiMcpService) =
     member _.HostSession(hostId: string, sessionId: string) =
         fsiService.TryGetSession(hostId, sessionId)
         |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiHostSessionState", Title = "FSI Host Session State", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/state")>]
+    [<Description("Read the current backend-observed session state for a specific host/session route.")>]
+    member _.HostSessionState(hostId: string, sessionId: string) : Task<string> =
+        task {
+            let! state = fsiService.TryGetSessionStateForHostSession(hostId, sessionId)
+            return state |> FSharpJson.serialize
+        }
 
     [<McpServerResource(Name = "fsiInventoryEvents", Title = "FSI Inventory Events", MimeType = "application/json", UriTemplate = "fsi/inventory-events")>]
     [<Description("List inventory events for hosts and sessions.")>]
