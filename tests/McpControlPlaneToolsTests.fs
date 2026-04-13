@@ -389,6 +389,127 @@ let ``ControlPlaneResources expose backend session state resource`` () =
     }
 
 [<Fact>]
+let ``ControlPlaneResources expose session liveness resource with reachable and unreachable states`` () =
+    task {
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9260
+                      FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9260/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9260"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9260
+                          FsiSupervisorPath = Some "akka.tcp://FsiExecutionSystem@localhost:9260/user/fsi/supervisor"
+                          NodeAddress = Some "akka.tcp://FsiExecutionSystem@localhost:9260"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            { new IFsiSupervisorClient with
+                member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+                    Task.FromResult(
+                        { SessionId = request.SessionId
+                          RawErrorType = None
+                          Result =
+                            { Output = request.Code
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                              Diagnostics = [||]
+                              Value = None } }
+                    )
+
+                member _.GetSessionInfo(_host: HostRecord, sessionId: string) =
+                    if sessionId = "session-down" then
+                        Task.FromException<FsiSupervisorSessionSnapshot>(InvalidOperationException("remote timeout"))
+                    else
+                        Task.FromResult(
+                            { SessionId = sessionId
+                              Status = "ready"
+                              Refs = []
+                              Loads = []
+                              SearchPaths = []
+                              Variables = []
+                              LastCheckpointId = None
+                              RunningSinceUtc = Some DateTime.UtcNow }
+                        )
+
+                member _.ListSessions(_) = Task.FromResult([])
+
+                member _.EnsureSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = false
+                          Status = "created" }
+                    )
+
+                member _.ResetSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = true
+                          Status = "reset" }
+                    ) }
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-live", "Agent Live")
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-live",
+                "net10",
+                "dotnet",
+                "--dll\nfsi-host.dll",
+                "/srv/fsi",
+                "host-live",
+                "PING",
+                1000
+            )
+
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-live", "host-live", "session-up", "Session Up")
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-live", "host-live", "session-down", "Session Down")
+
+        let resources = ControlPlaneResources(service)
+        let! reachableJson = resources.HostSessionLiveness("host-live", "session-up")
+        let! unreachableJson = resources.HostSessionLiveness("host-live", "session-down")
+
+        let reachable = FSharpJson.deserialize<SessionLivenessRecord option> reachableJson
+        let unreachable = FSharpJson.deserialize<SessionLivenessRecord option> unreachableJson
+
+        Assert.True(reachable.IsSome)
+        Assert.True(reachable.Value.IsReachable)
+        Assert.Equal("SessionReady", reachable.Value.Status)
+
+        Assert.True(unreachable.IsSome)
+        Assert.False(unreachable.Value.IsReachable)
+        Assert.Equal("Unreachable", unreachable.Value.Status)
+        Assert.Contains("remote timeout", unreachable.Value.ErrorMessage.Value)
+    }
+
+[<Fact>]
 let ``EnsureFsiRoute materializes legacy default route without ProcSupervisor`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)

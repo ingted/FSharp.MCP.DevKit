@@ -38,6 +38,17 @@ open Fantomas.Core
 /// - Enhanced error handling to prevent malformed code injection
 module McpFsiTools =
 
+    [<CLIMutable>]
+    type SessionLivenessRecord =
+        { SessionId: string
+          Status: string
+          IsReachable: bool
+          ObservedAtUtc: DateTime
+          RunningSinceUtc: DateTime option
+          LastExecutionAt: DateTime option
+          LastCheckpointId: string option
+          ErrorMessage: string option }
+
     let private getAkkaClientConfig () =
         let configPath = Path.Combine(AppContext.BaseDirectory, "akka.server.conf")
         let configContent = File.ReadAllText(configPath)
@@ -109,6 +120,13 @@ module McpFsiTools =
                $"- Loaded Scripts: {joinOrNone state.Loads}"
                $"- Variables: {variables}" |]
         )
+
+    let private sessionStatusToText (status: SessionStatus) =
+        match status with
+        | SessionReady -> "SessionReady"
+        | SessionBusy -> "SessionBusy"
+        | SessionFaulted -> "SessionFaulted"
+        | SessionMissing -> "SessionMissing"
 
     /// Validates that a file has a supported F# file extension
     let private validateFSharpFileType (filePath: string) =
@@ -807,6 +825,49 @@ module McpFsiTools =
                 | Some route ->
                     let! state = this.GetSessionState(requestedRoute = route)
                     return Some state
+            }
+
+        member this.TryGetSessionLivenessForHostSession(hostId: string, sessionId: string) =
+            task {
+                let observedAt = DateTime.UtcNow
+
+                match this.TryResolveRouteByHostSession(hostId, sessionId) with
+                | None ->
+                    return
+                        Some
+                            { SessionId = sessionId
+                              Status = "SessionMissing"
+                              IsReachable = false
+                              ObservedAtUtc = observedAt
+                              RunningSinceUtc = None
+                              LastExecutionAt = None
+                              LastCheckpointId = None
+                              ErrorMessage = Some $"Session '{sessionId}' was not found under host '{hostId}'." }
+                | Some route ->
+                    try
+                        let! state = this.GetSessionState(requestedRoute = route)
+
+                        return
+                            Some
+                                { SessionId = state.SessionId
+                                  Status = sessionStatusToText state.Status
+                                  IsReachable = true
+                                  ObservedAtUtc = observedAt
+                                  RunningSinceUtc = state.RunningSinceUtc
+                                  LastExecutionAt = state.LastExecutionAt
+                                  LastCheckpointId = state.LastCheckpointId
+                                  ErrorMessage = None }
+                    with ex ->
+                        return
+                            Some
+                                { SessionId = sessionId
+                                  Status = "Unreachable"
+                                  IsReachable = false
+                                  ObservedAtUtc = observedAt
+                                  RunningSinceUtc = None
+                                  LastExecutionAt = None
+                                  LastCheckpointId = None
+                                  ErrorMessage = Some ex.Message }
             }
 
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =

@@ -41,6 +41,14 @@ type ControlPlaneResources(fsiService: FsiMcpService) =
             return state |> FSharpJson.serialize
         }
 
+    [<McpServerResource(Name = "fsiHostSessionLiveness", Title = "FSI Host Session Liveness", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/liveness")>]
+    [<Description("Read a plain liveness projection for a specific host/session route, including unreachable state and observation time.")>]
+    member _.HostSessionLiveness(hostId: string, sessionId: string) : Task<string> =
+        task {
+            let! state = fsiService.TryGetSessionLivenessForHostSession(hostId, sessionId)
+            return state |> FSharpJson.serialize
+        }
+
     [<McpServerResource(Name = "fsiInventoryEvents", Title = "FSI Inventory Events", MimeType = "application/json", UriTemplate = "fsi/inventory-events")>]
     [<Description("List inventory events for hosts and sessions.")>]
     member _.InventoryEvents() =
