@@ -746,6 +746,149 @@ let ``McpControlPlaneTools probe host sessions liveness bypasses existing cache 
     }
 
 [<Fact>]
+let ``McpControlPlaneTools sweep fsi sessions liveness returns per-host summary`` () =
+    task {
+        let counts = System.Collections.Generic.Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+
+        let bumpCount sessionId =
+            match counts.TryGetValue(sessionId) with
+            | true, value ->
+                counts.[sessionId] <- value + 1
+                value + 1
+            | _ ->
+                counts.[sessionId] <- 1
+                1
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9272
+                      FsiSupervisorPath = Some $"akka.tcp://FsiExecutionSystem@localhost:9272/user/fsi/supervisor/{procId}"
+                      NodeAddress = Some $"akka.tcp://FsiExecutionSystem@localhost:9272/{procId}"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9272
+                          FsiSupervisorPath = Some $"akka.tcp://FsiExecutionSystem@localhost:9272/user/fsi/supervisor/{procId}"
+                          NodeAddress = Some $"akka.tcp://FsiExecutionSystem@localhost:9272/{procId}"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            { new IFsiSupervisorClient with
+                member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+                    Task.FromResult(
+                        { SessionId = request.SessionId
+                          RawErrorType = None
+                          Result =
+                            { Output = request.Code
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                              Diagnostics = [||]
+                              Value = None } }
+                    )
+
+                member _.GetSessionInfo(host: HostRecord, sessionId: string) =
+                    let _ = bumpCount $"{host.HostId}/{sessionId}"
+
+                    if sessionId = "session-down" then
+                        Task.FromException<FsiSupervisorSessionSnapshot>(InvalidOperationException("remote timeout"))
+                    else
+                        Task.FromResult(
+                            { SessionId = sessionId
+                              Status = "ready"
+                              Refs = []
+                              Loads = []
+                              SearchPaths = []
+                              Variables = []
+                              LastCheckpointId = Some $"cp-{sessionId}"
+                              RunningSinceUtc = Some DateTime.UtcNow }
+                        )
+
+                member _.ListSessions(_) = Task.FromResult([])
+
+                member _.EnsureSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = false
+                          Status = "created" }
+                    )
+
+                member _.ResetSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = true
+                          Status = "reset" }
+                    ) }
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient,
+                sessionLivenessSuccessTtl = TimeSpan.FromMinutes 5.0
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = McpControlPlaneTools.RegisterFsiAgent(service, "agent-sweep", "Agent Sweep")
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-sweep",
+                "net10",
+                "dotnet",
+                "--dll\nfsi-host.dll",
+                "/srv/fsi",
+                "host-sweep-a",
+                "PING",
+                1000
+            )
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-sweep",
+                "net10",
+                "dotnet",
+                "--dll\nfsi-host.dll",
+                "/srv/fsi",
+                "host-sweep-b",
+                "PING",
+                1000
+            )
+
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-sweep", "host-sweep-a", "session-up", "Session Up")
+        let! _ = McpControlPlaneTools.CreateFsiSession(service, "agent-sweep", "host-sweep-b", "session-down", "Session Down")
+
+        let beforeSweepA = counts.["host-sweep-a/session-up"]
+        let beforeSweepB = counts.["host-sweep-b/session-down"]
+        let! payloadJson = McpControlPlaneTools.SweepFsiSessionsLiveness(service, null)
+        let payload = FSharpJson.deserialize<HostSessionLivenessSweepRecord list> payloadJson
+
+        Assert.Equal(2, payload.Length)
+        Assert.Contains(payload, fun item -> item.HostId = "host-sweep-a" && item.ReachableCount = 1 && item.UnreachableCount = 0)
+        Assert.Contains(payload, fun item -> item.HostId = "host-sweep-b" && item.ReachableCount = 0 && item.UnreachableCount = 1)
+        Assert.Equal(beforeSweepA + 1, counts.["host-sweep-a/session-up"])
+        Assert.Equal(beforeSweepB + 1, counts.["host-sweep-b/session-down"])
+    }
+
+[<Fact>]
 let ``EnsureFsiRoute materializes legacy default route without ProcSupervisor`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)

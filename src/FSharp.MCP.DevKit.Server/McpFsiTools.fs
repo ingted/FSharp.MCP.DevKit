@@ -52,6 +52,15 @@ module McpFsiTools =
           LastCheckpointId: string option
           ErrorMessage: string option }
 
+    [<CLIMutable>]
+    type HostSessionLivenessSweepRecord =
+        { HostId: string
+          SessionCount: int
+          ReachableCount: int
+          UnreachableCount: int
+          ProbedAtUtc: DateTime
+          Sessions: SessionLivenessRecord list }
+
     type private SessionLivenessCacheEntry =
         { Record: SessionLivenessRecord
           ConsecutiveFailures: int
@@ -998,6 +1007,45 @@ module McpFsiTools =
             task {
                 clearHostSessionLivenessCache hostId
                 return! this.ListHostSessionLiveness(hostId)
+            }
+
+        member this.SweepSessionLiveness(?hostId: string) =
+            task {
+                let targetHostIds =
+                    match hostId with
+                    | Some value when not (String.IsNullOrWhiteSpace value) -> [ value ]
+                    | _ ->
+                        agentRegistry.List()
+                        |> List.collect (fun agent -> hostRegistry.ListByAgent(agent.AgentId))
+                        |> List.map (fun host -> host.HostId)
+                        |> List.distinct
+
+                let! probed =
+                    targetHostIds
+                    |> List.map (fun targetHostId ->
+                        task {
+                            let! sessions = this.ProbeHostSessionLiveness(targetHostId)
+                            let observedAt =
+                                sessions
+                                |> List.map (fun item -> item.ObservedAtUtc)
+                                |> List.sortDescending
+                                |> List.tryHead
+                                |> Option.defaultValue DateTime.UtcNow
+
+                            let reachableCount = sessions |> List.filter (fun item -> item.IsReachable) |> List.length
+                            let sessionCount = sessions.Length
+
+                            return
+                                { HostId = targetHostId
+                                  SessionCount = sessionCount
+                                  ReachableCount = reachableCount
+                                  UnreachableCount = sessionCount - reachableCount
+                                  ProbedAtUtc = observedAt
+                                  Sessions = sessions }
+                        })
+                    |> Task.WhenAll
+
+                return probed |> Array.toList
             }
 
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =

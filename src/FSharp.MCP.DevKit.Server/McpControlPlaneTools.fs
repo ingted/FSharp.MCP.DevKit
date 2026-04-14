@@ -185,6 +185,19 @@ type McpControlPlaneTools =
             return FSharpJson.serialize payload
         }
 
+    [<McpServerTool(Name = "sweep_fsi_sessions_liveness"); Description("Force-refresh liveness across all registered hosts, or a single host when hostId is provided. This is a sweep-style entry point for schedulers and agent runtimes.")>]
+    static member SweepFsiSessionsLiveness
+        (
+            fsiService: FsiMcpService,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional host id filter. Leave empty to sweep every registered host.")>] hostId: string
+        ) : Task<string> =
+        task {
+            let hostIdOpt = if String.IsNullOrWhiteSpace hostId then None else Some hostId
+            let! payload = fsiService.SweepSessionLiveness(?hostId = hostIdOpt)
+            return FSharpJson.serialize payload
+        }
+
     [<McpServerTool(Name = "get_fsi_host_health"); Description("Get health information for a host.")>]
     static member GetFsiHostHealth
         (
