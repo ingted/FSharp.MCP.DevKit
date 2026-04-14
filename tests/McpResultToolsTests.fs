@@ -395,8 +395,71 @@ let ``McpResultTools seal pending tool and resource expose status and recovery``
     }
 
 [<Fact>]
+let ``McpResultTools explicit seal session output archives live events without lifecycle reset`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+        let _ = service.ResolveRoute()
+
+        let _ = service.PublishSessionOutput("stdout", "seal-alpha", executionId = "exec-seal-tool")
+        let _ = service.PublishSessionOutput("stderr", "seal-beta", executionId = "exec-seal-tool")
+
+        let sealedJson =
+            McpResultTools.SealSessionOutput(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let eventsJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                0L,
+                0
+            )
+
+        let sealOutcome = FSharpJson.deserialize<SessionOutputSealOutcome> sealedJson
+        let events = FSharpJson.deserialize<OutputEventRecord list> eventsJson
+        let archive = service.TryGetSessionOutputArchive()
+
+        match sealOutcome with
+        | Archived archived ->
+            Assert.Equal("default-session", archived.SessionId)
+            Assert.Equal(2, archived.EventCount)
+        | SealPending pending ->
+            failwithf "expected archived outcome but got pending: %s" pending.ErrorMessage
+
+        Assert.True(archive.IsSome)
+        Assert.Equal(2, archive.Value.EventCount)
+        Assert.Equal(2, events.Length)
+        Assert.Equal("seal-alpha", events[0].Payload)
+        Assert.Equal("seal-beta", events[1].Payload)
+    }
+
+[<Fact>]
 let ``ResultResources resolve host-session route from registry instead of assuming default agent`` () =
     task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
         let procClient =
             FakeProcSupervisorClient(
                 (fun (procId, spec) ->
@@ -439,6 +502,8 @@ let ``ResultResources resolve host-session route from registry instead of assumi
             new FsiMcpService(
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore,
                 procSupervisorClient = (procClient :> IProcSupervisorClient),
                 fsiSupervisorClient = (fsiClient :> IFsiSupervisorClient)
             )

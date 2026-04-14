@@ -190,6 +190,17 @@ type McpResultTools =
         fsiService.UnsubscribeSessionOutput(subscriberId, requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
         |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "seal_session_output"); Description("Seal the current session output into archive immediately, without requiring a reset or host restart. Useful when a human or agent wants an explicit archive boundary before a lifecycle transition.")>]
+    static member SealSessionOutput
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.SealSessionOutputArchive(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
+        |> FSharpJson.serialize
+
     [<McpServerTool(Name = "get_session_output_seal_pending"); Description("Read the seal-pending status for a specific route, if archive sealing previously failed.")>]
     static member GetSessionOutputSealPending
         (
