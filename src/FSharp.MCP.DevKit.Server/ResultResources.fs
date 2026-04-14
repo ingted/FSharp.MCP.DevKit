@@ -54,6 +54,14 @@ type ResultResources(fsiService: FsiMcpService) =
         | None -> []
         |> FSharpJson.serialize
 
+    [<McpServerResource(Name = "fsiSessionOutputArchive", Title = "FSI Session Output Archive", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/archive")>]
+    [<Description("Read archive metadata for a specific host/session route, if the session output has already been sealed into archive.")>]
+    member _.SessionOutputArchive(hostId: string, sessionId: string) =
+        match tryResolveRoute hostId sessionId with
+        | Some route -> fsiService.TryGetSessionOutputArchive(requestedRoute = route)
+        | None -> None
+        |> FSharpJson.serialize
+
     [<McpServerResource(Name = "fsiSessionOutputSealPending", Title = "FSI Session Output Seal Pending", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output/seal-pending")>]
     [<Description("Read the seal-pending status for a specific host/session route, if archive sealing previously failed.")>]
     member _.SessionOutputSealPending(hostId: string, sessionId: string) =

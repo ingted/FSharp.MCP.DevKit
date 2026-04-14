@@ -453,6 +453,56 @@ let ``McpResultTools explicit seal session output archives live events without l
     }
 
 [<Fact>]
+let ``McpResultTools archive tool and resource expose archive metadata after explicit seal`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+        let _ = service.ResolveRoute()
+        let _ = service.PublishSessionOutput("stdout", "archive-alpha", executionId = "exec-archive-tool")
+
+        let _ =
+            McpResultTools.SealSessionOutput(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let archiveJson =
+            McpResultTools.GetSessionOutputArchive(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let resourceArchiveJson =
+            let resources = ResultResources(service)
+            resources.SessionOutputArchive("default-host", "default-session")
+
+        let archive = FSharpJson.deserialize<SessionOutputArchiveRecord option> archiveJson
+        let resourceArchive = FSharpJson.deserialize<SessionOutputArchiveRecord option> resourceArchiveJson
+
+        Assert.True(archive.IsSome)
+        Assert.True(resourceArchive.IsSome)
+        Assert.Equal("default-session", archive.Value.SessionId)
+        Assert.Equal(1, archive.Value.EventCount)
+        Assert.Equal(archive.Value.EventCount, resourceArchive.Value.EventCount)
+    }
+
+[<Fact>]
 let ``ResultResources resolve host-session route from registry instead of assuming default agent`` () =
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
