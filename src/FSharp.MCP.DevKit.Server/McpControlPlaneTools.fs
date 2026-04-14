@@ -174,6 +174,17 @@ type McpControlPlaneTools =
         ) : string =
         fsiService.ListHostSessions(hostId) |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "probe_fsi_host_sessions_liveness"); Description("Force-refresh liveness for all sessions under a host by bypassing the current liveness cache once.")>]
+    static member ProbeFsiHostSessionsLiveness
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target host id.")>] hostId: string
+        ) : Task<string> =
+        task {
+            let! payload = fsiService.ProbeHostSessionLiveness(hostId)
+            return FSharpJson.serialize payload
+        }
+
     [<McpServerTool(Name = "get_fsi_host_health"); Description("Get health information for a host.")>]
     static member GetFsiHostHealth
         (

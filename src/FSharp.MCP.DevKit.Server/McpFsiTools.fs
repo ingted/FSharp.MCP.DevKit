@@ -994,6 +994,12 @@ module McpFsiTools =
                     return items |> Array.choose id |> Array.toList
             }
 
+        member this.ProbeHostSessionLiveness(hostId: string) =
+            task {
+                clearHostSessionLivenessCache hostId
+                return! this.ListHostSessionLiveness(hostId)
+            }
+
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =
             inventoryEventStore.List(?afterSequenceId = afterSequenceId, ?limit = limit)
 
