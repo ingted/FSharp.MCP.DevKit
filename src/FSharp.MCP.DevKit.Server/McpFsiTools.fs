@@ -979,6 +979,21 @@ module McpFsiTools =
                             return Some(recordUnreachableSessionLiveness hostId sessionId observedAt ex.Message)
             }
 
+        member this.ListHostSessionLiveness(hostId: string) =
+            task {
+                let sessions = this.ListHostSessions(hostId)
+
+                if List.isEmpty sessions then
+                    return []
+                else
+                    let! items =
+                        sessions
+                        |> List.map (fun session -> this.TryGetSessionLivenessForHostSession(hostId, session.SessionId))
+                        |> Task.WhenAll
+
+                    return items |> Array.choose id |> Array.toList
+            }
+
         member _.ListInventoryEvents(?afterSequenceId: int64, ?limit: int) =
             inventoryEventStore.List(?afterSequenceId = afterSequenceId, ?limit = limit)
 

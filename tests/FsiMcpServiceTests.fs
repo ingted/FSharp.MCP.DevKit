@@ -559,3 +559,118 @@ let ``FsiMcpService session liveness backs off repeated unreachable probes`` () 
         Assert.Contains("probe timeout", first.Value.ErrorMessage.Value)
         Assert.Equal(1, getSessionInfoCalls - callsBeforeLiveness)
     }
+
+[<Fact>]
+let ``FsiMcpService cached reachable liveness can become stale without extra probe`` () =
+    task {
+        let mutable getSessionInfoCalls = 0
+        let hostSpec =
+            { ExecutablePath = "dotnet"
+              Arguments = [ "fsi-host.dll" ]
+              WorkingDirectory = Some "/srv/fsi"
+              Role = Some "procnode"
+              ProbeMessage = Some "PING"
+              ProbeCron = None
+              ProbeIntervalMs = Some 1000 }
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9903
+                      FsiSupervisorPath = Some "akka://fsi-stale"
+                      NodeAddress = Some "akka://node-stale"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun procId ->
+                    Some
+                        { ProcId = procId
+                          Status = "running"
+                          ProcessId = Some 9903
+                          FsiSupervisorPath = Some "akka://fsi-stale"
+                          NodeAddress = Some "akka://node-stale"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            { new IFsiSupervisorClient with
+                member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+                    Task.FromResult(
+                        { SessionId = request.SessionId
+                          RawErrorType = None
+                          Result =
+                            { Output = request.Code
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                              Diagnostics = [||]
+                              Value = None } }
+                    )
+
+                member _.GetSessionInfo(_host: HostRecord, sessionId: string) =
+                    getSessionInfoCalls <- getSessionInfoCalls + 1
+
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Status = "ready"
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = Some DateTime.UtcNow }
+                    )
+
+                member _.ListSessions(_) = Task.FromResult([])
+
+                member _.EnsureSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = false
+                          Status = "created" }
+                    )
+
+                member _.ResetSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = true
+                          Status = "reset" }
+                    ) }
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient,
+                sessionLivenessSuccessTtl = TimeSpan.FromMinutes 5.0,
+                sessionLivenessFailureBaseBackoff = TimeSpan.FromMinutes 5.0,
+                sessionLivenessFailureMaxBackoff = TimeSpan.FromMinutes 5.0,
+                sessionLivenessStaleAfter = TimeSpan.Zero
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.RegisterAgent("agent-live-stale", "Agent Live Stale")
+        let! _ = service.CreateHost("agent-live-stale", Net10Host, hostSpec, requestedHostId = "host-live-stale")
+        let! _ = service.CreateSession("agent-live-stale", "host-live-stale", "session-up", "Session Up")
+        let callsBeforeLiveness = getSessionInfoCalls
+
+        let! first = service.TryGetSessionLivenessForHostSession("host-live-stale", "session-up")
+        let! second = service.TryGetSessionLivenessForHostSession("host-live-stale", "session-up")
+
+        Assert.True(first.IsSome)
+        Assert.True(second.IsSome)
+        Assert.False(first.Value.IsStale)
+        Assert.True(second.Value.IsStale)
+        Assert.True(second.Value.IsReachable)
+        Assert.Equal(1, getSessionInfoCalls - callsBeforeLiveness)
+    }
