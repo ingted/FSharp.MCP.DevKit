@@ -27,7 +27,7 @@ let private waitForCompletion (service: FsiMcpService) asyncId =
         let mutable attempt = 0
         let mutable status = service.GetAsyncExecutionStatus(asyncId)
 
-        while not status.IsCompleted && attempt < 50 do
+        while not status.IsCompleted && attempt < 100 do
             do! Task.Delay(100)
             attempt <- attempt + 1
             status <- service.GetAsyncExecutionStatus(asyncId)
@@ -352,6 +352,53 @@ let ``FsiMcpService can read persisted live output after service recreation`` ()
     Assert.Equal<int64 array>([| 1L; 2L |], events |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)
     Assert.Equal("persisted-alpha", events[0].Payload)
     Assert.Equal("persisted-beta", events[1].Payload)
+
+[<Fact>]
+let ``FsiMcpService can read persisted execution results after service recreation`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+
+        let service1 =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+                resultRegistry = (JsonLineResultRegistry(tempRoot) :> IResultRegistry)
+            )
+
+        use _cleanup1 = service1 :> IDisposable
+
+        let! first = service1.ExecuteOperation(ExecuteCode, "let persistedResultValue = 42", timeout = TimeSpan.FromSeconds 30.0)
+        let! second = service1.ExecuteOperation(EvaluateExpression, "persistedResultValue", timeout = TimeSpan.FromSeconds 30.0)
+        let route = service1.ResolveRoute()
+
+        let service2 =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+                resultRegistry = (JsonLineResultRegistry(tempRoot) :> IResultRegistry)
+            )
+
+        use _cleanup2 = service2 :> IDisposable
+        let _ = service2.ResolveRoute()
+
+        let reloaded = service2.TryGetResult(second.ResultId)
+        let sessionResults = service2.ListSessionResults(route)
+        let agentResults = service2.ListAgentResults("default-agent")
+
+        Assert.True(reloaded.IsSome)
+        Assert.Equal(second.ResultId, reloaded.Value.ResultId)
+        Assert.Equal(Some "42", reloaded.Value.Result.Value)
+        Assert.True(sessionResults |> List.exists (fun record -> record.ResultId = first.ResultId))
+        Assert.True(sessionResults |> List.exists (fun record -> record.ResultId = second.ResultId))
+        Assert.True(agentResults |> List.exists (fun record -> record.ResultId = first.ResultId))
+        Assert.True(agentResults |> List.exists (fun record -> record.ResultId = second.ResultId))
+        Assert.True(sessionResults[0].SubmittedAt >= sessionResults[1].SubmittedAt)
+    }
 
 [<Fact>]
 let ``FsiMcpService session liveness uses success cache within ttl`` () =

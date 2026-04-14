@@ -332,6 +332,7 @@ module McpFsiTools =
             ?outputSubscriberBroker: IOutputSubscriberBroker,
             ?sessionOutputLiveStore: ISessionOutputLiveStore,
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
+            ?resultRegistry: IResultRegistry,
             ?sessionLivenessSuccessTtl: TimeSpan,
             ?sessionLivenessFailureBaseBackoff: TimeSpan,
             ?sessionLivenessFailureMaxBackoff: TimeSpan,
@@ -352,7 +353,7 @@ module McpFsiTools =
             defaultArg sessionOutputArchiveStore (JsonLineSessionOutputArchiveStore() :> ISessionOutputArchiveStore)
 
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
-        let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
+        let resultRegistry = defaultArg resultRegistry (JsonLineResultRegistry() :> IResultRegistry)
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
         let resultQueryService = ResultQueryService()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend

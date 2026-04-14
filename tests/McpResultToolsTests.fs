@@ -503,6 +503,53 @@ let ``McpResultTools archive tool and resource expose archive metadata after exp
     }
 
 [<Fact>]
+let ``McpResultTools list and session resources survive result registry reload`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+
+        let service1 =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+                resultRegistry = (JsonLineResultRegistry(tempRoot) :> IResultRegistry)
+            )
+
+        use _cleanup1 = service1 :> IDisposable
+
+        let! _ = service1.ExecuteOperation(ExecuteCode, "let persistedToolValue = 99", timeout = TimeSpan.FromSeconds 30.0)
+        let! evalRecord = service1.ExecuteOperation(EvaluateExpression, "persistedToolValue", timeout = TimeSpan.FromSeconds 30.0)
+
+        let service2 =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+                resultRegistry = (JsonLineResultRegistry(tempRoot) :> IResultRegistry)
+            )
+
+        use _cleanup2 = service2 :> IDisposable
+        let _ = service2.ResolveRoute()
+
+        let listJson = McpResultTools.ListFsiResults(service2, "default-agent", "", "")
+        let singleJson = McpResultTools.GetFsiResult(service2, "default-agent", evalRecord.ResultId)
+        let resources = ResultResources(service2)
+        let sessionResultsJson = resources.SessionResults("default-host", "default-session")
+
+        let listed = FSharpJson.deserialize<FsiExecutionRecord list> listJson
+        let single = FSharpJson.deserialize<FsiExecutionRecord option> singleJson
+        let sessionResults = FSharpJson.deserialize<FsiExecutionRecord list> sessionResultsJson
+
+        Assert.True(single.IsSome)
+        Assert.Equal(Some "99", single.Value.Result.Value)
+        Assert.True(listed |> List.exists (fun record -> record.ResultId = evalRecord.ResultId))
+        Assert.True(sessionResults |> List.exists (fun record -> record.ResultId = evalRecord.ResultId))
+    }
+
+[<Fact>]
 let ``ResultResources resolve host-session route from registry instead of assuming default agent`` () =
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
