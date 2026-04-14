@@ -35,6 +35,18 @@ let private waitForCompletion (service: FsiMcpService) asyncId =
         return status
     }
 
+let private waitUntil (timeoutMs: int) (predicate: unit -> bool) =
+    task {
+        let started = DateTime.UtcNow
+        let mutable done' = predicate ()
+
+        while not done' && (DateTime.UtcNow - started).TotalMilliseconds < float timeoutMs do
+            do! Task.Delay(50)
+            done' <- predicate ()
+
+        return done'
+    }
+
 [<Fact>]
 let ``FsiMcpService executes through default routed in-proc path and stores results`` () =
     task {
@@ -673,4 +685,113 @@ let ``FsiMcpService cached reachable liveness can become stale without extra pro
         Assert.True(second.Value.IsStale)
         Assert.True(second.Value.IsReachable)
         Assert.Equal(1, getSessionInfoCalls - callsBeforeLiveness)
+    }
+
+[<Fact>]
+let ``FsiMcpService background liveness sweep eventually probes registered host sessions`` () =
+    task {
+        let mutable probeCount = 0
+
+        let hostSpec =
+            { ExecutablePath = "dotnet"
+              Arguments = [ "--dll"; "fsi-host.dll" ]
+              WorkingDirectory = Some "/srv/fsi"
+              Role = None
+              ProbeMessage = Some "PING"
+              ProbeCron = None
+              ProbeIntervalMs = Some 1000 }
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) ->
+                    { ProcId = procId
+                      Status = "running"
+                      ProcessId = Some 9152
+                      FsiSupervisorPath = Some "akka.tcp://proc-system@127.0.0.1:9152/user/fsi/supervisor"
+                      NodeAddress = Some "akka.tcp://proc-system@127.0.0.1:9152"
+                      LastProbeUtc = Some DateTime.UtcNow
+                      LastProbeOk = Some true
+                      ProbeFailures = 0
+                      Spec = Some spec
+                      LastError = None }),
+                (fun _ ->
+                    Some
+                        { ProcId = "proc-bg-sweep"
+                          Status = "running"
+                          ProcessId = Some 9152
+                          FsiSupervisorPath = Some "akka.tcp://proc-system@127.0.0.1:9152/user/fsi/supervisor"
+                          NodeAddress = Some "akka.tcp://proc-system@127.0.0.1:9152"
+                          LastProbeUtc = Some DateTime.UtcNow
+                          LastProbeOk = Some true
+                          ProbeFailures = 0
+                          Spec = None
+                          LastError = None })
+            )
+
+        let fsiClient =
+            { new IFsiSupervisorClient with
+                member _.Execute(host: HostRecord, request: FsiSupervisorExecRequest) =
+                    Task.FromResult(
+                        { SessionId = request.SessionId
+                          RawErrorType = None
+                          Result =
+                            { Output = request.Code
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                              Diagnostics = [||]
+                              Value = None } }
+                    )
+
+                member _.GetSessionInfo(_host: HostRecord, sessionId: string) =
+                    probeCount <- probeCount + 1
+
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Status = "ready"
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = Some "cp-bg"
+                          RunningSinceUtc = Some DateTime.UtcNow }
+                    )
+
+                member _.ListSessions(_) = Task.FromResult([])
+
+                member _.EnsureSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = false
+                          Status = "created" }
+                    )
+
+                member _.ResetSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = true
+                          Status = "reset" }
+                    ) }
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient,
+                sessionLivenessSuccessTtl = TimeSpan.FromMinutes 5.0,
+                sessionLivenessBackgroundSweepInterval = TimeSpan.FromMilliseconds 100.0
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.RegisterAgent("agent-bg-sweep", "Agent Background Sweep")
+        let! _ = service.CreateHost("agent-bg-sweep", Net10Host, hostSpec, requestedHostId = "host-bg-sweep")
+        let! _ = service.CreateSession("agent-bg-sweep", "host-bg-sweep", "session-bg-sweep", "Session Background Sweep")
+        let callsBeforeWait = probeCount
+
+        let! observed = waitUntil 5000 (fun () -> probeCount > callsBeforeWait)
+
+        Assert.True(observed)
+        Assert.True(probeCount > callsBeforeWait)
     }

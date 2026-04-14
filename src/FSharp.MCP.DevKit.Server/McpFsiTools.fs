@@ -335,8 +335,9 @@ module McpFsiTools =
             ?sessionLivenessSuccessTtl: TimeSpan,
             ?sessionLivenessFailureBaseBackoff: TimeSpan,
             ?sessionLivenessFailureMaxBackoff: TimeSpan,
-            ?sessionLivenessStaleAfter: TimeSpan
-        ) =
+            ?sessionLivenessStaleAfter: TimeSpan,
+            ?sessionLivenessBackgroundSweepInterval: TimeSpan
+        ) as this =
         let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
         let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
         let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
@@ -400,8 +401,13 @@ module McpFsiTools =
         let sessionLivenessFailureBaseBackoff = defaultArg sessionLivenessFailureBaseBackoff (TimeSpan.FromSeconds(5.0))
         let sessionLivenessFailureMaxBackoff = defaultArg sessionLivenessFailureMaxBackoff (TimeSpan.FromSeconds(30.0))
         let sessionLivenessStaleAfter = defaultArg sessionLivenessStaleAfter (TimeSpan.FromSeconds(15.0))
+        let sessionLivenessBackgroundSweepInterval =
+            sessionLivenessBackgroundSweepInterval
+            |> Option.filter (fun value -> value > TimeSpan.Zero)
         let sessionLivenessCache = Dictionary<string, SessionLivenessCacheEntry>(StringComparer.OrdinalIgnoreCase)
         let sessionLivenessCacheGate = obj()
+        let mutable sessionLivenessBackgroundSweepTimer: Timer option = None
+        let mutable sessionLivenessBackgroundSweepRunning = 0
 
         let resolveRoute (requestedRoute: ExecutionRoute option) = executionRouter.ResolveRoute requestedRoute
 
@@ -539,6 +545,31 @@ module McpFsiTools =
               Payload = payload
               Timeout = timeout
               UsePackageTargets = usePackageTargets }
+
+        let startBackgroundSweepTimer () =
+            match sessionLivenessBackgroundSweepInterval with
+            | Some interval ->
+                let callback =
+                    TimerCallback(fun _ ->
+                        if Interlocked.CompareExchange(&sessionLivenessBackgroundSweepRunning, 1, 0) = 0 then
+                            let backgroundTask =
+                                task {
+                                    try
+                                        try
+                                            let! _ = this.SweepSessionLiveness()
+                                            ()
+                                        with ex ->
+                                            logger.LogWarning(ex, "Background session liveness sweep failed.")
+                                    finally
+                                        Interlocked.Exchange(&sessionLivenessBackgroundSweepRunning, 0) |> ignore
+                                }
+
+                            backgroundTask |> ignore)
+
+                sessionLivenessBackgroundSweepTimer <- Some(new Timer(callback, null, interval, interval))
+            | None -> ()
+
+        do startBackgroundSweepTimer ()
 
         member this.ProcessAsyncRequest(request: AsyncFsiExecutionRequest) =
             task {
@@ -1267,6 +1298,9 @@ module McpFsiTools =
 
         interface IDisposable with
             member _.Dispose() =
+                match sessionLivenessBackgroundSweepTimer with
+                | Some timer -> timer.Dispose()
+                | None -> ()
                 asyncProcessorCts.Cancel()
                 asyncProcessorCts.Dispose()
                 match system with
