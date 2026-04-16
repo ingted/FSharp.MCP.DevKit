@@ -1328,3 +1328,10 @@
   - 結果 `0 Error(s)`。
 - 結論：
   - 這是 build-time 相容性問題，不是 `fsharp-devkit` runtime / MCP routing 問題。
+
+## 2026-04-16 DevKit WinAgent Import Idempotency
+
+- WinAgent envelope import now uses `ResultId` as an idempotency key for the same route.
+- Same `ResultId` + same `agentId/hostId/sessionId`: returns existing record, no duplicate output publish.
+- Same `ResultId` + different route: fails fast to prevent cross-session pollution.
+- Tests: `McpResultToolsTests` 12/12 after isolated store fix.

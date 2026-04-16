@@ -779,22 +779,32 @@ module McpFsiTools =
                       RunningSinceUtc = Some envelope.StartedAtUtc.UtcDateTime
                       LastExecutionAt = Some envelope.CompletedAtUtc.UtcDateTime }
 
-            resultRegistry.Put record
+            match resultRegistry.TryGet record.ResultId with
+            | Some existing
+                when existing.AgentId = agentId
+                     && existing.HostId = hostId
+                     && existing.SessionId = sessionId ->
+                existing
+            | Some existing ->
+                invalidOp
+                    $"WinAgent execution '{record.ResultId}' is already imported for agent='{existing.AgentId}', host='{existing.HostId}', session='{existing.SessionId}'."
+            | None ->
+                resultRegistry.Put record
 
-            envelope.OutputEvents
-            |> List.iter (fun event ->
-                let _ =
-                    this.PublishSessionOutput(
-                        event.StreamKind,
-                        event.Text,
-                        executionId = record.ResultId,
-                        isReplay = event.IsReplay,
-                        requestedRoute = route
-                    )
+                envelope.OutputEvents
+                |> List.iter (fun event ->
+                    let _ =
+                        this.PublishSessionOutput(
+                            event.StreamKind,
+                            event.Text,
+                            executionId = record.ResultId,
+                            isReplay = event.IsReplay,
+                            requestedRoute = route
+                        )
 
-                ())
+                    ())
 
-            record
+                record
 
         member this.ImportWinAgentExecutionEnvelopeLines(agentId: string, hostId: string, sessionId: string, envelopeLines: string list) =
             let folder (imported, skipped, errors) line =

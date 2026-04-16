@@ -84,6 +84,25 @@ Useful companion tools:
 - `reference_assembly_routed`
 - `get_lines`
 
+## WinAgent Execution Import
+
+This fork also exposes a bridge for importing WinAgent shared execution envelopes into the DevKit result/output fabric.
+
+Tools:
+
+- `import_winagent_execution_envelope`
+- `import_winagent_execution_envelopes_from_jsonl`
+
+Behavior:
+
+- each imported envelope becomes an `FsiExecutionRecord`
+- envelope output events are published into the target session output path
+- missing `agentId` / `hostId` / `sessionId` inventory is created during import
+- importing the same `ResultId` into the same `agentId` / `hostId` / `sessionId` is idempotent and does not republish output events
+- importing the same `ResultId` into a different route fails fast to avoid cross-session output pollution
+
+This is the shared execution fabric entry point used by `PulseTrade.Mcp.WinAgent.Server` tool `agent.syncToolResultToDevKit`.
+
 ## Recommended Execution Pattern
 
 For short setup and quick probes:

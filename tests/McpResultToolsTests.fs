@@ -115,6 +115,18 @@ let private createWinAgentEnvelopeJson executionId requestId =
 
     JsonSerializer.Serialize(envelope, WinAgentEnvelopeImport.jsonOptions)
 
+let private createIsolatedResultService () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+
+    new FsiMcpService(
+        NullLogger<FsiMcpService>.Instance,
+        enableRemoteClient = false,
+        sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+        sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+        resultRegistry = (InMemoryResultRegistry() :> IResultRegistry)
+    )
+
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
     task {
@@ -217,7 +229,7 @@ let ``McpResultTools get list query compare and resources work`` () =
 [<Fact>]
 let ``McpResultTools import WinAgent execution envelope into result and output fabric`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let service = createIsolatedResultService ()
         use _cleanup = service :> IDisposable
 
         let envelopeJson = createWinAgentEnvelopeJson "winagent-result-1" "winagent-request-1"
@@ -260,9 +272,96 @@ let ``McpResultTools import WinAgent execution envelope into result and output f
     }
 
 [<Fact>]
+let ``McpResultTools import WinAgent execution envelope is idempotent for same route`` () =
+    task {
+        let service = createIsolatedResultService ()
+        use _cleanup = service :> IDisposable
+
+        let envelopeJson = createWinAgentEnvelopeJson "winagent-result-idempotent-1" "winagent-request-idempotent-1"
+
+        let firstJson =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                "winagent-agent-idempotent",
+                "winagent-host-idempotent",
+                "winagent-session-idempotent",
+                envelopeJson
+            )
+
+        let secondJson =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                "winagent-agent-idempotent",
+                "winagent-host-idempotent",
+                "winagent-session-idempotent",
+                envelopeJson
+            )
+
+        let listedJson =
+            McpResultTools.ListFsiResults(
+                service,
+                "winagent-agent-idempotent",
+                "winagent-host-idempotent",
+                "winagent-session-idempotent"
+            )
+
+        let outputJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "winagent-agent-idempotent",
+                "winagent-host-idempotent",
+                "winagent-session-idempotent",
+                0L,
+                0
+            )
+
+        let first = FSharpJson.deserialize<FsiExecutionRecord> firstJson
+        let second = FSharpJson.deserialize<FsiExecutionRecord> secondJson
+        let listed = FSharpJson.deserialize<FsiExecutionRecord list> listedJson
+        let outputEvents = FSharpJson.deserialize<OutputEventRecord list> outputJson
+
+        Assert.Equal(first.ResultId, second.ResultId)
+        Assert.Single(listed) |> ignore
+        Assert.Equal("winagent-result-idempotent-1", listed[0].ResultId)
+        Assert.Single(outputEvents) |> ignore
+        Assert.Equal(Some "winagent-result-idempotent-1", outputEvents[0].ExecutionId)
+    }
+
+[<Fact>]
+let ``McpResultTools import WinAgent execution envelope rejects duplicate result on different route`` () =
+    task {
+        let service = createIsolatedResultService ()
+        use _cleanup = service :> IDisposable
+
+        let envelopeJson = createWinAgentEnvelopeJson "winagent-result-idempotent-conflict" "winagent-request-idempotent-conflict"
+
+        let _ =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                "winagent-agent-conflict-a",
+                "winagent-host-conflict-a",
+                "winagent-session-conflict-a",
+                envelopeJson
+            )
+
+        let ex =
+            Assert.Throws<InvalidOperationException>(fun () ->
+                McpResultTools.ImportWinAgentExecutionEnvelope(
+                    service,
+                    "winagent-agent-conflict-b",
+                    "winagent-host-conflict-b",
+                    "winagent-session-conflict-b",
+                    envelopeJson
+                )
+                |> ignore)
+
+        Assert.Contains("already imported", ex.Message)
+    }
+
+[<Fact>]
 let ``McpResultTools import WinAgent execution envelopes from JSONL`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let service = createIsolatedResultService ()
         use _cleanup = service :> IDisposable
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
         Directory.CreateDirectory(tempRoot) |> ignore
