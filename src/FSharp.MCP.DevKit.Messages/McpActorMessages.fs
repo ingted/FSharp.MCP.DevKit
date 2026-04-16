@@ -51,3 +51,33 @@ type FsiRemoteCommandResponse =
       SessionId: string option
       Result: FsiRemoteResult
       SessionState: FsiRemoteSessionState option }
+
+type BrowserTabInventoryDto =
+    { TabId: string
+      Title: string option
+      Url: string option
+      IsActive: bool
+      LastObservedUtc: DateTime option }
+
+type BrowserCompanionSessionDto =
+    { AgentId: string option
+      HostId: string option
+      SessionId: string
+      ExecutionPlane: string option }
+
+type BrowserInventoryDto =
+    { BrowserId: string
+      DisplayName: string option
+      HostId: string option
+      MachineName: string option
+      ProcessId: int option
+      Status: string
+      CompanionSession: BrowserCompanionSessionDto option
+      Tabs: BrowserTabInventoryDto list
+      Tags: string list
+      RegisteredAtUtc: DateTime
+      LastHeartbeatUtc: DateTime option }
+
+type BrowserInventorySnapshotDto =
+    { Items: BrowserInventoryDto list
+      ObservedAtUtc: DateTime }

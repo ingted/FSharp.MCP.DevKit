@@ -1,5 +1,6 @@
 module RemoteMessageContractTests
 
+open System
 open Xunit
 open FSharp.MCP.DevKit.Messages
 
@@ -67,3 +68,42 @@ let ``FsiRemoteCommandResponse carries host and session ids`` () =
     Assert.Equal(Some "session-2", response.SessionId)
     Assert.True(response.Result.IsSuccess)
     Assert.True(response.SessionState.IsSome)
+
+[<Fact>]
+let ``BrowserInventorySnapshotDto carries browser companion and tab summaries`` () =
+    let observedAt = DateTime.Parse("2026-04-16T15:45:00Z").ToUniversalTime()
+    let snapshot =
+        { ObservedAtUtc = observedAt
+          Items =
+            [ { BrowserId = "browser-01"
+                DisplayName = Some "SharpBrowser Desk"
+                HostId = Some "desk-01"
+                MachineName = Some "TRADER-DESK-01"
+                ProcessId = Some 12345
+                Status = "Ready"
+                CompanionSession =
+                    Some
+                        { AgentId = Some "winagent"
+                          HostId = Some "desk-01-winagent"
+                          SessionId = "desk-01-browser-01-browser"
+                          ExecutionPlane = Some "winagent-shared-fsi-host" }
+                Tabs =
+                    [ { TabId = "tab-active"
+                        Title = Some "Market News"
+                        Url = Some "https://example.test/news"
+                        IsActive = true
+                        LastObservedUtc = Some observedAt } ]
+                Tags = [ "sharpbrowser"; "browser-companion" ]
+                RegisteredAtUtc = observedAt.AddMinutes(-1.0)
+                LastHeartbeatUtc = Some observedAt } ] }
+
+    let browser = snapshot.Items.Head
+    let companion = browser.CompanionSession.Value
+    let tab = browser.Tabs.Head
+
+    Assert.Equal("browser-01", browser.BrowserId)
+    Assert.Equal(Some "desk-01-winagent", companion.HostId)
+    Assert.Equal("desk-01-browser-01-browser", companion.SessionId)
+    Assert.Equal(Some "https://example.test/news", tab.Url)
+    Assert.True(tab.IsActive)
+    Assert.Contains("browser-companion", browser.Tags)
