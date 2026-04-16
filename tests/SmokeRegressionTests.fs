@@ -501,6 +501,79 @@ let ``Smoke result queries support exists forall and compare`` () =
     }
 
 [<Fact>]
+let ``Smoke result queries support principal attribution aliases`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let humanMetadata =
+            [ PrincipalAttribution.PrincipalId, "human-admin"
+              PrincipalAttribution.PrincipalKind, "human"
+              PrincipalAttribution.PrincipalSource, "mgmt2" ]
+            |> Map.ofList
+
+        let agentMetadata =
+            [ PrincipalAttribution.PrincipalId, "codex-cli"
+              PrincipalAttribution.PrincipalKind, "agent"
+              PrincipalAttribution.PrincipalSource, "mcp" ]
+            |> Map.ofList
+
+        let! humanRecord =
+            service.ExecuteOperation(
+                ExecuteCode,
+                "let principalQueryHuman = 10",
+                timeout = TimeSpan.FromSeconds 30.0,
+                metadata = humanMetadata
+            )
+
+        let! agentRecord =
+            service.ExecuteOperation(
+                ExecuteCode,
+                "let principalQueryAgent = 20",
+                timeout = TimeSpan.FromSeconds 30.0,
+                metadata = agentMetadata
+            )
+
+        let resultIds = $"{humanRecord.ResultId}\n{agentRecord.ResultId}"
+
+        let mapJson =
+            McpResultTools.QueryFsiResults(
+                service,
+                "default-agent",
+                "map",
+                resultIds,
+                "",
+                "principalId",
+                "",
+                ""
+            )
+
+        let filterJson =
+            McpResultTools.QueryFsiResults(
+                service,
+                "default-agent",
+                "filter",
+                resultIds,
+                "",
+                "principalSource:mgmt2",
+                "",
+                ""
+            )
+
+        let mapResponse = FSharpJson.deserialize<ResultQueryResponse> mapJson
+        let filterResponse = FSharpJson.deserialize<ResultQueryResponse> filterJson
+        let mapMaterialized = mapResponse.MaterializedJson |> Option.defaultValue ""
+        let filterMaterialized = filterResponse.MaterializedJson |> Option.defaultValue ""
+
+        Assert.True(mapResponse.IsSuccess)
+        Assert.Contains("human-admin", mapMaterialized)
+        Assert.Contains("codex-cli", mapMaterialized)
+        Assert.True(filterResponse.IsSuccess)
+        Assert.Contains(humanRecord.ResultId, filterMaterialized)
+        Assert.DoesNotContain(agentRecord.ResultId, filterMaterialized)
+    }
+
+[<Fact>]
 let ``Smoke FsiService path directives accept Windows style paths`` () =
     let service = FsiService(FsiConfig.defaultConfig)
     service.Start()

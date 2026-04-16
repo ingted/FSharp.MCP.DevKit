@@ -147,6 +147,9 @@ type ResultQueryService() =
           RawErrorType = record.RawErrorType
           Metadata = record.Metadata }
 
+    let metadataValue key (record: FsiExecutionRecord) =
+        record.Metadata |> Map.tryFind key |> Option.defaultValue ""
+
     let projectionValue (fieldName: string) (record: FsiExecutionRecord) =
         match (fieldName |> string |> fun value -> value.Trim().ToLowerInvariant()) with
         | ""
@@ -162,6 +165,9 @@ type ResultQueryService() =
         | "errors" -> record.Result.Errors
         | "issuccess" -> string record.Result.IsSuccess
         | "rawerrortype" -> record.RawErrorType |> Option.defaultValue ""
+        | "principalid" -> metadataValue PrincipalAttribution.PrincipalId record
+        | "principalkind" -> metadataValue PrincipalAttribution.PrincipalKind record
+        | "principalsource" -> metadataValue PrincipalAttribution.PrincipalSource record
         | value when value.StartsWith("metadata:", StringComparison.Ordinal) ->
             let key = fieldName.Trim().Substring("metadata:".Length)
             record.Metadata |> Map.tryFind key |> Option.defaultValue ""
@@ -193,6 +199,15 @@ type ResultQueryService() =
             let expected = normalized.Substring("rawerrortype:".Length)
             record.RawErrorType
             |> Option.exists (fun raw -> String.Equals(raw, expected, StringComparison.OrdinalIgnoreCase))
+        | value when value.StartsWith("principalid:", StringComparison.Ordinal) ->
+            let expected = normalized.Substring("principalid:".Length)
+            String.Equals(metadataValue PrincipalAttribution.PrincipalId record, expected, StringComparison.OrdinalIgnoreCase)
+        | value when value.StartsWith("principalkind:", StringComparison.Ordinal) ->
+            let expected = normalized.Substring("principalkind:".Length)
+            String.Equals(metadataValue PrincipalAttribution.PrincipalKind record, expected, StringComparison.OrdinalIgnoreCase)
+        | value when value.StartsWith("principalsource:", StringComparison.Ordinal) ->
+            let expected = normalized.Substring("principalsource:".Length)
+            String.Equals(metadataValue PrincipalAttribution.PrincipalSource record, expected, StringComparison.OrdinalIgnoreCase)
         | value when value.StartsWith("metadata:", StringComparison.Ordinal) ->
             let expression = normalized.Substring("metadata:".Length)
             let separator = expression.IndexOf('=')
