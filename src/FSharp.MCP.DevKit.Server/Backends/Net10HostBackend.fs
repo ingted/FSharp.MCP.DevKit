@@ -200,7 +200,8 @@ type Net10HostBackend
                       OperationKind = ResetSession
                       Payload = ""
                       Timeout = Some(TimeSpan.FromSeconds 30.0)
-                      UsePackageTargets = None }
+                      UsePackageTargets = None
+                      Metadata = Map.empty }
                 let! reset = fsiSupervisorClient.ResetSession(host, route.SessionId)
                 let completedAt = DateTime.UtcNow
 

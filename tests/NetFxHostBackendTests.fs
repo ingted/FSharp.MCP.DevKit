@@ -64,7 +64,8 @@ let ``NetFxHostBackend forwards execute requests with explicit route`` () =
                   OperationKind = ExecuteCode
                   Payload = "let x = 1"
                   Timeout = Some(TimeSpan.FromSeconds 30.0)
-                  UsePackageTargets = None }
+                  UsePackageTargets = None
+                  Metadata = Map.empty }
             )
 
         let command = fakeClient.Commands |> List.head
@@ -140,7 +141,8 @@ let ``NetFxHostBackend maps result query and host commands to parent-level remot
                   OperationKind = ResultQuery
                   Payload = "rid-1 rid-2"
                   Timeout = Some(TimeSpan.FromSeconds 30.0)
-                  UsePackageTargets = None }
+                  UsePackageTargets = None
+                  Metadata = Map.empty }
             )
 
         let host =

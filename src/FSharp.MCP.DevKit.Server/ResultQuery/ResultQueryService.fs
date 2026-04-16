@@ -15,7 +15,8 @@ type private ResultSummary =
       Value: string option
       Output: string
       Errors: string
-      RawErrorType: string option }
+      RawErrorType: string option
+      Metadata: Map<string, string> }
 
 type private ResultZipRow =
     { Index: int
@@ -143,7 +144,8 @@ type ResultQueryService() =
           Value = record.Result.Value
           Output = record.Result.Output
           Errors = record.Result.Errors
-          RawErrorType = record.RawErrorType }
+          RawErrorType = record.RawErrorType
+          Metadata = record.Metadata }
 
     let projectionValue (fieldName: string) (record: FsiExecutionRecord) =
         match (fieldName |> string |> fun value -> value.Trim().ToLowerInvariant()) with
@@ -160,6 +162,9 @@ type ResultQueryService() =
         | "errors" -> record.Result.Errors
         | "issuccess" -> string record.Result.IsSuccess
         | "rawerrortype" -> record.RawErrorType |> Option.defaultValue ""
+        | value when value.StartsWith("metadata:", StringComparison.Ordinal) ->
+            let key = fieldName.Trim().Substring("metadata:".Length)
+            record.Metadata |> Map.tryFind key |> Option.defaultValue ""
         | "executiontimems" ->
             record.Result.ExecutionTime
             |> Option.map (fun value -> value.TotalMilliseconds.ToString("0.###"))
@@ -188,6 +193,19 @@ type ResultQueryService() =
             let expected = normalized.Substring("rawerrortype:".Length)
             record.RawErrorType
             |> Option.exists (fun raw -> String.Equals(raw, expected, StringComparison.OrdinalIgnoreCase))
+        | value when value.StartsWith("metadata:", StringComparison.Ordinal) ->
+            let expression = normalized.Substring("metadata:".Length)
+            let separator = expression.IndexOf('=')
+
+            if separator < 0 then
+                record.Metadata.ContainsKey expression
+            else
+                let key = expression.Substring(0, separator)
+                let expected = expression.Substring(separator + 1)
+
+                record.Metadata
+                |> Map.tryFind key
+                |> Option.exists (fun actual -> String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
         | value when value.StartsWith("valuecontains:", StringComparison.Ordinal) ->
             let expected = normalized.Substring("valuecontains:".Length)
             (preferredValue record).IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0

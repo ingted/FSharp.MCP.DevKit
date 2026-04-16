@@ -5,6 +5,39 @@ open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Communication.IPC
 
 module BackendAdapters =
+    module BrowserExecutionMetadata =
+        [<Literal>]
+        let TargetKind = "browser.target.kind"
+
+        [<Literal>]
+        let BrowserId = "browser.id"
+
+        [<Literal>]
+        let TabId = "browser.tabId"
+
+        [<Literal>]
+        let CompanionSessionId = "browser.companion.sessionId"
+
+        [<Literal>]
+        let CompanionHostId = "browser.companion.hostId"
+
+        [<Literal>]
+        let ExecutionPlane = "browser.executionPlane"
+
+        let private copyIfPresent (sourceKey: string) (targetKey: string) (metadata: Map<string, string>) =
+            match metadata.TryFind sourceKey, metadata.ContainsKey targetKey with
+            | Some value, false -> metadata.Add(targetKey, value)
+            | _ -> metadata
+
+        let normalize (metadata: Map<string, string>) =
+            metadata
+            |> copyIfPresent "schedule.target.kind" TargetKind
+            |> copyIfPresent "schedule.target.browserId" BrowserId
+            |> copyIfPresent "schedule.target.tabId" TabId
+            |> copyIfPresent "schedule.target.companion.sessionId" CompanionSessionId
+            |> copyIfPresent "schedule.target.companion.hostId" CompanionHostId
+            |> copyIfPresent "schedule.target.executionPlane" ExecutionPlane
+
     let createFailedResult (error: string) (executionTime: TimeSpan option) (rawErrorType: string option) =
         let suffix =
             rawErrorType
@@ -66,4 +99,5 @@ module BackendAdapters =
           StartedAt = startedAt
           CompletedAt = completedAt
           RawErrorType = rawErrorType
+          Metadata = BrowserExecutionMetadata.normalize request.Metadata
           Result = result }

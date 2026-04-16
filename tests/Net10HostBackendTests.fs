@@ -166,7 +166,8 @@ let ``Net10HostBackend maps nuget and path operations into supervisor execution 
                   OperationKind = ReferenceNuget
                   Payload = "Newtonsoft.Json, 13.0.3"
                   Timeout = Some(TimeSpan.FromSeconds 30.0)
-                  UsePackageTargets = None }
+                  UsePackageTargets = None
+                  Metadata = Map.empty }
             )
 
         let! _ =
@@ -176,7 +177,8 @@ let ``Net10HostBackend maps nuget and path operations into supervisor execution 
                   OperationKind = AddSearchPath
                   Payload = "/workspace/libs"
                   Timeout = Some(TimeSpan.FromSeconds 30.0)
-                  UsePackageTargets = None }
+                  UsePackageTargets = None
+                  Metadata = Map.empty }
             )
 
         let requests = fakeFsiClient.ExecuteRequests

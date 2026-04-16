@@ -137,7 +137,8 @@ type NetFxHostBackend(remoteClient: IRemoteFsiClient) =
                       OperationKind = ResetSession
                       Payload = ""
                       Timeout = Some(TimeSpan.FromSeconds 30.0)
-                      UsePackageTargets = None }
+                      UsePackageTargets = None
+                      Metadata = Map.empty }
 
                 return! (this :> IFsiExecutionBackend).Execute request
             }

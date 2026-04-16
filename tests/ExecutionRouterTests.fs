@@ -13,7 +13,8 @@ let private createRequest route operationKind payload =
       OperationKind = operationKind
       Payload = payload
       Timeout = Some(TimeSpan.FromSeconds 30.0)
-      UsePackageTargets = None }
+      UsePackageTargets = None
+      Metadata = Map.empty }
 
 let private createRouter () =
     let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry

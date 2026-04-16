@@ -58,7 +58,7 @@ type private FakeSessionProvisioningBackend
             Task.FromResult(ensureStateFactory route)
 
         member _.GetSessionState(route: ExecutionRoute) = Task.FromResult(initialStateFactory route)
-        member _.ResetSession(route: ExecutionRoute) = Task.FromResult(executeFactory { RequestId = Guid.NewGuid().ToString("N"); Route = route; OperationKind = ResetSession; Payload = ""; Timeout = None; UsePackageTargets = None })
+        member _.ResetSession(route: ExecutionRoute) = Task.FromResult(executeFactory { RequestId = Guid.NewGuid().ToString("N"); Route = route; OperationKind = ResetSession; Payload = ""; Timeout = None; UsePackageTargets = None; Metadata = Map.empty })
         member _.RestartHost(_) = task { return () }
         member _.HealthCheck(host: HostRecord) = Task.FromResult({ BackendKind = Net10Remote; IsAvailable = true; Message = Some "ok"; HostId = Some host.HostId; CheckedAt = DateTime.UtcNow })
 
@@ -322,6 +322,7 @@ let ``SessionProvisioningService ensures missing session through backend without
                       StartedAt = Some DateTime.UtcNow
                       CompletedAt = Some DateTime.UtcNow
                       RawErrorType = None
+                      Metadata = request.Metadata
                       Result =
                         { Output = ""
                           Errors = ""
@@ -413,6 +414,7 @@ let ``SessionProvisioningService keeps backend-visible session state when it alr
                       StartedAt = Some DateTime.UtcNow
                       CompletedAt = Some DateTime.UtcNow
                       RawErrorType = None
+                      Metadata = request.Metadata
                       Result =
                         { Output = ""
                           Errors = ""
@@ -528,6 +530,7 @@ let ``SessionProvisioningService ignores bootstrap execute timeout because ensur
                           StartedAt = Some DateTime.UtcNow
                           CompletedAt = Some DateTime.UtcNow
                           RawErrorType = None
+                          Metadata = Map.empty
                           Result =
                             { Output = ""
                               Errors = ""
@@ -606,6 +609,7 @@ let ``SessionProvisioningService registers ensured session when registry was emp
                       StartedAt = Some DateTime.UtcNow
                       CompletedAt = Some DateTime.UtcNow
                       RawErrorType = None
+                      Metadata = request.Metadata
                       Result =
                         { Output = ""
                           Errors = ""

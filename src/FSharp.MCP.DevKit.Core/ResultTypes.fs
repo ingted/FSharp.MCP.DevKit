@@ -68,4 +68,5 @@ type FsiExecutionRecord =
       StartedAt: DateTime option
       CompletedAt: DateTime option
       RawErrorType: string option
+      Metadata: Map<string, string>
       Result: FsiResult }

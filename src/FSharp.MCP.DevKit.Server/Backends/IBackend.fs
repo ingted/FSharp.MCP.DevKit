@@ -10,7 +10,8 @@ type ExecutionRequest =
       OperationKind: OperationKind
       Payload: string
       Timeout: TimeSpan option
-      UsePackageTargets: bool option }
+      UsePackageTargets: bool option
+      Metadata: Map<string, string> }
 
 type BackendHealth =
     { BackendKind: BackendKind

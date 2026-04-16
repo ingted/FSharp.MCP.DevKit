@@ -49,6 +49,41 @@ type InMemoryResultRegistry() =
             |> Seq.sortByDescending (fun record -> record.SubmittedAt)
             |> Seq.toList
 
+type private FsiExecutionRecordV1 =
+    { ResultId: string
+      RequestId: string
+      AgentId: string
+      BackendKind: BackendKind
+      HostId: string
+      SessionId: string
+      OperationKind: OperationKind
+      SubmittedAt: DateTime
+      StartedAt: DateTime option
+      CompletedAt: DateTime option
+      RawErrorType: string option
+      Result: FsiResult }
+
+module private PersistedExecutionRecord =
+    let deserialize (line: string) =
+        try
+            FSharpJson.deserialize<FsiExecutionRecord> line
+        with _ ->
+            let legacy = FSharpJson.deserialize<FsiExecutionRecordV1> line
+
+            { ResultId = legacy.ResultId
+              RequestId = legacy.RequestId
+              AgentId = legacy.AgentId
+              BackendKind = legacy.BackendKind
+              HostId = legacy.HostId
+              SessionId = legacy.SessionId
+              OperationKind = legacy.OperationKind
+              SubmittedAt = legacy.SubmittedAt
+              StartedAt = legacy.StartedAt
+              CompletedAt = legacy.CompletedAt
+              RawErrorType = legacy.RawErrorType
+              Metadata = Map.empty
+              Result = legacy.Result }
+
 type JsonLineResultRegistry(?executionStoreRoot: string) =
     let executionStoreRoot =
         executionStoreRoot
@@ -80,7 +115,7 @@ type JsonLineResultRegistry(?executionStoreRoot: string) =
         |> Seq.collect (fun path ->
             File.ReadLines(path)
             |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace(line)))
-            |> Seq.map FSharpJson.deserialize<FsiExecutionRecord>)
+            |> Seq.map PersistedExecutionRecord.deserialize)
         |> Seq.iter (fun record -> results.[record.ResultId] <- record)
 
     do loadPersistedRecords ()

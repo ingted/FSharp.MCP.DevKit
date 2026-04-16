@@ -92,7 +92,8 @@ let ``toExecutionRecord preserves routing and backend metadata`` () =
           OperationKind = ExecuteCode
           Payload = "printfn \"hi\""
           Timeout = Some(TimeSpan.FromSeconds 30.0)
-          UsePackageTargets = None }
+          UsePackageTargets = None
+          Metadata = Map.empty }
 
     let result =
         { Output = "hi"
@@ -127,3 +128,57 @@ let ``toExecutionRecord preserves routing and backend metadata`` () =
     Assert.Equal("result-z", record.ResultId)
     Assert.Equal(Some "RemoteExecutionError", record.RawErrorType)
     Assert.Equal("hi", record.Result.Output)
+
+[<Fact>]
+let ``toExecutionRecord preserves and normalizes browser-aware execution metadata`` () =
+    let request =
+        { RequestId = "req-browser-1"
+          Route =
+            { AgentId = "agent-browser"
+              HostId = "host-browser"
+              SessionId = "session-browser" }
+          OperationKind = ExecuteCode
+          Payload = "sbmgr |> ignore"
+          Timeout = Some(TimeSpan.FromSeconds 30.0)
+          UsePackageTargets = None
+          Metadata =
+            [ "schedule.target.kind", "tab"
+              "schedule.target.browserId", "browser-01"
+              "schedule.target.tabId", "tab-02"
+              "schedule.target.companion.sessionId", "session-browser"
+              "schedule.target.companion.hostId", "host-browser"
+              "schedule.target.executionPlane", "remote-fsi"
+              "custom.traceId", "trace-01" ]
+            |> Map.ofList }
+
+    let result =
+        { Output = "ok"
+          Errors = ""
+          IsSuccess = true
+          ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+          Diagnostics = [||]
+          Value = Some "unit" }
+
+    let now = DateTime.UtcNow
+
+    let record =
+        BackendAdapters.toExecutionRecord
+            Net10Remote
+            request
+            now
+            (Some now)
+            (Some now)
+            "host-browser"
+            "session-browser"
+            "result-browser-1"
+            result
+            None
+
+    Assert.Equal("tab", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.TargetKind])
+    Assert.Equal("browser-01", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.BrowserId])
+    Assert.Equal("tab-02", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.TabId])
+    Assert.Equal("session-browser", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.CompanionSessionId])
+    Assert.Equal("host-browser", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.CompanionHostId])
+    Assert.Equal("remote-fsi", record.Metadata.[BackendAdapters.BrowserExecutionMetadata.ExecutionPlane])
+    Assert.Equal("trace-01", record.Metadata.["custom.traceId"])
+    Assert.Equal("browser-01", record.Metadata.["schedule.target.browserId"])

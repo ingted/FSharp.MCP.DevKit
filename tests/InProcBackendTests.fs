@@ -16,7 +16,8 @@ let private request route operation payload =
       OperationKind = operation
       Payload = payload
       Timeout = Some(TimeSpan.FromSeconds 30.0)
-      UsePackageTargets = None }
+      UsePackageTargets = None
+      Metadata = Map.empty }
 
 [<Fact>]
 let ``InProcBackend isolates state between sessions`` () =

@@ -541,6 +541,7 @@ module McpFsiTools =
             (payload: string)
             (timeout: TimeSpan option)
             (usePackageTargets: bool option)
+            (metadata: Map<string, string>)
             =
             let route = resolveRoute requestedRoute
 
@@ -549,7 +550,8 @@ module McpFsiTools =
               OperationKind = operationKind
               Payload = payload
               Timeout = timeout
-              UsePackageTargets = usePackageTargets }
+              UsePackageTargets = usePackageTargets
+              Metadata = metadata }
 
         let startBackgroundSweepTimer () =
             match sessionLivenessBackgroundSweepInterval with
@@ -752,10 +754,19 @@ module McpFsiTools =
                 payload: string,
                 ?timeout: TimeSpan,
                 ?usePackageTargets: bool,
-                ?requestedRoute: ExecutionRoute
+                ?requestedRoute: ExecutionRoute,
+                ?metadata: Map<string, string>
             ) : Task<FsiExecutionRecord> =
             task {
-                let request = createRequest requestedRoute operationKind payload timeout usePackageTargets
+                let request =
+                    createRequest
+                        requestedRoute
+                        operationKind
+                        payload
+                        timeout
+                        usePackageTargets
+                        (metadata |> Option.defaultValue Map.empty)
+
                 let route = request.Route
                 let host, backend = resolveBackend route
 
@@ -895,6 +906,10 @@ module McpFsiTools =
                           StartedAt = Some now
                           CompletedAt = Some now
                           RawErrorType = None
+                          Metadata =
+                            basis
+                            |> Option.map (fun value -> value.Metadata)
+                            |> Option.defaultValue Map.empty
                           Result =
                             { Output = response.MaterializedJson |> Option.defaultValue response.Output
                               Errors = ""
@@ -1269,7 +1284,7 @@ module McpFsiTools =
             this.EnsureAsyncProcessorStarted()
 
             let asyncId = Guid.NewGuid().ToString("N")
-            let executionRequest = createRequest requestedRoute ExecuteCode code (Some timeout) None
+            let executionRequest = createRequest requestedRoute ExecuteCode code (Some timeout) None Map.empty
             let enqueuedAt = DateTime.UtcNow
 
             let request =
