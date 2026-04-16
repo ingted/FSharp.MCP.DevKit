@@ -128,6 +128,50 @@ let ``toExecutionRecord preserves routing and backend metadata`` () =
     Assert.Equal("result-z", record.ResultId)
     Assert.Equal(Some "RemoteExecutionError", record.RawErrorType)
     Assert.Equal("hi", record.Result.Output)
+    Assert.Equal("agent-a", record.Metadata.[PrincipalAttribution.PrincipalId])
+    Assert.Equal("agent", record.Metadata.[PrincipalAttribution.PrincipalKind])
+    Assert.Equal("route", record.Metadata.[PrincipalAttribution.PrincipalSource])
+    Assert.Equal("agent-a", record.Metadata.[PrincipalAttribution.ExecutionAgentId])
+    Assert.Equal("host-a", record.Metadata.[PrincipalAttribution.ExecutionHostId])
+    Assert.Equal("session-a", record.Metadata.[PrincipalAttribution.ExecutionSessionId])
+
+[<Fact>]
+let ``toExecutionRecord preserves explicit principal attribution metadata`` () =
+    let request =
+        { RequestId = "req-principal-1"
+          Route =
+            { AgentId = "agent-service"
+              HostId = "host-service"
+              SessionId = "session-service" }
+          OperationKind = ExecuteCode
+          Payload = "let value = 1"
+          Timeout = Some(TimeSpan.FromSeconds 30.0)
+          UsePackageTargets = None
+          Metadata =
+            [ PrincipalAttribution.PrincipalId, "human-admin"
+              PrincipalAttribution.PrincipalKind, "human"
+              PrincipalAttribution.PrincipalSource, "mgmt2" ]
+            |> Map.ofList }
+
+    let result =
+        { Output = ""
+          Errors = ""
+          IsSuccess = true
+          ExecutionTime = None
+          Diagnostics = [||]
+          Value = Some "1" }
+
+    let now = DateTime.UtcNow
+
+    let record =
+        BackendAdapters.toExecutionRecord InProc request now (Some now) (Some now) "host-service" "session-service" "result-principal-1" result None
+
+    Assert.Equal("human-admin", record.Metadata.[PrincipalAttribution.PrincipalId])
+    Assert.Equal("human", record.Metadata.[PrincipalAttribution.PrincipalKind])
+    Assert.Equal("mgmt2", record.Metadata.[PrincipalAttribution.PrincipalSource])
+    Assert.Equal("agent-service", record.Metadata.[PrincipalAttribution.PrincipalAgentId])
+    Assert.Equal("host-service", record.Metadata.[PrincipalAttribution.PrincipalHostId])
+    Assert.Equal("session-service", record.Metadata.[PrincipalAttribution.PrincipalSessionId])
 
 [<Fact>]
 let ``toExecutionRecord preserves and normalizes browser-aware execution metadata`` () =

@@ -99,5 +99,8 @@ module BackendAdapters =
           StartedAt = startedAt
           CompletedAt = completedAt
           RawErrorType = rawErrorType
-          Metadata = BrowserExecutionMetadata.normalize request.Metadata
+          Metadata =
+            request.Metadata
+            |> BrowserExecutionMetadata.normalize
+            |> PrincipalAttribution.normalize request.Route
           Result = result }

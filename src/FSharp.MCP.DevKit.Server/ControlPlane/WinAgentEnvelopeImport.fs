@@ -67,6 +67,11 @@ module WinAgentEnvelopeImport =
             []
 
     let toMetadata agentId hostId sessionId (envelope: WinAgentSharedExecutionEnvelope) =
+        let route =
+            { AgentId = agentId
+              HostId = hostId
+              SessionId = sessionId }
+
         envelope.Metadata
         |> Map.add "winagent.schemaVersion" (string envelope.SchemaVersion)
         |> Map.add "winagent.executionPlane" envelope.ExecutionPlane
@@ -75,9 +80,7 @@ module WinAgentEnvelopeImport =
         |> Map.add "winagent.routeName" envelope.RouteName
         |> Map.add "execution.plane" envelope.ExecutionPlane
         |> Map.add "execution.source" "PulseTrade.Mcp.WinAgent"
-        |> Map.add "execution.agentId" agentId
-        |> Map.add "execution.hostId" hostId
-        |> Map.add "execution.sessionId" sessionId
+        |> PrincipalAttribution.normalize route
 
     let toExecutionRecord agentId hostId sessionId (envelope: WinAgentSharedExecutionEnvelope) =
         let isSuccess = not (String.Equals(envelope.Status, "failed", StringComparison.OrdinalIgnoreCase))
