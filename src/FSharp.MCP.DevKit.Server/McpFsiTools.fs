@@ -358,6 +358,7 @@ module McpFsiTools =
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
         let browserInventoryRegistry =
             defaultArg browserInventoryRegistry (InMemoryBrowserInventoryRegistry() :> IBrowserInventoryRegistry)
+        let scheduledExecutionQueue = ScheduledExecutionQueue()
 
         let resultQueryService = ResultQueryService()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend
@@ -1394,6 +1395,69 @@ module McpFsiTools =
 
                 let backend = backendSelector.Resolve(host.HostKind)
                 return! backend.HealthCheck(host)
+            }
+
+        member _.EnqueueScheduledExecution
+            (
+                route: ExecutionRoute,
+                operationKind: OperationKind,
+                payload: string,
+                dueAtUtc: DateTime,
+                ?timeout: TimeSpan,
+                ?metadata: Map<string, string>
+            ) =
+            scheduledExecutionQueue.Enqueue(
+                route,
+                operationKind,
+                payload,
+                dueAtUtc,
+                timeout,
+                metadata |> Option.defaultValue Map.empty
+            )
+
+        member _.ListScheduledExecutions(?route: ExecutionRoute, ?status: ScheduledExecutionStatus) =
+            scheduledExecutionQueue.List(?route = route, ?status = status)
+
+        member this.ProcessNextDueScheduledExecution(?observedAtUtc: DateTime) =
+            task {
+                let observedAt = observedAtUtc |> Option.defaultValue DateTime.UtcNow
+
+                match scheduledExecutionQueue.TryStartNextDue observedAt with
+                | None -> return None
+                | Some item ->
+                    try
+                        let metadata = item.Metadata |> Map.add "schedule.id" item.ScheduleId
+
+                        let! record =
+                            this.ExecuteOperation(
+                                item.OperationKind,
+                                item.Payload,
+                                ?timeout = item.Timeout,
+                                requestedRoute = item.Route,
+                                metadata = metadata
+                            )
+
+                        let completed = scheduledExecutionQueue.Complete(item.ScheduleId, record)
+                        return Some { Item = completed; Result = Some record }
+                    with ex ->
+                        let failed = scheduledExecutionQueue.Fail(item.ScheduleId, ex.Message)
+                        return Some { Item = failed; Result = None }
+            }
+
+        member this.ProcessDueScheduledExecutions(maxItems: int, ?observedAtUtc: DateTime) =
+            task {
+                let limit = if maxItems > 0 then maxItems else 1
+                let results = ResizeArray<ScheduledExecutionProcessResult>()
+                let mutable keepGoing = true
+
+                while keepGoing && results.Count < limit do
+                    let! next = this.ProcessNextDueScheduledExecution(?observedAtUtc = observedAtUtc)
+
+                    match next with
+                    | Some value -> results.Add value
+                    | None -> keepGoing <- false
+
+                return results |> Seq.toList
             }
 
         member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute, ?metadata: Map<string, string>) =

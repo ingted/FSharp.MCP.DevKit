@@ -2,11 +2,13 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
+open System.Globalization
 open System.Runtime.InteropServices
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.Backends
+open FSharp.MCP.DevKit.Server.ControlPlane
 open ModelContextProtocol.Server
 
 type private BrowserExecutionResponse =
@@ -20,6 +22,33 @@ type private BrowserExecutionResponse =
       Output: string
       Errors: string
       Metadata: Map<string, string> }
+
+type private ScheduledExecutionDto =
+    { ScheduleId: string
+      AgentId: string
+      HostId: string
+      SessionId: string
+      OperationKind: string
+      DueAtUtc: DateTime
+      CreatedAtUtc: DateTime
+      StartedAtUtc: DateTime option
+      CompletedAtUtc: DateTime option
+      Status: string
+      ResultId: string option
+      LastError: string option
+      Metadata: Map<string, string> }
+
+type private ScheduledExecutionProcessDto =
+    { Processed: bool
+      Item: ScheduledExecutionDto option
+      ResultId: string option
+      IsSuccess: bool option
+      Output: string option
+      Errors: string option }
+
+type private ScheduledExecutionBatchDto =
+    { ProcessedCount: int
+      Items: ScheduledExecutionProcessDto list }
 
 [<McpServerToolType>]
 type McpExecutionTools =
@@ -65,6 +94,68 @@ type McpExecutionTools =
             else
                 Some(key, value))
         |> Map.ofList
+
+    static member private parseDueAtUtc (dueAtUtc: string) =
+        if String.IsNullOrWhiteSpace dueAtUtc then
+            DateTime.UtcNow
+        else
+            DateTime.Parse(
+                dueAtUtc,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal ||| DateTimeStyles.AdjustToUniversal
+            )
+
+    static member private tryParseScheduledStatus (status: string) =
+        match status.Trim().ToLowerInvariant() with
+        | "" -> None
+        | "pending"
+        | "scheduledpending" -> Some ScheduledPending
+        | "running"
+        | "scheduledrunning" -> Some ScheduledRunning
+        | "completed"
+        | "scheduledcompleted" -> Some ScheduledCompleted
+        | "failed"
+        | "scheduledfailed" -> Some ScheduledFailed
+        | other -> invalidArg "status" $"Unsupported scheduled execution status '{other}'."
+
+    static member private scheduledStatusText status =
+        match status with
+        | ScheduledPending -> "pending"
+        | ScheduledRunning -> "running"
+        | ScheduledCompleted -> "completed"
+        | ScheduledFailed -> "failed"
+
+    static member private toScheduledDto (item: ScheduledExecutionItem) =
+        { ScheduleId = item.ScheduleId
+          AgentId = item.Route.AgentId
+          HostId = item.Route.HostId
+          SessionId = item.Route.SessionId
+          OperationKind = string item.OperationKind
+          DueAtUtc = item.DueAtUtc
+          CreatedAtUtc = item.CreatedAtUtc
+          StartedAtUtc = item.StartedAtUtc
+          CompletedAtUtc = item.CompletedAtUtc
+          Status = McpExecutionTools.scheduledStatusText item.Status
+          ResultId = item.ResultId
+          LastError = item.LastError
+          Metadata = item.Metadata }
+
+    static member private toScheduledProcessDto (result: ScheduledExecutionProcessResult option) =
+        match result with
+        | None ->
+            { Processed = false
+              Item = None
+              ResultId = None
+              IsSuccess = None
+              Output = None
+              Errors = None }
+        | Some value ->
+            { Processed = true
+              Item = Some(McpExecutionTools.toScheduledDto value.Item)
+              ResultId = value.Result |> Option.map (fun record -> record.ResultId)
+              IsSuccess = value.Result |> Option.map (fun record -> record.Result.IsSuccess)
+              Output = value.Result |> Option.map (fun record -> record.Result.Output)
+              Errors = value.Result |> Option.map (fun record -> record.Result.Errors) }
 
     static member private formatResultError (fallbackMessage: string) (result: FsiResult) =
         if String.IsNullOrWhiteSpace result.Errors then
@@ -312,4 +403,108 @@ type McpExecutionTools =
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
             let! record = fsiService.ExecuteOperation(GetState, "", timeout = timeout, requestedRoute = route)
             return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatRecordError "Failed to get FSI state" record
+        }
+
+    [<McpServerTool(Name = "schedule_f_sharp_code_routed"); Description("Schedule F# code execution against an explicit route. The scheduled item stays pending until dueAtUtc, then process_next_due_scheduled_fsi_execution or process_due_scheduled_fsi_execution_batch dispatches it through the normal execution fabric.")>]
+    static member ScheduleFSharpCodeRouted
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("F# code to execute when the schedule item is due.")>] code: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("UTC due timestamp. Leave blank to make the item due immediately.")>] dueAtUtc: string,
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this scheduled execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, scheduler, or agent-call-agent.")>] principalSource: string
+        ) : Task<string> =
+        task {
+            let route = McpExecutionTools.route agentId hostId sessionId
+            let timeout =
+                if timeoutSeconds > 0 then
+                    Some(TimeSpan.FromSeconds(float timeoutSeconds))
+                else
+                    None
+
+            let metadata =
+                McpExecutionTools.principalMetadata principalId principalKind principalSource
+                |> Map.add "schedule.kind" "fsi-code"
+
+            let item =
+                fsiService.EnqueueScheduledExecution(
+                    route,
+                    ExecuteCode,
+                    code,
+                    McpExecutionTools.parseDueAtUtc dueAtUtc,
+                    ?timeout = timeout,
+                    metadata = metadata
+                )
+
+            return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_scheduled_fsi_executions"); Description("List scheduled FSI executions, optionally filtered by route and status. Status values: pending, running, completed, failed.")>]
+    static member ListScheduledFsiExecutions
+        (
+            fsiService: FsiMcpService,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Optional owning agent id filter.")>] agentId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Optional target host id filter.")>] hostId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Optional target session id filter.")>] sessionId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Optional status filter: pending, running, completed, failed.")>] status: string
+        ) : Task<string> =
+        task {
+            let route =
+                if String.IsNullOrWhiteSpace agentId
+                   && String.IsNullOrWhiteSpace hostId
+                   && String.IsNullOrWhiteSpace sessionId then
+                    None
+                elif String.IsNullOrWhiteSpace agentId
+                     || String.IsNullOrWhiteSpace hostId
+                     || String.IsNullOrWhiteSpace sessionId then
+                    invalidArg "route" "agentId, hostId, and sessionId must be provided together when filtering scheduled executions by route."
+                else
+                    Some(McpExecutionTools.route agentId hostId sessionId)
+
+            let items =
+                fsiService.ListScheduledExecutions(
+                    ?route = route,
+                    ?status = McpExecutionTools.tryParseScheduledStatus status
+                )
+                |> List.map McpExecutionTools.toScheduledDto
+
+            return FSharpJson.serialize items
+        }
+
+    [<McpServerTool(Name = "process_next_due_scheduled_fsi_execution"); Description("Process one due scheduled FSI execution. Returns processed=false when no pending item is due.")>]
+    static member ProcessNextDueScheduledFsiExecution(fsiService: FsiMcpService) : Task<string> =
+        task {
+            let! result = fsiService.ProcessNextDueScheduledExecution()
+            return result |> McpExecutionTools.toScheduledProcessDto |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "process_due_scheduled_fsi_execution_batch"); Description("Process multiple due scheduled FSI executions in due-time order.")>]
+    static member ProcessDueScheduledFsiExecutionBatch
+        (
+            fsiService: FsiMcpService,
+            [<Optional; DefaultParameterValue(10)>]
+            [<Description("Maximum due items to process. Values <= 0 process one item.")>] maxItems: int
+        ) : Task<string> =
+        task {
+            let! results = fsiService.ProcessDueScheduledExecutions(maxItems)
+
+            let batch =
+                { ProcessedCount = results.Length
+                  Items = results |> List.map (Some >> McpExecutionTools.toScheduledProcessDto) }
+
+            return FSharpJson.serialize batch
         }

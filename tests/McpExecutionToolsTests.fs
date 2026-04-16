@@ -34,6 +34,33 @@ type private BrowserExecutionResponse =
       Errors: string
       Metadata: Map<string, string> }
 
+type private ScheduledExecutionDto =
+    { ScheduleId: string
+      AgentId: string
+      HostId: string
+      SessionId: string
+      OperationKind: string
+      DueAtUtc: DateTime
+      CreatedAtUtc: DateTime
+      StartedAtUtc: DateTime option
+      CompletedAtUtc: DateTime option
+      Status: string
+      ResultId: string option
+      LastError: string option
+      Metadata: Map<string, string> }
+
+type private ScheduledExecutionProcessDto =
+    { Processed: bool
+      Item: ScheduledExecutionDto option
+      ResultId: string option
+      IsSuccess: bool option
+      Output: string option
+      Errors: string option }
+
+type private ScheduledExecutionBatchDto =
+    { ProcessedCount: int
+      Items: ScheduledExecutionProcessDto list }
+
 [<Fact>]
 let ``McpExecutionTools browser-aware routed execution records schedule target metadata`` () =
     task {
@@ -201,6 +228,80 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
         | None -> Assert.Fail("Expected routed async execution to store a result id.")
         Assert.Equal("FSI session reset successfully", resetOutput)
         Assert.Contains("Expression evaluation failed", postResetEval)
+    }
+
+[<Fact>]
+let ``McpExecutionTools schedule routed FSI execution processes due item into result fabric`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! _ =
+            service.ExecuteOperation(
+                FSharp.MCP.DevKit.Core.ExecuteCode,
+                "let schedulerBootstrap = 1",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let futureDue = DateTime.UtcNow.AddMinutes(5.0).ToString("O")
+
+        let! futureJson =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "let shouldNotRunYet = 1",
+                futureDue,
+                30,
+                "codex-cli",
+                "agent",
+                "mcp"
+            )
+
+        let futureItem = FSharpJson.deserialize<ScheduledExecutionDto> futureJson
+
+        let! notDueJson = McpExecutionTools.ProcessNextDueScheduledFsiExecution(service)
+        let notDue = FSharpJson.deserialize<ScheduledExecutionProcessDto> notDueJson
+
+        let! dueJson =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "let scheduledValue = 144",
+                "",
+                30,
+                "human-scheduler",
+                "human",
+                "mgmt2"
+            )
+
+        let dueItem = FSharpJson.deserialize<ScheduledExecutionDto> dueJson
+        let! pendingJson = McpExecutionTools.ListScheduledFsiExecutions(service, "default-agent", "default-host", "default-session", "pending")
+        let pendingItems = FSharpJson.deserialize<ScheduledExecutionDto list> pendingJson
+
+        let! processedJson = McpExecutionTools.ProcessDueScheduledFsiExecutionBatch(service, 10)
+        let processed = FSharpJson.deserialize<ScheduledExecutionBatchDto> processedJson
+
+        let completed = processed.Items |> List.find (fun item -> item.Item.Value.ScheduleId = dueItem.ScheduleId)
+        let stored = service.TryGetResult(completed.ResultId.Value) |> Option.get
+
+        Assert.Equal("pending", futureItem.Status)
+        Assert.False(notDue.Processed)
+        Assert.Contains(pendingItems, fun item -> item.ScheduleId = futureItem.ScheduleId)
+        Assert.Contains(pendingItems, fun item -> item.ScheduleId = dueItem.ScheduleId)
+        Assert.Equal(1, processed.ProcessedCount)
+        Assert.True(completed.Processed)
+        Assert.Equal("completed", completed.Item.Value.Status)
+        Assert.Equal(Some true, completed.IsSuccess)
+        Assert.Contains("scheduledValue", completed.Output.Value)
+        Assert.Equal(dueItem.ScheduleId, stored.Metadata.["schedule.id"])
+        Assert.Equal("fsi-code", stored.Metadata.["schedule.kind"])
+        Assert.Equal("human-scheduler", stored.Metadata.[PrincipalAttribution.PrincipalId])
+        Assert.Equal("human", stored.Metadata.[PrincipalAttribution.PrincipalKind])
+        Assert.Equal("mgmt2", stored.Metadata.[PrincipalAttribution.PrincipalSource])
     }
 
 [<Fact>]
