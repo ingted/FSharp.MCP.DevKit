@@ -16,6 +16,10 @@ let private createRequest route operationKind payload =
       UsePackageTargets = None
       Metadata = Map.empty }
 
+let private createRequestWithMetadata route operationKind payload metadata =
+    { createRequest route operationKind payload with
+        Metadata = metadata }
+
 let private createRouter () =
     let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
     let hostRegistry = InMemoryHostRegistry() :> IHostRegistry
@@ -109,4 +113,37 @@ let ``ExecutionRouter preserves explicit route and stores multiple execution rec
         Assert.Equal(2, results.Length)
         Assert.True(results |> List.exists (fun record -> record.ResultId = evalRecord.ResultId))
         Assert.True(session.LastExecutionAt.IsSome)
+    }
+
+[<Fact>]
+let ``ExecutionRouter persists browser-aware schedule target metadata`` () =
+    task {
+        let _, _, _, resultRegistry, router = createRouter ()
+        let route = router.ResolveRoute None
+
+        let metadata =
+            [ "schedule.target.kind", "tab"
+              "schedule.target.browserId", "browser-router"
+              "schedule.target.tabId", "tab-router"
+              "schedule.target.companion.sessionId", route.SessionId
+              "schedule.target.companion.hostId", route.HostId
+              "schedule.target.executionPlane", "in-proc" ]
+            |> Map.ofList
+
+        let! record =
+            router.RouteAndExecute(
+                createRequestWithMetadata
+                    route
+                    ExecuteCode
+                    "let browserAwareRouterValue = 321"
+                    metadata
+            )
+
+        let stored = resultRegistry.TryGet(record.ResultId) |> Option.get
+
+        Assert.True(record.Result.IsSuccess)
+        Assert.Equal("browser-router", record.Metadata.["browser.id"])
+        Assert.Equal("tab-router", record.Metadata.["browser.tabId"])
+        Assert.Equal(route.SessionId, stored.Metadata.["browser.companion.sessionId"])
+        Assert.Equal("browser-router", stored.Metadata.["schedule.target.browserId"])
     }

@@ -6,7 +6,20 @@ open System.Runtime.InteropServices
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
+open FSharp.MCP.DevKit.Server.Backends
 open ModelContextProtocol.Server
+
+type private BrowserExecutionResponse =
+    { ResultId: string
+      RequestId: string
+      HostId: string
+      SessionId: string
+      BrowserId: string
+      TabId: string option
+      IsSuccess: bool
+      Output: string
+      Errors: string
+      Metadata: Map<string, string> }
 
 [<McpServerToolType>]
 type McpExecutionTools =
@@ -21,6 +34,26 @@ type McpExecutionTools =
             TimeSpan.FromSeconds(float timeoutSeconds)
         else
             fsiService.DefaultTimeout
+
+    static member private optionalValue (value: string) =
+        if String.IsNullOrWhiteSpace value then
+            None
+        else
+            Some value
+
+    static member private browserScheduleMetadata targetKind browserId tabId companionHostId companionSessionId executionPlane =
+        [ "schedule.target.kind", targetKind
+          "schedule.target.browserId", browserId
+          "schedule.target.tabId", tabId
+          "schedule.target.companion.hostId", companionHostId
+          "schedule.target.companion.sessionId", companionSessionId
+          "schedule.target.executionPlane", executionPlane ]
+        |> List.choose (fun (key, value) ->
+            if String.IsNullOrWhiteSpace value then
+                None
+            else
+                Some(key, value))
+        |> Map.ofList
 
     static member private formatResultError (fallbackMessage: string) (result: FsiResult) =
         if String.IsNullOrWhiteSpace result.Errors then
@@ -46,6 +79,68 @@ type McpExecutionTools =
                 ""
 
         $"{baseError}\n{context}{hint}"
+
+    [<McpServerTool(Name = "execute_browser_f_sharp_code_routed"); Description("Execute F# code against a browser-aware target. The code is dispatched to the companion FSI session route and the execution record is tagged with schedule.target.* and normalized browser.* metadata.")>]
+    static member ExecuteBrowserFSharpCodeRouted
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Companion FSI host id.")>] hostId: string,
+            [<Description("Companion FSI session id.")>] sessionId: string,
+            [<Description("Browser id to tag on the execution metadata.")>] browserId: string,
+            [<Description("F# code to execute in the companion FSI session.")>] code: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Browser tab id. Leave blank for browser-level targets.")>] tabId: string,
+            [<Optional; DefaultParameterValue("tab")>]
+            [<Description("Schedule target kind, e.g. browser, tab, companion-session, or tabs.")>] targetKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Companion host id to store in metadata. Defaults to hostId.")>] companionHostId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Companion session id to store in metadata. Defaults to sessionId.")>] companionSessionId: string,
+            [<Optional; DefaultParameterValue("remote-fsi")>]
+            [<Description("Execution plane label stored in metadata.")>] executionPlane: string,
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+        ) : Task<string> =
+        task {
+            let route = McpExecutionTools.route agentId hostId sessionId
+            let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
+
+            let metadata =
+                McpExecutionTools.browserScheduleMetadata
+                    targetKind
+                    browserId
+                    tabId
+                    (companionHostId |> McpExecutionTools.optionalValue |> Option.defaultValue hostId)
+                    (companionSessionId |> McpExecutionTools.optionalValue |> Option.defaultValue sessionId)
+                    executionPlane
+
+            let! record =
+                fsiService.ExecuteOperation(
+                    ExecuteCode,
+                    code,
+                    timeout = timeout,
+                    requestedRoute = route,
+                    metadata = metadata
+                )
+
+            return
+                FSharpJson.serialize
+                    { ResultId = record.ResultId
+                      RequestId = record.RequestId
+                      HostId = record.HostId
+                      SessionId = record.SessionId
+                      BrowserId = browserId
+                      TabId = McpExecutionTools.optionalValue tabId
+                      IsSuccess = record.Result.IsSuccess
+                      Output = record.Result.Output
+                      Errors =
+                        if record.Result.IsSuccess then
+                            record.Result.Errors
+                        else
+                            McpExecutionTools.formatRecordError "Browser-aware execution failed" record
+                      Metadata = record.Metadata }
+        }
 
     [<McpServerTool(Name = "execute_f_sharp_code_routed"); Description("Execute F# code against an explicit agentId/hostId/sessionId route. Prefer this for short snippets and quick probes. For long-running or heavy scripts, prefer execute_f_sharp_code_async_routed to avoid synchronous ask/disconnection issues on remote hosts.")>]
     static member ExecuteFSharpCodeRouted

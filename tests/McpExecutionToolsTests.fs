@@ -1,6 +1,7 @@
 module McpExecutionToolsTests
 
 open System
+open System.IO
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
@@ -21,11 +22,69 @@ let private waitForCompletion (service: FsiMcpService) asyncId =
         return status
     }
 
+type private BrowserExecutionResponse =
+    { ResultId: string
+      RequestId: string
+      HostId: string
+      SessionId: string
+      BrowserId: string
+      TabId: string option
+      IsSuccess: bool
+      Output: string
+      Errors: string
+      Metadata: Map<string, string> }
+
+[<Fact>]
+let ``McpExecutionTools browser-aware routed execution records schedule target metadata`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! _ =
+            service.ExecuteOperation(
+                FSharp.MCP.DevKit.Core.ExecuteCode,
+                "let browserScheduleBootstrap = 1",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let! responseJson =
+            McpExecutionTools.ExecuteBrowserFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "browser-01",
+                "let browserScheduleValue = 123\nprintfn \"browser scheduled\"",
+                "tab-02",
+                "tab",
+                "",
+                "",
+                "remote-fsi",
+                30
+            )
+
+        let response = FSharpJson.deserialize<BrowserExecutionResponse> responseJson
+        let stored = service.TryGetResult(response.ResultId) |> Option.get
+
+        Assert.True(response.IsSuccess)
+        Assert.Equal("default-host", response.HostId)
+        Assert.Equal("default-session", response.SessionId)
+        Assert.Equal("browser-01", response.BrowserId)
+        Assert.Equal(Some "tab-02", response.TabId)
+        Assert.Contains("browserScheduleValue", response.Output)
+        Assert.Equal("browser-01", response.Metadata.["browser.id"])
+        Assert.Equal("tab-02", response.Metadata.["browser.tabId"])
+        Assert.Equal("default-session", response.Metadata.["browser.companion.sessionId"])
+        Assert.Equal("browser-01", stored.Metadata.["browser.id"])
+        Assert.Equal("tab-02", stored.Metadata.["schedule.target.tabId"])
+    }
+
 [<Fact>]
 let ``McpExecutionTools execute evaluate reset and async on explicit default route work`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
         use _cleanup = service :> IDisposable
+        let tempPath = Path.GetTempPath()
 
         let! _ = service.ExecuteOperation(FSharp.MCP.DevKit.Core.ExecuteCode, "let routedBootstrap = 40", timeout = TimeSpan.FromSeconds 30.0)
 
@@ -54,7 +113,7 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 "default-agent",
                 "default-host",
                 "default-session",
-                "/tmp",
+                tempPath,
                 30
             )
 
@@ -99,7 +158,7 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
 
         Assert.Contains("routedExplicit", execOutput)
         Assert.Equal("77", evalOutput)
-        Assert.Equal("Search path added successfully: /tmp", addPathOutput)
+        Assert.Equal($"Search path added successfully: {tempPath}", addPathOutput)
         Assert.Contains("FSI Session State", stateOutput)
         Assert.Contains("SessionId: default-session", stateOutput)
         Assert.True(asyncStatus.Exists)
