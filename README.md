@@ -32,6 +32,15 @@ This project uses the official `ModelContextProtocol` C# SDK source tree (`cshar
 
 If you want to build this project yourself, make sure you obtain a compatible checkout of `csharp-sdk` first.
 
+### NuGet Source Mapping
+
+The local `nuget.config` intentionally uses the package source key `nuget`.
+This must stay aligned with the upstream `csharp-sdk/nuget.config` source key because this project builds through `ProjectReference` into that source tree.
+
+If this key drifts to a different value such as `nuget.org`, a clean machine or a cleared NuGet global package cache can fail restore with `NU1100` and messages saying packages such as `Microsoft.SourceLink.GitHub` or `Microsoft.NET.ILLink.Tasks` were not considered by package source mapping.
+
+Do not fix that by creating another `nuget.config`. Keep the existing config source keys aligned and then rerun restore.
+
 ## What This Fork Is For
 
 The main use case is:
