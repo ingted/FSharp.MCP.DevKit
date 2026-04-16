@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server.ControlPlane
 
 open System
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Messages
 
 type IAgentRegistry =
     abstract member Register: AgentRecord -> AgentRecord
@@ -121,3 +122,9 @@ type IPathMappingRegistry =
     abstract member List: unit -> PathMappingRecord list
     abstract member ListByAgent: string -> PathMappingRecord list
     abstract member ListByHost: string -> PathMappingRecord list
+
+type IBrowserInventoryRegistry =
+    abstract member Upsert: BrowserInventoryDto -> BrowserInventoryDto
+    abstract member TryGet: string -> BrowserInventoryDto option
+    abstract member List: ?status: string * ?tag: string * ?limit: int -> BrowserInventorySnapshotDto
+    abstract member Remove: string -> bool

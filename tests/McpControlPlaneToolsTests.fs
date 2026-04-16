@@ -5,6 +5,7 @@ open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.Backends
 open FSharp.MCP.DevKit.Server.ControlPlane
@@ -995,3 +996,60 @@ let ``FsiMcpService EnsureRoute creates missing host and session when spec is pr
         Assert.True(ensured.CreatedSession)
         Assert.Contains("execute_f_sharp_code_routed", ensured.RecommendedNextTools)
     }
+
+[<Fact>]
+let ``Browser inventory tools and resources register list get and remove records`` () =
+    let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    use _cleanup = service :> IDisposable
+
+    let registeredAt = DateTime(2026, 4, 16, 7, 30, 0, DateTimeKind.Utc)
+
+    let browser =
+        { BrowserId = "sb-remote-01"
+          DisplayName = Some "Remote SharpBrowser 01"
+          HostId = Some "host-sb-01"
+          MachineName = Some "trade-node-01"
+          ProcessId = Some 4242
+          Status = "ready"
+          CompanionSession =
+            Some
+                { AgentId = Some "agent-sb"
+                  HostId = Some "host-sb-01"
+                  SessionId = "session-sb-companion"
+                  ExecutionPlane = Some "proc-supervisor" }
+          Tabs =
+            [ { TabId = "tab-news"
+                Title = Some "Market News"
+                Url = Some "https://example.test/news"
+                IsActive = true
+                LastObservedUtc = Some registeredAt } ]
+          Tags = [ "remote"; "sharpbrowser"; "remote" ]
+          RegisteredAtUtc = registeredAt
+          LastHeartbeatUtc = Some(registeredAt.AddSeconds 10.0) }
+
+    let upsertedJson =
+        McpControlPlaneTools.RegisterBrowserInventory(service, FSharpJson.serialize browser)
+
+    let upserted = FSharpJson.deserialize<BrowserInventoryDto> upsertedJson
+    Assert.Equal("sb-remote-01", upserted.BrowserId)
+    Assert.Equal<string>([ "remote"; "sharpbrowser" ], upserted.Tags)
+
+    let listJson = McpControlPlaneTools.ListBrowserInventory(service, "ready", "remote", 10)
+    let snapshot = FSharpJson.deserialize<BrowserInventorySnapshotDto> listJson
+    Assert.Single(snapshot.Items) |> ignore
+    Assert.Equal("session-sb-companion", snapshot.Items.Head.CompanionSession.Value.SessionId)
+
+    let resources = ControlPlaneResources(service)
+    let resourceSnapshot = FSharpJson.deserialize<BrowserInventorySnapshotDto>(resources.BrowserInventory())
+    Assert.Single(resourceSnapshot.Items) |> ignore
+
+    let itemJson = resources.BrowserInventoryItem("sb-remote-01")
+    let item = FSharpJson.deserialize<BrowserInventoryDto option> itemJson
+    Assert.True(item.IsSome)
+    Assert.Equal("Remote SharpBrowser 01", item.Value.DisplayName.Value)
+
+    let removed = FSharpJson.deserialize<bool>(McpControlPlaneTools.RemoveBrowserInventory(service, "sb-remote-01"))
+    Assert.True(removed)
+
+    let afterRemove = FSharpJson.deserialize<BrowserInventoryDto option>(McpControlPlaneTools.GetBrowserInventory(service, "sb-remote-01"))
+    Assert.True(afterRemove.IsNone)

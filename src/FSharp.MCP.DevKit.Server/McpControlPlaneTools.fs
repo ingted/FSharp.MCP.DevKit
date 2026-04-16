@@ -6,6 +6,7 @@ open System.Runtime.InteropServices
 open System.Text
 open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -223,3 +224,46 @@ type McpControlPlaneTools =
 
         fsiService.ListPathMappings(?agentId = agentIdOpt, ?hostId = hostIdOpt)
         |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "register_browser_inventory"); Description("Register or update a SharpBrowser inventory record. Pass a serialized BrowserInventoryDto JSON payload.")>]
+    static member RegisterBrowserInventory
+        (
+            fsiService: FsiMcpService,
+            [<Description("Serialized BrowserInventoryDto JSON payload.")>] browserInventoryJson: string
+        ) : string =
+        let browser = FSharpJson.deserialize<BrowserInventoryDto> browserInventoryJson
+        fsiService.UpsertBrowserInventory(browser) |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "list_browser_inventory"); Description("List registered SharpBrowser inventory records, optionally filtered by status or tag.")>]
+    static member ListBrowserInventory
+        (
+            fsiService: FsiMcpService,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional browser status filter, for example ready, offline, or unknown.")>] status: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional tag filter, for example remote or sharpbrowser.")>] tag: string,
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Optional positive result limit. Use 0 for no explicit limit.")>] limit: int
+        ) : string =
+        let statusOpt = if String.IsNullOrWhiteSpace status then None else Some status
+        let tagOpt = if String.IsNullOrWhiteSpace tag then None else Some tag
+        let limitOpt = if limit > 0 then Some limit else None
+
+        fsiService.ListBrowserInventory(?status = statusOpt, ?tag = tagOpt, ?limit = limitOpt)
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "get_browser_inventory"); Description("Read a registered SharpBrowser inventory record by browser id.")>]
+    static member GetBrowserInventory
+        (
+            fsiService: FsiMcpService,
+            [<Description("Browser id.")>] browserId: string
+        ) : string =
+        fsiService.TryGetBrowserInventory(browserId) |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "remove_browser_inventory"); Description("Remove a registered SharpBrowser inventory record by browser id.")>]
+    static member RemoveBrowserInventory
+        (
+            fsiService: FsiMcpService,
+            [<Description("Browser id.")>] browserId: string
+        ) : string =
+        fsiService.RemoveBrowserInventory(browserId) |> FSharpJson.serialize

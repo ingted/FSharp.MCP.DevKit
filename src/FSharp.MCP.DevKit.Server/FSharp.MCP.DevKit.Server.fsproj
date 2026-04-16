@@ -50,6 +50,7 @@
     <Compile Include="ControlPlane\AsyncJobRegistry.fs" />
     <Compile Include="ControlPlane\ResultRegistry.fs" />
     <Compile Include="ControlPlane\PathMappingRegistry.fs" />
+    <Compile Include="ControlPlane\BrowserInventoryRegistry.fs" />
     <Compile Include="ControlPlane\DefaultRouting.fs" />
     <Compile Include="ControlPlane\ControlPlaneDtos.fs" />
     <Compile Include="ControlPlane\ExecutionRouter.fs" />

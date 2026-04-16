@@ -74,3 +74,15 @@ type ControlPlaneResources(fsiService: FsiMcpService) =
     member _.PathMappings() =
         fsiService.ListPathMappings()
         |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "browserInventory", Title = "SharpBrowser Inventory", MimeType = "application/json", UriTemplate = "fsi/browser-inventory")>]
+    [<Description("List registered SharpBrowser inventory records.")>]
+    member _.BrowserInventory() =
+        fsiService.ListBrowserInventory()
+        |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "browserInventoryItem", Title = "SharpBrowser Inventory Item", MimeType = "application/json", UriTemplate = "fsi/browser-inventory/{browserId}")>]
+    [<Description("Read a registered SharpBrowser inventory record by browser id.")>]
+    member _.BrowserInventoryItem(browserId: string) =
+        fsiService.TryGetBrowserInventory(browserId)
+        |> FSharpJson.serialize

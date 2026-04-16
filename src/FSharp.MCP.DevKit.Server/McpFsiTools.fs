@@ -333,6 +333,7 @@ module McpFsiTools =
             ?sessionOutputLiveStore: ISessionOutputLiveStore,
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
             ?resultRegistry: IResultRegistry,
+            ?browserInventoryRegistry: IBrowserInventoryRegistry,
             ?sessionLivenessSuccessTtl: TimeSpan,
             ?sessionLivenessFailureBaseBackoff: TimeSpan,
             ?sessionLivenessFailureMaxBackoff: TimeSpan,
@@ -355,6 +356,9 @@ module McpFsiTools =
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
         let resultRegistry = defaultArg resultRegistry (JsonLineResultRegistry() :> IResultRegistry)
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
+        let browserInventoryRegistry =
+            defaultArg browserInventoryRegistry (InMemoryBrowserInventoryRegistry() :> IBrowserInventoryRegistry)
+
         let resultQueryService = ResultQueryService()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend
 
@@ -1105,6 +1109,18 @@ module McpFsiTools =
             | Some value, _ -> pathMappingRegistry.ListByAgent(value)
             | None, Some value -> pathMappingRegistry.ListByHost(value)
             | None, None -> pathMappingRegistry.List()
+
+        member _.UpsertBrowserInventory(browser: BrowserInventoryDto) =
+            browserInventoryRegistry.Upsert browser
+
+        member _.TryGetBrowserInventory(browserId: string) =
+            browserInventoryRegistry.TryGet browserId
+
+        member _.ListBrowserInventory(?status: string, ?tag: string, ?limit: int) =
+            browserInventoryRegistry.List(?status = status, ?tag = tag, ?limit = limit)
+
+        member _.RemoveBrowserInventory(browserId: string) =
+            browserInventoryRegistry.Remove browserId
 
         member this.EnsureRoute
             (
