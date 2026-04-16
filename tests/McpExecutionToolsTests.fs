@@ -305,6 +305,72 @@ let ``McpExecutionTools schedule routed FSI execution processes due item into re
     }
 
 [<Fact>]
+let ``McpExecutionTools scheduled execution supports cancel and failed requeue`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! _ =
+            service.ExecuteOperation(
+                FSharp.MCP.DevKit.Core.ExecuteCode,
+                "let schedulerControlBootstrap = 1",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let futureDue = DateTime.UtcNow.AddMinutes(5.0).ToString("O")
+
+        let! cancellableJson =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "let cancelValue = 1",
+                futureDue,
+                30
+            )
+
+        let cancellable = FSharpJson.deserialize<ScheduledExecutionDto> cancellableJson
+        let! cancelledJson = McpExecutionTools.CancelScheduledFsiExecution(service, cancellable.ScheduleId, "manual-test")
+        let cancelled = FSharpJson.deserialize<ScheduledExecutionDto> cancelledJson
+
+        let! failedSourceJson =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "this scheduled symbol does not exist",
+                "",
+                30
+            )
+
+        let failedSource = FSharpJson.deserialize<ScheduledExecutionDto> failedSourceJson
+        let! failedProcessJson = McpExecutionTools.ProcessNextDueScheduledFsiExecution(service)
+        let failedProcess = FSharpJson.deserialize<ScheduledExecutionProcessDto> failedProcessJson
+
+        let requeueDue = DateTime.UtcNow.AddMinutes(10.0).ToString("O")
+        let! requeuedJson = McpExecutionTools.RequeueFailedScheduledFsiExecution(service, failedSource.ScheduleId, requeueDue)
+        let requeued = FSharpJson.deserialize<ScheduledExecutionDto> requeuedJson
+
+        let! cancelledListJson = McpExecutionTools.ListScheduledFsiExecutions(service, "", "", "", "cancelled")
+        let cancelledItems = FSharpJson.deserialize<ScheduledExecutionDto list> cancelledListJson
+
+        Assert.Equal("cancelled", cancelled.Status)
+        Assert.Equal(Some "manual-test", cancelled.LastError)
+        Assert.Contains(cancelledItems, fun item -> item.ScheduleId = cancellable.ScheduleId)
+        Assert.True(failedProcess.Processed)
+        Assert.Equal(Some false, failedProcess.IsSuccess)
+        Assert.Equal("failed", failedProcess.Item.Value.Status)
+        Assert.Equal(failedSource.ScheduleId, failedProcess.Item.Value.ScheduleId)
+        Assert.True(failedProcess.Item.Value.ResultId.IsSome)
+        Assert.Equal("pending", requeued.Status)
+        Assert.True(requeued.DueAtUtc > DateTime.UtcNow.AddMinutes(5.0))
+        Assert.True(requeued.ResultId.IsNone)
+        Assert.True(requeued.LastError.IsNone)
+    }
+
+[<Fact>]
 let ``get_async_status can observe routed async completion without resources`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)

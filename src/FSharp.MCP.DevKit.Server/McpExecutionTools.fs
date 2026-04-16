@@ -116,6 +116,9 @@ type McpExecutionTools =
         | "scheduledcompleted" -> Some ScheduledCompleted
         | "failed"
         | "scheduledfailed" -> Some ScheduledFailed
+        | "cancelled"
+        | "canceled"
+        | "scheduledcancelled" -> Some ScheduledCancelled
         | other -> invalidArg "status" $"Unsupported scheduled execution status '{other}'."
 
     static member private scheduledStatusText status =
@@ -124,6 +127,7 @@ type McpExecutionTools =
         | ScheduledRunning -> "running"
         | ScheduledCompleted -> "completed"
         | ScheduledFailed -> "failed"
+        | ScheduledCancelled -> "cancelled"
 
     static member private toScheduledDto (item: ScheduledExecutionItem) =
         { ScheduleId = item.ScheduleId
@@ -507,4 +511,31 @@ type McpExecutionTools =
                   Items = results |> List.map (Some >> McpExecutionTools.toScheduledProcessDto) }
 
             return FSharpJson.serialize batch
+        }
+
+    [<McpServerTool(Name = "cancel_scheduled_fsi_execution"); Description("Cancel a scheduled FSI execution that has not completed yet.")>]
+    static member CancelScheduledFsiExecution
+        (
+            fsiService: FsiMcpService,
+            [<Description("Scheduled execution id returned by schedule_f_sharp_code_routed.")>] scheduleId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Optional cancellation reason stored on the scheduled item.")>] reason: string
+        ) : Task<string> =
+        task {
+            let reasonValue = McpExecutionTools.optionalValue reason
+            let item = fsiService.CancelScheduledExecution(scheduleId, ?reason = reasonValue)
+            return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "requeue_failed_scheduled_fsi_execution"); Description("Move a failed scheduled FSI execution back to pending, optionally with a new UTC due timestamp.")>]
+    static member RequeueFailedScheduledFsiExecution
+        (
+            fsiService: FsiMcpService,
+            [<Description("Failed scheduled execution id to requeue.")>] scheduleId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("New UTC due timestamp. Leave blank to make it due immediately.")>] dueAtUtc: string
+        ) : Task<string> =
+        task {
+            let item = fsiService.RequeueFailedScheduledExecution(scheduleId, McpExecutionTools.parseDueAtUtc dueAtUtc)
+            return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
         }

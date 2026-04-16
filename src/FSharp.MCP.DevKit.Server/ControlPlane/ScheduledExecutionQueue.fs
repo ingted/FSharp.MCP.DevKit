@@ -9,6 +9,7 @@ type ScheduledExecutionStatus =
     | ScheduledRunning
     | ScheduledCompleted
     | ScheduledFailed
+    | ScheduledCancelled
 
 type ScheduledExecutionItem =
     { ScheduleId: string
@@ -126,7 +127,7 @@ type ScheduledExecutionQueue() =
                 completed
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
 
-    member _.Fail(scheduleId: string, error: string) =
+    member _.Fail(scheduleId: string, error: string, ?resultId: string) =
         lock gate (fun () ->
             match items.TryGetValue scheduleId with
             | true, item ->
@@ -134,8 +135,47 @@ type ScheduledExecutionQueue() =
                     { item with
                         Status = ScheduledFailed
                         CompletedAtUtc = Some DateTime.UtcNow
+                        ResultId = resultId
                         LastError = Some error }
 
                 items[scheduleId] <- failed
                 failed
+            | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
+
+    member _.Cancel(scheduleId: string, reason: string option) =
+        lock gate (fun () ->
+            match items.TryGetValue scheduleId with
+            | true, item ->
+                match item.Status with
+                | ScheduledCompleted -> invalidOp $"Scheduled execution '{scheduleId}' is already completed."
+                | ScheduledCancelled -> item
+                | _ ->
+                    let cancelled =
+                        { item with
+                            Status = ScheduledCancelled
+                            CompletedAtUtc = Some DateTime.UtcNow
+                            LastError = reason }
+
+                    items[scheduleId] <- cancelled
+                    cancelled
+            | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
+
+    member _.RequeueFailed(scheduleId: string, dueAtUtc: DateTime) =
+        lock gate (fun () ->
+            match items.TryGetValue scheduleId with
+            | true, item ->
+                match item.Status with
+                | ScheduledFailed ->
+                    let requeued =
+                        { item with
+                            DueAtUtc = dueAtUtc.ToUniversalTime()
+                            StartedAtUtc = None
+                            CompletedAtUtc = None
+                            Status = ScheduledPending
+                            ResultId = None
+                            LastError = None }
+
+                    items[scheduleId] <- requeued
+                    requeued
+                | _ -> invalidOp $"Scheduled execution '{scheduleId}' is not failed and cannot be requeued."
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")

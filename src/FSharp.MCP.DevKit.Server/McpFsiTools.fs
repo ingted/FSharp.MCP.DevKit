@@ -1418,6 +1418,12 @@ module McpFsiTools =
         member _.ListScheduledExecutions(?route: ExecutionRoute, ?status: ScheduledExecutionStatus) =
             scheduledExecutionQueue.List(?route = route, ?status = status)
 
+        member _.CancelScheduledExecution(scheduleId: string, ?reason: string) =
+            scheduledExecutionQueue.Cancel(scheduleId, reason)
+
+        member _.RequeueFailedScheduledExecution(scheduleId: string, dueAtUtc: DateTime) =
+            scheduledExecutionQueue.RequeueFailed(scheduleId, dueAtUtc)
+
         member this.ProcessNextDueScheduledExecution(?observedAtUtc: DateTime) =
             task {
                 let observedAt = observedAtUtc |> Option.defaultValue DateTime.UtcNow
@@ -1437,8 +1443,18 @@ module McpFsiTools =
                                 metadata = metadata
                             )
 
-                        let completed = scheduledExecutionQueue.Complete(item.ScheduleId, record)
-                        return Some { Item = completed; Result = Some record }
+                        if record.Result.IsSuccess then
+                            let completed = scheduledExecutionQueue.Complete(item.ScheduleId, record)
+                            return Some { Item = completed; Result = Some record }
+                        else
+                            let error =
+                                if String.IsNullOrWhiteSpace record.Result.Errors then
+                                    "Scheduled execution failed."
+                                else
+                                    record.Result.Errors
+
+                            let failed = scheduledExecutionQueue.Fail(item.ScheduleId, error, resultId = record.ResultId)
+                            return Some { Item = failed; Result = Some record }
                     with ex ->
                         let failed = scheduledExecutionQueue.Fail(item.ScheduleId, ex.Message)
                         return Some { Item = failed; Result = None }
