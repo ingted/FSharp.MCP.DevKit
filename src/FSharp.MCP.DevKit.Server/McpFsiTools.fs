@@ -334,6 +334,7 @@ module McpFsiTools =
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
             ?resultRegistry: IResultRegistry,
             ?browserInventoryRegistry: IBrowserInventoryRegistry,
+            ?scheduledExecutionQueue: ScheduledExecutionQueue,
             ?sessionLivenessSuccessTtl: TimeSpan,
             ?sessionLivenessFailureBaseBackoff: TimeSpan,
             ?sessionLivenessFailureMaxBackoff: TimeSpan,
@@ -358,7 +359,7 @@ module McpFsiTools =
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
         let browserInventoryRegistry =
             defaultArg browserInventoryRegistry (InMemoryBrowserInventoryRegistry() :> IBrowserInventoryRegistry)
-        let scheduledExecutionQueue = ScheduledExecutionQueue()
+        let scheduledExecutionQueue = defaultArg scheduledExecutionQueue (ScheduledExecutionQueue())
 
         let resultQueryService = ResultQueryService()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend

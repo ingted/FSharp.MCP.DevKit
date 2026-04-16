@@ -7,6 +7,7 @@ open Microsoft.Extensions.Logging.Abstractions
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
 
 let private waitForCompletion (service: FsiMcpService) asyncId =
@@ -419,6 +420,45 @@ let ``McpExecutionTools scheduled execution requeue with backoff computes next d
         Assert.True(requeued.ResultId.IsNone)
         Assert.True(requeued.LastError.IsNone)
     }
+
+[<Fact>]
+let ``ScheduledExecutionQueue persists latest item state for reload`` () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "devkit-scheduler-" + Guid.NewGuid().ToString("N"))
+
+    try
+        let route =
+            { AgentId = "agent-persist"
+              HostId = "host-persist"
+              SessionId = "session-persist" }
+
+        let queue = ScheduledExecutionQueue(tempRoot)
+
+        let item =
+            queue.Enqueue(
+                route,
+                ExecuteCode,
+                "let persistedSchedule = 1",
+                DateTime.UtcNow.AddSeconds(-1.0),
+                Some(TimeSpan.FromSeconds 30.0),
+                Map.ofList [ "schedule.kind", "fsi-code" ]
+            )
+
+        let running = queue.TryStartNextDue(DateTime.UtcNow) |> Option.get
+        let failed = queue.Fail(running.ScheduleId, "boom", resultId = "result-persist-001")
+        let reloaded = ScheduledExecutionQueue(tempRoot)
+        let loaded = reloaded.TryGet(item.ScheduleId) |> Option.get
+
+        let journalPath = Path.Combine(tempRoot, "scheduled", "queue.jsonl")
+
+        Assert.Equal(item.ScheduleId, failed.ScheduleId)
+        Assert.True(File.Exists journalPath)
+        Assert.Equal(ScheduledFailed, loaded.Status)
+        Assert.Equal(Some "result-persist-001", loaded.ResultId)
+        Assert.Equal(Some "boom", loaded.LastError)
+        Assert.Equal(route, loaded.Route)
+    finally
+        if Directory.Exists tempRoot then
+            Directory.Delete(tempRoot, true)
 
 [<Fact>]
 let ``get_async_status can observe routed async completion without resources`` () =

@@ -2,6 +2,8 @@ namespace FSharp.MCP.DevKit.Server.ControlPlane
 
 open System
 open System.Collections.Generic
+open System.IO
+open System.Text
 open FSharp.MCP.DevKit.Core
 
 type ScheduledExecutionStatus =
@@ -31,14 +33,42 @@ type ScheduledExecutionProcessResult =
     { Item: ScheduledExecutionItem
       Result: FsiExecutionRecord option }
 
-type ScheduledExecutionQueue() =
+type ScheduledExecutionQueue(?executionStoreRoot: string) =
     let gate = obj()
     let items = Dictionary<string, ScheduledExecutionItem>(StringComparer.OrdinalIgnoreCase)
+    let executionStoreRoot =
+        executionStoreRoot
+        |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
+        |> Option.defaultWith SessionOutputArchivePath.resolveExecutionStoreRoot
+    let scheduleRoot = Path.Combine(executionStoreRoot, "scheduled")
+    let scheduleJournalPath = Path.Combine(scheduleRoot, "queue.jsonl")
+
+    let ensureDirectory () =
+        Directory.CreateDirectory(scheduleRoot) |> ignore
+
+    let persist (item: ScheduledExecutionItem) =
+        ensureDirectory ()
+        let line = FSharpJson.serialize item + Environment.NewLine
+        File.AppendAllText(scheduleJournalPath, line, Encoding.UTF8)
+
+    let loadPersisted () =
+        if File.Exists scheduleJournalPath then
+            File.ReadLines(scheduleJournalPath, Encoding.UTF8)
+            |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace line))
+            |> Seq.iter (fun line ->
+                try
+                    let item = FSharpJson.deserialize<ScheduledExecutionItem> line
+                    items[item.ScheduleId] <- item
+                with _ ->
+                    ())
 
     let ordered (values: seq<ScheduledExecutionItem>) =
         values
         |> Seq.sortBy (fun item -> item.DueAtUtc, item.CreatedAtUtc, item.ScheduleId)
         |> Seq.toList
+
+    do
+        lock gate loadPersisted
 
     member _.Enqueue
         (
@@ -67,7 +97,9 @@ type ScheduledExecutionQueue() =
               RetryCount = 0
               LastError = None }
 
-        lock gate (fun () -> items[item.ScheduleId] <- item)
+        lock gate (fun () ->
+            items[item.ScheduleId] <- item
+            persist item)
         item
 
     member _.List(?route: ExecutionRoute, ?status: ScheduledExecutionStatus) =
@@ -112,6 +144,7 @@ type ScheduledExecutionQueue() =
                         LastError = None }
 
                 items[item.ScheduleId] <- running
+                persist running
                 Some running)
 
     member _.Complete(scheduleId: string, record: FsiExecutionRecord) =
@@ -126,6 +159,7 @@ type ScheduledExecutionQueue() =
                         LastError = None }
 
                 items[scheduleId] <- completed
+                persist completed
                 completed
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
 
@@ -141,6 +175,7 @@ type ScheduledExecutionQueue() =
                         LastError = Some error }
 
                 items[scheduleId] <- failed
+                persist failed
                 failed
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
 
@@ -159,6 +194,7 @@ type ScheduledExecutionQueue() =
                             LastError = reason }
 
                     items[scheduleId] <- cancelled
+                    persist cancelled
                     cancelled
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
 
@@ -179,6 +215,7 @@ type ScheduledExecutionQueue() =
                             LastError = None }
 
                     items[scheduleId] <- requeued
+                    persist requeued
                     requeued
                 | _ -> invalidOp $"Scheduled execution '{scheduleId}' is not failed and cannot be requeued."
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
@@ -205,6 +242,7 @@ type ScheduledExecutionQueue() =
                             LastError = None }
 
                     items[scheduleId] <- requeued
+                    persist requeued
                     requeued
                 | _ -> invalidOp $"Scheduled execution '{scheduleId}' is not failed and cannot be requeued."
             | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
