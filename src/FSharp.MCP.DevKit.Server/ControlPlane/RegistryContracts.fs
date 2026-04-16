@@ -104,6 +104,7 @@ type IResultRegistry =
     abstract member Put: FsiExecutionRecord -> unit
     abstract member TryGet: string -> FsiExecutionRecord option
     abstract member ListBySession: ExecutionRoute -> FsiExecutionRecord list
+    abstract member ListBySessionId: sessionId: string -> FsiExecutionRecord list
     abstract member ListByAgent: string -> FsiExecutionRecord list
 
 type PathMappingRecord =

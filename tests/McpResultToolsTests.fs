@@ -150,9 +150,12 @@ let ``McpResultTools get list query compare and resources work`` () =
         let resultResourceJson = resultResource.Result(first.ResultId)
         let agentResultsJson = resultResource.AgentResults("default-agent")
         let sessionResultsJson = resultResource.SessionResults("default-host", "default-session")
+        let sessionIdResultsJson = resultResource.SessionResultsBySessionId("default-session")
+        let sessionIdToolJson = McpResultTools.ListFsiResultsBySessionId(service, "default-session")
 
         let single = FSharpJson.deserialize<FsiExecutionRecord option> singleJson
         let listed = FSharpJson.deserialize<FsiExecutionRecord list> listJson
+        let sessionIdListed = FSharpJson.deserialize<FsiExecutionRecord list> sessionIdToolJson
         let mapResponse = FSharpJson.deserialize<ResultQueryResponse> mapJson
         let compareResponse = FSharpJson.deserialize<ResultQueryResponse> compareJson
         let fsharpResponse = FSharpJson.deserialize<ResultQueryResponse> fsharpJson
@@ -178,6 +181,8 @@ let ``McpResultTools get list query compare and resources work`` () =
         Assert.Contains(first.ResultId, resultResourceJson)
         Assert.Contains(first.ResultId, agentResultsJson)
         Assert.Contains(second.ResultId, sessionResultsJson)
+        Assert.Contains(second.ResultId, sessionIdResultsJson)
+        Assert.True(sessionIdListed |> List.exists (fun value -> value.ResultId = second.ResultId))
     }
 
 [<Fact>]

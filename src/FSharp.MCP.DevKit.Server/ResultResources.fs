@@ -30,6 +30,12 @@ type ResultResources(fsiService: FsiMcpService) =
         fsiService.ListHostSessionResults(hostId, sessionId)
         |> FSharpJson.serialize
 
+    [<McpServerResource(Name = "fsiSessionResultsBySessionId", Title = "FSI Session Results By Session Id", MimeType = "application/json", UriTemplate = "fsi/sessions/{sessionId}/results")>]
+    [<Description("List execution results by session id only. This supports archived sessions that no longer have a live host/session route.")>]
+    member _.SessionResultsBySessionId(sessionId: string) =
+        fsiService.ListResultsBySessionId(sessionId)
+        |> FSharpJson.serialize
+
     [<McpServerResource(Name = "fsiSessionOutput", Title = "FSI Session Output", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/output")>]
     [<Description("List live session output events under a specific host/session route.")>]
     member _.SessionOutput(hostId: string, sessionId: string) =

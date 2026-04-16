@@ -1,6 +1,7 @@
 module ExecutionRouterTests
 
 open System
+open System.IO
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.Backends
@@ -30,8 +31,9 @@ let ``ExecutionRouter persists default-route results and updates session metadat
     task {
         let agentRegistry, _, sessionRegistry, resultRegistry, router = createRouter ()
         let route = router.ResolveRoute None
+        let searchPath = Path.GetTempPath()
 
-        let! record = router.RouteAndExecute(createRequest route AddSearchPath "/tmp")
+        let! record = router.RouteAndExecute(createRequest route AddSearchPath searchPath)
 
         let results = resultRegistry.ListBySession(route)
         let session = sessionRegistry.TryGet(route.HostId, route.SessionId) |> Option.get
@@ -39,7 +41,7 @@ let ``ExecutionRouter persists default-route results and updates session metadat
         Assert.True(record.Result.IsSuccess)
         Assert.Equal(1, results.Length)
         Assert.Equal(record.ResultId, results.Head.ResultId)
-        Assert.Contains("/tmp", session.SearchPaths)
+        Assert.Contains(searchPath, session.SearchPaths)
         Assert.Equal(SessionReady, session.Status)
         Assert.True(agentRegistry.TryGet(route.AgentId).IsSome)
     }

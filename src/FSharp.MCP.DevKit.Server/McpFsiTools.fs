@@ -856,6 +856,9 @@ module McpFsiTools =
                   SessionId = sessionId }
             )
 
+        member _.ListResultsBySessionId(sessionId: string) =
+            resultRegistry.ListBySessionId sessionId
+
         member _.ListAgentResults(agentId: string) = resultRegistry.ListByAgent agentId
 
         member _.QueryResults(request: ResultQueryRequest) =

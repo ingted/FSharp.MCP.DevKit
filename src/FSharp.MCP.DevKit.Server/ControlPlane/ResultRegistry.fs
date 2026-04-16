@@ -37,6 +37,12 @@ type InMemoryResultRegistry() =
             |> Seq.sortByDescending (fun record -> record.SubmittedAt)
             |> Seq.toList
 
+        member _.ListBySessionId(sessionId: string) =
+            results.Values
+            |> Seq.filter (fun record -> record.SessionId = sessionId)
+            |> Seq.sortByDescending (fun record -> record.SubmittedAt)
+            |> Seq.toList
+
         member _.ListByAgent(agentId: string) =
             results.Values
             |> Seq.filter (fun record -> record.AgentId = agentId)
@@ -97,6 +103,12 @@ type JsonLineResultRegistry(?executionStoreRoot: string) =
                 record.AgentId = route.AgentId
                 && record.HostId = route.HostId
                 && record.SessionId = route.SessionId)
+            |> Seq.sortByDescending (fun record -> record.SubmittedAt)
+            |> Seq.toList
+
+        member _.ListBySessionId(sessionId: string) =
+            results.Values
+            |> Seq.filter (fun record -> record.SessionId = sessionId)
             |> Seq.sortByDescending (fun record -> record.SubmittedAt)
             |> Seq.toList
 

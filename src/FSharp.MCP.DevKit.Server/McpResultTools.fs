@@ -85,6 +85,15 @@ type McpResultTools =
             |> FSharpJson.serialize
         | _ -> invalidOp "Both hostId and sessionId must be provided together, or both must be omitted for an unfiltered query."
 
+    [<McpServerTool(Name = "list_fsi_results_by_session_id"); Description("List execution results by session id only. Use this for archived sessions that no longer appear in the live host/session tree.")>]
+    static member ListFsiResultsBySessionId
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.ListResultsBySessionId(sessionId)
+        |> FSharpJson.serialize
+
     [<McpServerTool(Name = "query_fsi_results"); Description("Run a built-in result query over one or two result id sets. Best flow for agents: 1. Collect result ids from execution or list_fsi_results. 2. Call query_fsi_results. 3. If materialization is enabled, reuse the returned produced result id in later queries.")>]
     static member QueryFsiResults
         (
