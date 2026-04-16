@@ -708,6 +708,112 @@ module McpFsiTools =
             let route = resolveRoute requestedRoute
             outputSubscriberBroker.Unsubscribe(route.SessionId, subscriberId)
 
+        member this.ImportWinAgentExecutionEnvelope(agentId: string, hostId: string, sessionId: string, envelopeJson: string) =
+            let envelope = WinAgentEnvelopeImport.parseEnvelope envelopeJson
+            let record = WinAgentEnvelopeImport.toExecutionRecord agentId hostId sessionId envelope
+            let now = DateTime.UtcNow
+            let route: ExecutionRoute =
+                { AgentId = agentId
+                  HostId = hostId
+                  SessionId = sessionId }
+
+            let agentMetadata =
+                envelope.Metadata
+                |> Map.add "execution.source" "PulseTrade.Mcp.WinAgent"
+                |> Map.add "execution.plane" envelope.ExecutionPlane
+
+            match agentRegistry.TryGet agentId with
+            | Some existing ->
+                agentRegistry.Register(
+                    { existing with
+                        LastSeenAt = now
+                        Metadata = existing.Metadata |> Map.fold (fun state key value -> state.Add(key, value)) agentMetadata }
+                )
+                |> ignore
+            | None ->
+                agentRegistry.Register(
+                    { AgentId = agentId
+                      DisplayName = Some "WinAgent import"
+                      CreatedAt = now
+                      LastSeenAt = now
+                      DefaultHostId = Some hostId
+                      Metadata = agentMetadata }
+                )
+                |> ignore
+
+            match hostRegistry.TryGet hostId with
+            | Some existing when existing.AgentId <> agentId ->
+                invalidOp $"Host '{hostId}' already belongs to agent '{existing.AgentId}', not '{agentId}'."
+            | Some _ -> ()
+            | None ->
+                hostRegistry.Create(
+                    { HostId = hostId
+                      AgentId = agentId
+                      HostKind = InProcHost
+                      BackendKind = InProc
+                      Status = Ready
+                      Address = None
+                      ProcId = None
+                      CreatedAt = now
+                      LastHealthCheckAt = Some now
+                      LastError = None }
+                )
+                |> ignore
+
+            match sessionRegistry.TryGet(hostId, sessionId) with
+            | Some existing when existing.AgentId <> agentId ->
+                invalidOp $"Session '{sessionId}' already belongs to agent '{existing.AgentId}', not '{agentId}'."
+            | Some _ -> ()
+            | None ->
+                updateSessionRecord
+                    { SessionId = sessionId
+                      AgentId = agentId
+                      HostId = hostId
+                      SessionName = sessionId
+                      Status = SessionReady
+                      Refs = []
+                      Loads = []
+                      SearchPaths = []
+                      Variables = []
+                      LastCheckpointId = None
+                      RunningSinceUtc = Some envelope.StartedAtUtc.UtcDateTime
+                      LastExecutionAt = Some envelope.CompletedAtUtc.UtcDateTime }
+
+            resultRegistry.Put record
+
+            envelope.OutputEvents
+            |> List.iter (fun event ->
+                let _ =
+                    this.PublishSessionOutput(
+                        event.StreamKind,
+                        event.Text,
+                        executionId = record.ResultId,
+                        isReplay = event.IsReplay,
+                        requestedRoute = route
+                    )
+
+                ())
+
+            record
+
+        member this.ImportWinAgentExecutionEnvelopeLines(agentId: string, hostId: string, sessionId: string, envelopeLines: string list) =
+            let folder (imported, skipped, errors) line =
+                match WinAgentEnvelopeImport.tryParseEnvelope line with
+                | Some _ ->
+                    try
+                        let record = this.ImportWinAgentExecutionEnvelope(agentId, hostId, sessionId, line)
+                        (record :: imported, skipped, errors)
+                    with ex ->
+                        (imported, skipped + 1, ex.Message :: errors)
+                | None -> (imported, skipped + 1, "Invalid WinAgent execution envelope JSON." :: errors)
+
+            let imported, skipped, errors = envelopeLines |> List.fold folder ([], 0, [])
+
+            ({ ImportedCount = imported.Length
+               ResultIds = imported |> List.rev |> List.map (fun record -> record.ResultId)
+               SkippedCount = skipped
+               Errors = errors |> List.rev }: WinAgentEnvelopeImport.ImportSummary)
+
         member _.PublishSessionOutput
             (
                 streamKind: string,

@@ -2,6 +2,7 @@ module McpResultToolsTests
 
 open System
 open System.IO
+open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
@@ -85,6 +86,34 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
                   Existed = true
                   Status = "reset" }
             )
+
+let private createWinAgentEnvelopeJson executionId requestId =
+    let envelope: WinAgentEnvelopeImport.WinAgentSharedExecutionEnvelope =
+        { SchemaVersion = 1
+          ExecutionPlane = "winagent"
+          ExecutionId = executionId
+          RequestId = requestId
+          ToolName = "sharedFsi.planBrowserCompanion"
+          RouteName = "shared-fsi-host"
+          Status = "succeeded"
+          StartedAtUtc = DateTimeOffset.Parse("2026-04-16T10:00:00Z")
+          CompletedAtUtc = DateTimeOffset.Parse("2026-04-16T10:00:01Z")
+          Output = "planned companion"
+          Error = None
+          ExceptionType = None
+          Metadata =
+            Map.ofList
+                [ "execution.plane", "winagent"
+                  "execution.route", "shared-fsi-host"
+                  "browser.id", "sharpbrowser" ]
+          OutputEvents =
+            [ ({ SequenceNo = 1L
+                 StreamKind = "stdout"
+                 Text = "planned companion"
+                 IsReplay = false
+                 TimestampUtc = DateTimeOffset.Parse("2026-04-16T10:00:01Z") }: WinAgentEnvelopeImport.WinAgentOutputEventEnvelope) ] }
+
+    JsonSerializer.Serialize(envelope, WinAgentEnvelopeImport.jsonOptions)
 
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
@@ -183,6 +212,86 @@ let ``McpResultTools get list query compare and resources work`` () =
         Assert.Contains(second.ResultId, sessionResultsJson)
         Assert.Contains(second.ResultId, sessionIdResultsJson)
         Assert.True(sessionIdListed |> List.exists (fun value -> value.ResultId = second.ResultId))
+    }
+
+[<Fact>]
+let ``McpResultTools import WinAgent execution envelope into result and output fabric`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let envelopeJson = createWinAgentEnvelopeJson "winagent-result-1" "winagent-request-1"
+
+        let importedJson =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                "winagent-agent-single",
+                "winagent-host-single",
+                "winagent-session-single",
+                envelopeJson
+            )
+
+        let listedJson = McpResultTools.ListFsiResults(service, "winagent-agent-single", "winagent-host-single", "winagent-session-single")
+        let outputJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                "winagent-agent-single",
+                "winagent-host-single",
+                "winagent-session-single",
+                0L,
+                0
+            )
+
+        let imported = FSharpJson.deserialize<FsiExecutionRecord> importedJson
+        let listed = FSharpJson.deserialize<FsiExecutionRecord list> listedJson
+        let outputEvents = FSharpJson.deserialize<OutputEventRecord list> outputJson
+
+        Assert.Equal("winagent-result-1", imported.ResultId)
+        Assert.Equal("winagent-agent-single", imported.AgentId)
+        Assert.Equal("winagent-host-single", imported.HostId)
+        Assert.Equal("winagent-session-single", imported.SessionId)
+        Assert.Equal("winagent", imported.Metadata["winagent.executionPlane"])
+        Assert.Equal("sharpbrowser", imported.Metadata["browser.id"])
+        Assert.True(imported.Result.IsSuccess)
+        Assert.Contains(listed, fun record -> record.ResultId = "winagent-result-1")
+        Assert.Single(outputEvents) |> ignore
+        Assert.Equal("planned companion", outputEvents[0].Payload)
+        Assert.Equal(Some "winagent-result-1", outputEvents[0].ExecutionId)
+    }
+
+[<Fact>]
+let ``McpResultTools import WinAgent execution envelopes from JSONL`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let jsonlPath = Path.Combine(tempRoot, "winagent-envelopes.jsonl")
+        let first = createWinAgentEnvelopeJson "winagent-jsonl-1" "winagent-jsonl-request-1"
+        let second = createWinAgentEnvelopeJson "winagent-jsonl-2" "winagent-jsonl-request-2"
+        File.WriteAllLines(jsonlPath, [| first; "not-json"; second |])
+
+        let summaryJson =
+            McpResultTools.ImportWinAgentExecutionEnvelopesFromJsonl(
+                service,
+                "winagent-agent-jsonl",
+                "winagent-host-jsonl",
+                "winagent-session-jsonl",
+                jsonlPath,
+                0
+            )
+
+        let listedJson = McpResultTools.ListFsiResultsBySessionId(service, "winagent-session-jsonl")
+
+        let summary = FSharpJson.deserialize<WinAgentEnvelopeImport.ImportSummary> summaryJson
+        let listed = FSharpJson.deserialize<FsiExecutionRecord list> listedJson
+
+        Assert.Equal(2, summary.ImportedCount)
+        Assert.Equal(1, summary.SkippedCount)
+        Assert.Contains("winagent-jsonl-1", summary.ResultIds)
+        Assert.Contains("winagent-jsonl-2", summary.ResultIds)
+        Assert.True(listed |> List.exists (fun record -> record.ResultId = "winagent-jsonl-1"))
+        Assert.True(listed |> List.exists (fun record -> record.ResultId = "winagent-jsonl-2"))
     }
 
 [<Fact>]

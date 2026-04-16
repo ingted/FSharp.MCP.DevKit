@@ -3,6 +3,7 @@ namespace FSharp.MCP.DevKit.Server
 open System
 open System.ComponentModel
 open FSharp.MCP.DevKit.Core
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open FSharp.MCP.DevKit.Server.ResultQuery
 open ModelContextProtocol.Server
@@ -92,6 +93,35 @@ type McpResultTools =
             [<Description("Target session id.")>] sessionId: string
         ) : string =
         fsiService.ListResultsBySessionId(sessionId)
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "import_winagent_execution_envelope"); Description("Import one WinAgent shared execution envelope JSON into the DevKit result/output fabric.")>]
+    static member ImportWinAgentExecutionEnvelope
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id to attach imported record to.")>] agentId: string,
+            [<Description("Target host id to attach imported record to.")>] hostId: string,
+            [<Description("Target session id to attach imported record to.")>] sessionId: string,
+            [<Description("WinAgent shared execution envelope JSON.")>] envelopeJson: string
+        ) : string =
+        fsiService.ImportWinAgentExecutionEnvelope(agentId, hostId, sessionId, envelopeJson)
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "import_winagent_execution_envelopes_from_jsonl"); Description("Import WinAgent shared execution envelope JSONL into the DevKit result/output fabric.")>]
+    static member ImportWinAgentExecutionEnvelopesFromJsonl
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id to attach imported records to.")>] agentId: string,
+            [<Description("Target host id to attach imported records to.")>] hostId: string,
+            [<Description("Target session id to attach imported records to.")>] sessionId: string,
+            [<Description("Path to WinAgent shared execution envelope JSONL.")>] path: string,
+            [<Description("Optional maximum number of lines to import. Use 0 for all.")>] limit: int
+        ) : string =
+        let lines =
+            WinAgentEnvelopeImport.readEnvelopeLines path
+            |> fun values -> if limit <= 0 then values else values |> List.truncate limit
+
+        fsiService.ImportWinAgentExecutionEnvelopeLines(agentId, hostId, sessionId, lines)
         |> FSharpJson.serialize
 
     [<McpServerTool(Name = "query_fsi_results"); Description("Run a built-in result query over one or two result id sets. Best flow for agents: 1. Collect result ids from execution or list_fsi_results. 2. Call query_fsi_results. 3. If materialization is enabled, reuse the returned produced result id in later queries.")>]
