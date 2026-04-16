@@ -1424,6 +1424,20 @@ module McpFsiTools =
         member _.RequeueFailedScheduledExecution(scheduleId: string, dueAtUtc: DateTime) =
             scheduledExecutionQueue.RequeueFailed(scheduleId, dueAtUtc)
 
+        member _.RequeueFailedScheduledExecutionWithBackoff
+            (
+                scheduleId: string,
+                baseDelay: TimeSpan,
+                maxDelay: TimeSpan,
+                ?observedAtUtc: DateTime
+            ) =
+            scheduledExecutionQueue.RequeueFailedWithBackoff(
+                scheduleId,
+                baseDelay,
+                maxDelay,
+                observedAtUtc |> Option.defaultValue DateTime.UtcNow
+            )
+
         member this.ProcessNextDueScheduledExecution(?observedAtUtc: DateTime) =
             task {
                 let observedAt = observedAtUtc |> Option.defaultValue DateTime.UtcNow

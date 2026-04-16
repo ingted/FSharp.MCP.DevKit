@@ -35,6 +35,7 @@ type private ScheduledExecutionDto =
       CompletedAtUtc: DateTime option
       Status: string
       ResultId: string option
+      RetryCount: int
       LastError: string option
       Metadata: Map<string, string> }
 
@@ -141,6 +142,7 @@ type McpExecutionTools =
           CompletedAtUtc = item.CompletedAtUtc
           Status = McpExecutionTools.scheduledStatusText item.Status
           ResultId = item.ResultId
+          RetryCount = item.RetryCount
           LastError = item.LastError
           Metadata = item.Metadata }
 
@@ -537,5 +539,29 @@ type McpExecutionTools =
         ) : Task<string> =
         task {
             let item = fsiService.RequeueFailedScheduledExecution(scheduleId, McpExecutionTools.parseDueAtUtc dueAtUtc)
+            return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "requeue_failed_scheduled_fsi_execution_with_backoff"); Description("Move a failed scheduled FSI execution back to pending using exponential backoff based on the item's retry count.")>]
+    static member RequeueFailedScheduledFsiExecutionWithBackoff
+        (
+            fsiService: FsiMcpService,
+            [<Description("Failed scheduled execution id to requeue.")>] scheduleId: string,
+            [<Optional; DefaultParameterValue(30)>]
+            [<Description("Base delay in seconds for the first retry.")>] baseDelaySeconds: int,
+            [<Optional; DefaultParameterValue(300)>]
+            [<Description("Maximum delay in seconds.")>] maxDelaySeconds: int
+        ) : Task<string> =
+        task {
+            let baseDelay = TimeSpan.FromSeconds(float (max 1 baseDelaySeconds))
+            let maxDelay = TimeSpan.FromSeconds(float (max (max 1 baseDelaySeconds) maxDelaySeconds))
+
+            let item =
+                fsiService.RequeueFailedScheduledExecutionWithBackoff(
+                    scheduleId,
+                    baseDelay,
+                    maxDelay
+                )
+
             return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
         }

@@ -24,6 +24,7 @@ type ScheduledExecutionItem =
       CompletedAtUtc: DateTime option
       Status: ScheduledExecutionStatus
       ResultId: string option
+      RetryCount: int
       LastError: string option }
 
 type ScheduledExecutionProcessResult =
@@ -63,6 +64,7 @@ type ScheduledExecutionQueue() =
               CompletedAtUtc = None
               Status = ScheduledPending
               ResultId = None
+              RetryCount = 0
               LastError = None }
 
         lock gate (fun () -> items[item.ScheduleId] <- item)
@@ -173,6 +175,33 @@ type ScheduledExecutionQueue() =
                             CompletedAtUtc = None
                             Status = ScheduledPending
                             ResultId = None
+                            RetryCount = item.RetryCount + 1
+                            LastError = None }
+
+                    items[scheduleId] <- requeued
+                    requeued
+                | _ -> invalidOp $"Scheduled execution '{scheduleId}' is not failed and cannot be requeued."
+            | _ -> invalidOp $"Scheduled execution '{scheduleId}' was not found.")
+
+    member _.RequeueFailedWithBackoff(scheduleId: string, baseDelay: TimeSpan, maxDelay: TimeSpan, observedAtUtc: DateTime) =
+        lock gate (fun () ->
+            match items.TryGetValue scheduleId with
+            | true, item ->
+                match item.Status with
+                | ScheduledFailed ->
+                    let retryCount = item.RetryCount + 1
+                    let exponent = max 0 (retryCount - 1)
+                    let rawSeconds = baseDelay.TotalSeconds * Math.Pow(2.0, float exponent)
+                    let delay = TimeSpan.FromSeconds(min rawSeconds maxDelay.TotalSeconds)
+
+                    let requeued =
+                        { item with
+                            DueAtUtc = observedAtUtc.ToUniversalTime().Add(delay)
+                            StartedAtUtc = None
+                            CompletedAtUtc = None
+                            Status = ScheduledPending
+                            ResultId = None
+                            RetryCount = retryCount
                             LastError = None }
 
                     items[scheduleId] <- requeued

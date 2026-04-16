@@ -46,6 +46,7 @@ type private ScheduledExecutionDto =
       CompletedAtUtc: DateTime option
       Status: string
       ResultId: string option
+      RetryCount: int
       LastError: string option
       Metadata: Map<string, string> }
 
@@ -365,7 +366,56 @@ let ``McpExecutionTools scheduled execution supports cancel and failed requeue``
         Assert.Equal(failedSource.ScheduleId, failedProcess.Item.Value.ScheduleId)
         Assert.True(failedProcess.Item.Value.ResultId.IsSome)
         Assert.Equal("pending", requeued.Status)
+        Assert.Equal(1, requeued.RetryCount)
         Assert.True(requeued.DueAtUtc > DateTime.UtcNow.AddMinutes(5.0))
+        Assert.True(requeued.ResultId.IsNone)
+        Assert.True(requeued.LastError.IsNone)
+    }
+
+[<Fact>]
+let ``McpExecutionTools scheduled execution requeue with backoff computes next due`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! _ =
+            service.ExecuteOperation(
+                FSharp.MCP.DevKit.Core.ExecuteCode,
+                "let schedulerBackoffBootstrap = 1",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let! failedSourceJson =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "this backoff symbol does not exist",
+                "",
+                30
+            )
+
+        let failedSource = FSharpJson.deserialize<ScheduledExecutionDto> failedSourceJson
+        let! failedProcessJson = McpExecutionTools.ProcessNextDueScheduledFsiExecution(service)
+        let failedProcess = FSharpJson.deserialize<ScheduledExecutionProcessDto> failedProcessJson
+        let beforeRequeue = DateTime.UtcNow
+
+        let! requeuedJson =
+            McpExecutionTools.RequeueFailedScheduledFsiExecutionWithBackoff(
+                service,
+                failedSource.ScheduleId,
+                60,
+                300
+            )
+
+        let requeued = FSharpJson.deserialize<ScheduledExecutionDto> requeuedJson
+
+        Assert.Equal("failed", failedProcess.Item.Value.Status)
+        Assert.Equal("pending", requeued.Status)
+        Assert.Equal(1, requeued.RetryCount)
+        Assert.True(requeued.DueAtUtc >= beforeRequeue.AddSeconds(55.0))
+        Assert.True(requeued.DueAtUtc <= beforeRequeue.AddSeconds(75.0))
         Assert.True(requeued.ResultId.IsNone)
         Assert.True(requeued.LastError.IsNone)
     }
