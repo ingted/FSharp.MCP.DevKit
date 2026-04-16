@@ -1396,11 +1396,11 @@ module McpFsiTools =
                 return! backend.HealthCheck(host)
             }
 
-        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute) =
+        member this.EnqueueExecuteCode(code: string, timeout: TimeSpan, ?requestedRoute: ExecutionRoute, ?metadata: Map<string, string>) =
             this.EnsureAsyncProcessorStarted()
 
             let asyncId = Guid.NewGuid().ToString("N")
-            let executionRequest = createRequest requestedRoute ExecuteCode code (Some timeout) None Map.empty
+            let executionRequest = createRequest requestedRoute ExecuteCode code (Some timeout) None (metadata |> Option.defaultValue Map.empty)
             let enqueuedAt = DateTime.UtcNow
 
             let request =

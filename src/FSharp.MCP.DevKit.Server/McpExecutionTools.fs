@@ -55,6 +55,17 @@ type McpExecutionTools =
                 Some(key, value))
         |> Map.ofList
 
+    static member private principalMetadata principalId principalKind principalSource =
+        [ PrincipalAttribution.PrincipalId, principalId
+          PrincipalAttribution.PrincipalKind, principalKind
+          PrincipalAttribution.PrincipalSource, principalSource ]
+        |> List.choose (fun (key, value) ->
+            if String.IsNullOrWhiteSpace value then
+                None
+            else
+                Some(key, value))
+        |> Map.ofList
+
     static member private formatResultError (fallbackMessage: string) (result: FsiResult) =
         if String.IsNullOrWhiteSpace result.Errors then
             fallbackMessage
@@ -100,13 +111,19 @@ type McpExecutionTools =
             [<Optional; DefaultParameterValue("remote-fsi")>]
             [<Description("Execution plane label stored in metadata.")>] executionPlane: string,
             [<Optional; DefaultParameterValue(0)>]
-            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, or agent-call-agent.")>] principalSource: string
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
 
-            let metadata =
+            let scheduleMetadata =
                 McpExecutionTools.browserScheduleMetadata
                     targetKind
                     browserId
@@ -114,6 +131,12 @@ type McpExecutionTools =
                     (companionHostId |> McpExecutionTools.optionalValue |> Option.defaultValue hostId)
                     (companionSessionId |> McpExecutionTools.optionalValue |> Option.defaultValue sessionId)
                     executionPlane
+
+            let metadata =
+                scheduleMetadata
+                |> Map.fold
+                    (fun (state: Map<string, string>) key value -> state.Add(key, value))
+                    (McpExecutionTools.principalMetadata principalId principalKind principalSource)
 
             let! record =
                 fsiService.ExecuteOperation(
@@ -151,12 +174,19 @@ type McpExecutionTools =
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# code to execute. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
             [<Optional; DefaultParameterValue(0)>]
-            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, or agent-call-agent.")>] principalSource: string
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
-            let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout, requestedRoute = route)
+            let metadata = McpExecutionTools.principalMetadata principalId principalKind principalSource
+            let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout, requestedRoute = route, metadata = metadata)
             return if record.Result.IsSuccess then record.Result.Output else McpExecutionTools.formatRecordError "Execution failed" record
         }
 
@@ -169,12 +199,19 @@ type McpExecutionTools =
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# code to execute asynchronously. After this tool returns asyncId, poll get_async_status or read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, those paths must be visible from the remote host container or process, not just from the caller's container.")>] code: string,
             [<Optional; DefaultParameterValue(0)>]
-            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, or agent-call-agent.")>] principalSource: string
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
-            return fsiService.EnqueueExecuteCode(code, timeout, requestedRoute = route)
+            let metadata = McpExecutionTools.principalMetadata principalId principalKind principalSource
+            return fsiService.EnqueueExecuteCode(code, timeout, requestedRoute = route, metadata = metadata)
         }
 
     [<McpServerTool(Name = "evaluate_f_sharp_expression_routed"); Description("Evaluate an F# expression against an explicit route. Common flow for long workloads: first run execute_f_sharp_code_async_routed, wait for completion, then evaluate against the same agentId/hostId/sessionId.")>]
@@ -186,12 +223,19 @@ type McpExecutionTools =
             [<Description("Target session id.")>] sessionId: string,
             [<Description("F# expression to evaluate.")>] expression: string,
             [<Optional; DefaultParameterValue(0)>]
-            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, or agent-call-agent.")>] principalSource: string
         ) : Task<string> =
         task {
             let route = McpExecutionTools.route agentId hostId sessionId
             let timeout = McpExecutionTools.resolveTimeout fsiService timeoutSeconds
-            let! record = fsiService.ExecuteOperation(EvaluateExpression, expression, timeout = timeout, requestedRoute = route)
+            let metadata = McpExecutionTools.principalMetadata principalId principalKind principalSource
+            let! record = fsiService.ExecuteOperation(EvaluateExpression, expression, timeout = timeout, requestedRoute = route, metadata = metadata)
 
             return
                 if record.Result.IsSuccess then

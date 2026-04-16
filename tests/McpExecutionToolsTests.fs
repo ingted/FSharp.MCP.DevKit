@@ -60,7 +60,10 @@ let ``McpExecutionTools browser-aware routed execution records schedule target m
                 "",
                 "",
                 "remote-fsi",
-                30
+                30,
+                "human-browser",
+                "human",
+                "mgmt2"
             )
 
         let response = FSharpJson.deserialize<BrowserExecutionResponse> responseJson
@@ -75,8 +78,12 @@ let ``McpExecutionTools browser-aware routed execution records schedule target m
         Assert.Equal("browser-01", response.Metadata.["browser.id"])
         Assert.Equal("tab-02", response.Metadata.["browser.tabId"])
         Assert.Equal("default-session", response.Metadata.["browser.companion.sessionId"])
+        Assert.Equal("human-browser", response.Metadata.[PrincipalAttribution.PrincipalId])
+        Assert.Equal("human", response.Metadata.[PrincipalAttribution.PrincipalKind])
+        Assert.Equal("mgmt2", response.Metadata.[PrincipalAttribution.PrincipalSource])
         Assert.Equal("browser-01", stored.Metadata.["browser.id"])
         Assert.Equal("tab-02", stored.Metadata.["schedule.target.tabId"])
+        Assert.Equal("human-browser", stored.Metadata.[PrincipalAttribution.PrincipalId])
     }
 
 [<Fact>]
@@ -94,8 +101,18 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 "default-agent",
                 "default-host",
                 "default-session",
-                "let routedExplicit = 77"
+                "let routedExplicit = 77",
+                30,
+                "human-mgmt2",
+                "human",
+                "mgmt2"
             )
+
+        let execRecord =
+            service.ListAgentResults("default-agent")
+            |> List.find (fun record ->
+                record.Metadata.TryFind PrincipalAttribution.PrincipalId
+                |> Option.exists ((=) "human-mgmt2"))
 
         let! evalOutput =
             McpExecutionTools.EvaluateFSharpExpressionRouted(
@@ -104,7 +121,10 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 "default-host",
                 "default-session",
                 "routedExplicit",
-                30
+                30,
+                "codex-cli",
+                "agent",
+                "mcp"
             )
 
         let! addPathOutput =
@@ -132,7 +152,10 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
                 "default-host",
                 "default-session",
                 "let routedAsyncValue = 88",
-                30
+                30,
+                "codex-cli",
+                "agent",
+                "mcp"
             )
 
         let! asyncStatus = waitForCompletion service asyncId
@@ -157,6 +180,9 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
             )
 
         Assert.Contains("routedExplicit", execOutput)
+        Assert.Equal("human-mgmt2", execRecord.Metadata.[PrincipalAttribution.PrincipalId])
+        Assert.Equal("human", execRecord.Metadata.[PrincipalAttribution.PrincipalKind])
+        Assert.Equal("mgmt2", execRecord.Metadata.[PrincipalAttribution.PrincipalSource])
         Assert.Equal("77", evalOutput)
         Assert.Equal($"Search path added successfully: {tempPath}", addPathOutput)
         Assert.Contains("FSI Session State", stateOutput)
@@ -166,6 +192,13 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
         Assert.Equal(Some "default-agent", asyncStatus.AgentId)
         Assert.Equal(Some "default-host", asyncStatus.HostId)
         Assert.Equal(Some "default-session", asyncStatus.SessionId)
+        match asyncStatus.ResultId with
+        | Some resultId ->
+            let asyncRecord = service.TryGetResult(resultId) |> Option.get
+            Assert.Equal("codex-cli", asyncRecord.Metadata.[PrincipalAttribution.PrincipalId])
+            Assert.Equal("agent", asyncRecord.Metadata.[PrincipalAttribution.PrincipalKind])
+            Assert.Equal("mcp", asyncRecord.Metadata.[PrincipalAttribution.PrincipalSource])
+        | None -> Assert.Fail("Expected routed async execution to store a result id.")
         Assert.Equal("FSI session reset successfully", resetOutput)
         Assert.Contains("Expression evaluation failed", postResetEval)
     }
