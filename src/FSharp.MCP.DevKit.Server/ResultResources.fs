@@ -69,3 +69,21 @@ type ResultResources(fsiService: FsiMcpService) =
         | Some route -> fsiService.TryGetSessionOutputSealPending(requestedRoute = route)
         | None -> None
         |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiSessionOutputArchives", Title = "FSI Session Output Archives", MimeType = "application/json", UriTemplate = "fsi/output/archives")>]
+    [<Description("List archived session output metadata across the execution store.")>]
+    member _.SessionOutputArchives() =
+        fsiService.ListSessionOutputArchives()
+        |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiArchivedSessionOutputArchive", Title = "Archived FSI Session Output Metadata", MimeType = "application/json", UriTemplate = "fsi/output/archives/{sessionId}")>]
+    [<Description("Read archive metadata by archived session id, without requiring the session to still be registered as live.")>]
+    member _.ArchivedSessionOutputArchive(sessionId: string) =
+        fsiService.TryGetArchivedSessionOutputArchive(sessionId)
+        |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiArchivedSessionOutput", Title = "Archived FSI Session Output", MimeType = "application/json", UriTemplate = "fsi/output/archives/{sessionId}/output")>]
+    [<Description("Read archived output events by session id, without requiring the session to still be registered as live.")>]
+    member _.ArchivedSessionOutput(sessionId: string) =
+        fsiService.ListArchivedSessionOutput(sessionId)
+        |> FSharpJson.serialize

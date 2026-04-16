@@ -26,6 +26,9 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
         member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
             inner.ListEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
 
+        member _.ListArchives(?limit: int) =
+            inner.ListArchives(?limit = limit)
+
         member _.TryGetArchive(sessionId: string) = inner.TryGetArchive(sessionId)
 
         member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
@@ -492,14 +495,31 @@ let ``McpResultTools archive tool and resource expose archive metadata after exp
             let resources = ResultResources(service)
             resources.SessionOutputArchive("default-host", "default-session")
 
+        let archiveListJson = McpResultTools.ListSessionOutputArchives(service, 0)
+
+        let resourceArchiveListJson =
+            let resources = ResultResources(service)
+            resources.SessionOutputArchives()
+
+        let archivedEventsJson =
+            let resources = ResultResources(service)
+            resources.ArchivedSessionOutput("default-session")
+
         let archive = FSharpJson.deserialize<SessionOutputArchiveRecord option> archiveJson
         let resourceArchive = FSharpJson.deserialize<SessionOutputArchiveRecord option> resourceArchiveJson
+        let archiveList = FSharpJson.deserialize<SessionOutputArchiveRecord list> archiveListJson
+        let resourceArchiveList = FSharpJson.deserialize<SessionOutputArchiveRecord list> resourceArchiveListJson
+        let archivedEvents = FSharpJson.deserialize<OutputEventRecord list> archivedEventsJson
 
         Assert.True(archive.IsSome)
         Assert.True(resourceArchive.IsSome)
         Assert.Equal("default-session", archive.Value.SessionId)
         Assert.Equal(1, archive.Value.EventCount)
         Assert.Equal(archive.Value.EventCount, resourceArchive.Value.EventCount)
+        Assert.Single(archiveList) |> ignore
+        Assert.Single(resourceArchiveList) |> ignore
+        Assert.Equal("default-session", archiveList[0].SessionId)
+        Assert.Equal("archive-alpha", archivedEvents[0].Payload)
     }
 
 [<Fact>]

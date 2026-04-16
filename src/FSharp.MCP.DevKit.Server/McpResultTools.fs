@@ -212,6 +212,28 @@ type McpResultTools =
         fsiService.TryGetSessionOutputArchive(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
         |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "list_session_output_archives"); Description("List archived session output metadata across the execution store. This is the discovery path for sessions that no longer appear in the live host/session tree.")>]
+    static member ListSessionOutputArchives
+        (
+            fsiService: FsiMcpService,
+            [<Description("Optional maximum number of archives to return. Use 0 for default.")>] limit: int
+        ) : string =
+        let limitOpt = if limit <= 0 then None else Some limit
+        fsiService.ListSessionOutputArchives(?limit = limitOpt)
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "get_archived_session_output_events"); Description("Read archived output events by session id, without requiring the session to still be registered as live.")>]
+    static member GetArchivedSessionOutputEvents
+        (
+            fsiService: FsiMcpService,
+            [<Description("Archived session id.")>] sessionId: string,
+            [<Description("Optional starting sequence number. Use 0 to read all archived events.")>] afterSequenceNo: int64,
+            [<Description("Optional maximum number of events to return. Use 0 for default.")>] limit: int
+        ) : string =
+        let limitOpt = if limit <= 0 then None else Some limit
+        fsiService.ListArchivedSessionOutput(sessionId, afterSequenceNo = afterSequenceNo, ?limit = limitOpt)
+        |> FSharpJson.serialize
+
     [<McpServerTool(Name = "get_session_output_seal_pending"); Description("Read the seal-pending status for a specific route, if archive sealing previously failed.")>]
     static member GetSessionOutputSealPending
         (

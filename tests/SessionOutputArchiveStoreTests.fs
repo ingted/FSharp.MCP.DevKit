@@ -33,6 +33,7 @@ let ``JsonLineSessionOutputArchiveStore persists archive index and segment for r
     let reloadedStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
     let reloadedArchive = reloadedStore.TryGetArchive(sessionId)
     let reloadedEvents = reloadedStore.ListEvents(sessionId)
+    let archives = reloadedStore.ListArchives()
     let archiveIndexPath =
         Path.Combine(
             tempRoot,
@@ -43,6 +44,8 @@ let ``JsonLineSessionOutputArchiveStore persists archive index and segment for r
     Assert.Equal(2, archive.EventCount)
     Assert.True(File.Exists(archiveIndexPath))
     Assert.True(reloadedArchive.IsSome)
+    Assert.Single(archives) |> ignore
+    Assert.Equal(sessionId, archives[0].SessionId)
     Assert.Equal(Some 2L, reloadedArchive.Value.MaxSequenceNo)
     Assert.Equal(2, reloadedEvents.Length)
     Assert.Equal<int64 array>([| 1L; 2L |], reloadedEvents |> List.map (fun eventRecord -> eventRecord.SequenceNo) |> List.toArray)

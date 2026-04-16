@@ -161,6 +161,19 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
         else
             None
 
+    let listArchiveIndexSessionIds () =
+        ensureDirectories ()
+
+        Directory.EnumerateFiles(archiveIndexRoot, "*.json", SearchOption.TopDirectoryOnly)
+        |> Seq.choose (fun path ->
+            try
+                let index = File.ReadAllText(path) |> FSharpJson.deserialize<SessionOutputArchiveIndex>
+                Some index.SessionId
+            with _ ->
+                None)
+        |> Seq.distinct
+        |> Seq.toList
+
     let persistArchive sessionId (record: SessionOutputArchiveRecord) (events: OutputEventRecord array) =
         ensureDirectories ()
 
@@ -246,6 +259,27 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
             |> Array.filter (fun eventRecord -> eventRecord.SequenceNo > afterSequenceNo)
             |> Array.truncate limit
             |> Array.toList
+
+        member this.ListArchives(?limit: int) =
+            let limit = defaultArg limit Int32.MaxValue
+
+            let cached =
+                archives.Values
+                |> Seq.map fst
+
+            let persisted =
+                listArchiveIndexSessionIds ()
+                |> Seq.choose (fun sessionId ->
+                    match archives.TryGetValue sessionId with
+                    | true, (record, _) -> Some record
+                    | false, _ -> tryLoadArchive sessionId |> Option.map fst)
+
+            Seq.append cached persisted
+            |> Seq.groupBy (fun record -> record.SessionId)
+            |> Seq.map (fun (_, records) -> records |> Seq.sortByDescending (fun record -> record.ArchivedAt) |> Seq.head)
+            |> Seq.sortByDescending (fun record -> record.ArchivedAt)
+            |> Seq.truncate limit
+            |> Seq.toList
 
         member _.TryGetArchive(sessionId: string) =
             match archives.TryGetValue sessionId with

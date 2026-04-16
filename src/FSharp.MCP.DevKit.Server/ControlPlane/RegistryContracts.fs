@@ -84,6 +84,7 @@ type ISessionOutputLiveStore =
 type ISessionOutputArchiveStore =
     abstract member Seal: sessionId: string * events: OutputEventRecord list * archivedAt: DateTime -> SessionOutputArchiveRecord
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+    abstract member ListArchives: ?limit: int -> SessionOutputArchiveRecord list
     abstract member TryGetArchive: sessionId: string -> SessionOutputArchiveRecord option
     abstract member MarkSealPending:
         sessionId: string * events: OutputEventRecord list * pendingAt: DateTime * errorMessage: string -> SessionOutputSealPendingRecord

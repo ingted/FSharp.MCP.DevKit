@@ -684,6 +684,20 @@ module McpFsiTools =
             |> List.map (fun (_, grouped) -> grouped |> List.last)
             |> List.truncate limit
 
+        member _.ListArchivedSessionOutput(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            let afterSequenceNo = defaultArg afterSequenceNo 0L
+            let limit = defaultArg limit Int32.MaxValue
+
+            sessionOutputArchiveStore.ListEvents(sessionId, afterSequenceNo = afterSequenceNo)
+            |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
+            |> List.truncate limit
+
+        member _.ListSessionOutputArchives(?limit: int) =
+            sessionOutputArchiveStore.ListArchives(?limit = limit)
+
+        member _.TryGetArchivedSessionOutputArchive(sessionId: string) =
+            sessionOutputArchiveStore.TryGetArchive(sessionId)
+
         member _.UnsubscribeSessionOutput(subscriberId: string, ?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             outputSubscriberBroker.Unsubscribe(route.SessionId, subscriberId)

@@ -100,6 +100,9 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
         member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
             inner.ListEvents(sessionId, ?afterSequenceNo = afterSequenceNo, ?limit = limit)
 
+        member _.ListArchives(?limit: int) =
+            inner.ListArchives(?limit = limit)
+
         member _.TryGetArchive(sessionId: string) = inner.TryGetArchive(sessionId)
 
         member _.MarkSealPending(sessionId: string, events: OutputEventRecord list, pendingAt: DateTime, errorMessage: string) =
