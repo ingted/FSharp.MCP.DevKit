@@ -455,6 +455,74 @@ type McpExecutionTools =
             return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
         }
 
+    [<McpServerTool(Name = "schedule_browser_f_sharp_code_routed"); Description("Schedule browser-aware F# code execution against a companion FSI session. The scheduled item preserves schedule.target.* and normalized browser.* metadata when dispatched through the execution fabric.")>]
+    static member ScheduleBrowserFSharpCodeRouted
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Companion FSI host id.")>] hostId: string,
+            [<Description("Companion FSI session id.")>] sessionId: string,
+            [<Description("Browser id to tag on the scheduled execution metadata.")>] browserId: string,
+            [<Description("F# code to execute in the companion FSI session when the schedule item is due.")>] code: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("UTC due timestamp. Leave blank to make the item due immediately.")>] dueAtUtc: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Browser tab id. Leave blank for browser-level targets.")>] tabId: string,
+            [<Optional; DefaultParameterValue("tab")>]
+            [<Description("Schedule target kind, e.g. browser, tab, companion-session, or tabs.")>] targetKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Companion host id to store in metadata. Defaults to hostId.")>] companionHostId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Companion session id to store in metadata. Defaults to sessionId.")>] companionSessionId: string,
+            [<Optional; DefaultParameterValue("remote-fsi")>]
+            [<Description("Execution plane label stored in metadata.")>] executionPlane: string,
+            [<Optional; DefaultParameterValue(0)>]
+            [<Description("Timeout in seconds (optional, default: 30).")>] timeoutSeconds: int,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal id to attribute this scheduled execution to. Leave blank to default to agentId.")>] principalId: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal kind, for example agent, human, mgmt2, winagent, or codex.")>] principalKind: string,
+            [<Optional; DefaultParameterValue("")>]
+            [<Description("Principal source, for example route, mgmt2, mcp, winagent, scheduler, or agent-call-agent.")>] principalSource: string
+        ) : Task<string> =
+        task {
+            let route = McpExecutionTools.route agentId hostId sessionId
+
+            let timeout =
+                if timeoutSeconds > 0 then
+                    Some(TimeSpan.FromSeconds(float timeoutSeconds))
+                else
+                    None
+
+            let scheduleMetadata =
+                McpExecutionTools.browserScheduleMetadata
+                    targetKind
+                    browserId
+                    tabId
+                    (companionHostId |> McpExecutionTools.optionalValue |> Option.defaultValue hostId)
+                    (companionSessionId |> McpExecutionTools.optionalValue |> Option.defaultValue sessionId)
+                    executionPlane
+
+            let metadata =
+                scheduleMetadata
+                |> Map.fold
+                    (fun (state: Map<string, string>) key value -> state.Add(key, value))
+                    (McpExecutionTools.principalMetadata principalId principalKind principalSource
+                     |> Map.add "schedule.kind" "browser-fsi-code")
+
+            let item =
+                fsiService.EnqueueScheduledExecution(
+                    route,
+                    ExecuteCode,
+                    code,
+                    McpExecutionTools.parseDueAtUtc dueAtUtc,
+                    ?timeout = timeout,
+                    metadata = metadata
+                )
+
+            return item |> McpExecutionTools.toScheduledDto |> FSharpJson.serialize
+        }
+
     [<McpServerTool(Name = "list_scheduled_fsi_executions"); Description("List scheduled FSI executions, optionally filtered by route and status. Status values: pending, running, completed, failed.")>]
     static member ListScheduledFsiExecutions
         (

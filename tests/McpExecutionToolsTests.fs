@@ -63,6 +63,37 @@ type private ScheduledExecutionBatchDto =
     { ProcessedCount: int
       Items: ScheduledExecutionProcessDto list }
 
+let private isolatedSchedulerService () =
+    let root =
+        Path.Combine(
+            Path.GetTempPath(),
+            "fsharp-devkit-scheduler-tests",
+            Guid.NewGuid().ToString("N")
+        )
+
+    Directory.CreateDirectory(root) |> ignore
+
+    let queue = ScheduledExecutionQueue(root)
+
+    let service =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false,
+            scheduledExecutionQueue = queue
+        )
+
+    let cleanup =
+        { new IDisposable with
+            member _.Dispose() =
+                (service :> IDisposable).Dispose()
+
+                try
+                    Directory.Delete(root, true)
+                with _ ->
+                    () }
+
+    service, cleanup
+
 [<Fact>]
 let ``McpExecutionTools browser-aware routed execution records schedule target metadata`` () =
     task {
@@ -235,8 +266,8 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
 [<Fact>]
 let ``McpExecutionTools schedule routed FSI execution processes due item into result fabric`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedSchedulerService()
+        use _cleanup = cleanup
 
         let! _ =
             service.ExecuteOperation(
@@ -307,10 +338,66 @@ let ``McpExecutionTools schedule routed FSI execution processes due item into re
     }
 
 [<Fact>]
+let ``McpExecutionTools scheduled browser execution preserves target metadata`` () =
+    task {
+        let service, cleanup = isolatedSchedulerService()
+        use _cleanup = cleanup
+
+        let! _ =
+            service.ExecuteOperation(
+                FSharp.MCP.DevKit.Core.ExecuteCode,
+                "let browserSchedulerBootstrap = 1",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let! scheduledJson =
+            McpExecutionTools.ScheduleBrowserFSharpCodeRouted(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session",
+                "browser-scheduled-01",
+                "let browserScheduledValue = 233\nprintfn \"browser scheduled due\"",
+                "",
+                "tab-scheduled-02",
+                "tab",
+                "",
+                "",
+                "winagent-shared-fsi-host",
+                30,
+                "human-browser-scheduler",
+                "human",
+                "mgmt2"
+            )
+
+        let scheduled = FSharpJson.deserialize<ScheduledExecutionDto> scheduledJson
+        let! processedJson = McpExecutionTools.ProcessNextDueScheduledFsiExecution(service)
+        let processed = FSharpJson.deserialize<ScheduledExecutionProcessDto> processedJson
+        let stored = service.TryGetResult(processed.ResultId.Value) |> Option.get
+
+        Assert.Equal("pending", scheduled.Status)
+        Assert.Equal("browser-fsi-code", scheduled.Metadata.["schedule.kind"])
+        Assert.Equal("browser-scheduled-01", scheduled.Metadata.["schedule.target.browserId"])
+        Assert.Equal("tab-scheduled-02", scheduled.Metadata.["schedule.target.tabId"])
+        Assert.Equal("default-host", scheduled.Metadata.["schedule.target.companion.hostId"])
+        Assert.Equal("default-session", scheduled.Metadata.["schedule.target.companion.sessionId"])
+        Assert.True(processed.Processed)
+        Assert.Equal(Some true, processed.IsSuccess)
+        Assert.Contains("browserScheduledValue", processed.Output.Value)
+        Assert.Equal(scheduled.ScheduleId, stored.Metadata.["schedule.id"])
+        Assert.Equal("browser-fsi-code", stored.Metadata.["schedule.kind"])
+        Assert.Equal("browser-scheduled-01", stored.Metadata.["browser.id"])
+        Assert.Equal("tab-scheduled-02", stored.Metadata.["browser.tabId"])
+        Assert.Equal("human-browser-scheduler", stored.Metadata.[PrincipalAttribution.PrincipalId])
+        Assert.Equal("human", stored.Metadata.[PrincipalAttribution.PrincipalKind])
+        Assert.Equal("mgmt2", stored.Metadata.[PrincipalAttribution.PrincipalSource])
+    }
+
+[<Fact>]
 let ``McpExecutionTools scheduled execution supports cancel and failed requeue`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedSchedulerService()
+        use _cleanup = cleanup
 
         let! _ =
             service.ExecuteOperation(
@@ -376,8 +463,8 @@ let ``McpExecutionTools scheduled execution supports cancel and failed requeue``
 [<Fact>]
 let ``McpExecutionTools scheduled execution requeue with backoff computes next due`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedSchedulerService()
+        use _cleanup = cleanup
 
         let! _ =
             service.ExecuteOperation(

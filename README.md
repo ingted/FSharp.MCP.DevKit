@@ -93,6 +93,17 @@ Useful companion tools:
 - `reference_assembly_routed`
 - `get_lines`
 
+## Scheduled And Browser-aware Execution
+
+Generic scheduled execution uses `schedule_f_sharp_code_routed`, `list_scheduled_fsi_executions`, `process_next_due_scheduled_fsi_execution`, `process_due_scheduled_fsi_execution_batch`, `cancel_scheduled_fsi_execution`, and the requeue tools.
+
+Browser-aware execution uses:
+
+- `execute_browser_f_sharp_code_routed` for immediate execution against a companion FSI route.
+- `schedule_browser_f_sharp_code_routed` for queued execution with `schedule.target.*`, `browser.*`, `schedule.kind=browser-fsi-code`, and principal metadata preserved through dispatch.
+
+`ScheduledExecutionQueue` persists scheduled item state as JSONL and can be injected into `FsiMcpService` for test isolation or alternate persistence roots.
+
 ## WinAgent Execution Import
 
 This fork also exposes a bridge for importing WinAgent shared execution envelopes into the DevKit result/output fabric.
