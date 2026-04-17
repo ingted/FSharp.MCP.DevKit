@@ -718,6 +718,17 @@ module McpFsiTools =
                   IncludeHistory = defaultArg includeHistory false
                   SubscribedAt = DateTime.UtcNow }
 
+        member _.SubscribeSessionOutputContract(request: SubscribeSessionOutput, ?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+
+            let request =
+                if String.IsNullOrWhiteSpace request.session then
+                    { request with session = route.SessionId }
+                else
+                    request
+
+            OutputSubscriptionContracts.subscribe outputStore DateTime.UtcNow request
+
         member _.ListSessionOutputSubscribers(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             outputStore.ListSubscribers(route.SessionId)
@@ -765,6 +776,17 @@ module McpFsiTools =
         member _.UnsubscribeSessionOutput(subscriberId: string, ?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             outputStore.Unsubscribe(route.SessionId, subscriberId)
+
+        member _.UnsubscribeSessionOutputContract(request: UnsubscribeSessionOutput, ?requestedRoute: ExecutionRoute) =
+            let route = resolveRoute requestedRoute
+
+            let request =
+                if String.IsNullOrWhiteSpace request.session then
+                    { request with session = route.SessionId }
+                else
+                    request
+
+            OutputSubscriptionContracts.unsubscribe outputStore request
 
         member this.ImportWinAgentExecutionEnvelope(agentId: string, hostId: string, sessionId: string, envelopeJson: string) =
             let envelope = WinAgentEnvelopeImport.parseEnvelope envelopeJson

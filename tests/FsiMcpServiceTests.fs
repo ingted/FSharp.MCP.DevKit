@@ -5,6 +5,7 @@ open System.IO
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
+open Akka.FSI.Contracts
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -222,6 +223,56 @@ let ``FsiMcpService output subscriber broker publishes monotonic sequence and su
     Assert.Single(secondSubscribers) |> ignore
     Assert.True(removed)
     Assert.Empty(thirdSubscribers)
+
+[<Fact>]
+let ``FsiMcpService contract subscription surface returns replay and unsubscribe diagnostics`` () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+    let broker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+    let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+    let outputStore = SessionOutputStore(broker, liveStore) :> IOutputStore
+
+    let service =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false,
+            outputStore = outputStore,
+            sessionOutputLiveStore = liveStore)
+
+    use _cleanup = service :> IDisposable
+
+    let firstEvent, _ = service.PublishSessionOutput("stdout", "alpha", executionId = "exec-contract")
+    let secondEvent, _ = service.PublishSessionOutput("stderr", "beta", executionId = "exec-contract")
+
+    let applied =
+        service.SubscribeSessionOutputContract(
+            { session = ""
+              subscriberId = "codex"
+              fromSequenceNo = Some 0L
+              includeHistory = Some true }
+        )
+
+    let removed =
+        service.UnsubscribeSessionOutputContract(
+            { session = ""
+              subscriberId = "codex" }
+        )
+
+    let missing =
+        service.UnsubscribeSessionOutputContract(
+            { session = ""
+              subscriberId = "codex" }
+        )
+
+    Assert.True(applied.Subscription.accepted)
+    Assert.Equal("default-session", applied.Subscription.session)
+    Assert.Equal(Some 3L, applied.Subscription.nextSequenceNo)
+    Assert.Equal(2, applied.ReplayEvents.Length)
+    Assert.Equal(firstEvent.Payload, applied.ReplayEvents.[0].payload)
+    Assert.Equal(secondEvent.Payload, applied.ReplayEvents.[1].payload)
+    Assert.True(removed.accepted)
+    Assert.False(missing.accepted)
+    Assert.Equal(Some "subscriber was not registered", missing.message)
 
 [<Fact>]
 let ``FsiMcpService unified session output read returns archived events through same API`` () =
