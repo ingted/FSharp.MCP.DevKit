@@ -108,6 +108,33 @@ type McpResultTools =
         fsiService.ListResultsBySessionId(sessionId)
         |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "get_execution_store_record"); Description("Get one execution store record by resultId, scoped to an agent. This is the formal execution-store alias of get_fsi_result.")>]
+    static member GetExecutionStoreRecord
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target result id.")>] resultId: string
+        ) : string =
+        McpResultTools.GetFsiResult(fsiService, agentId, resultId)
+
+    [<McpServerTool(Name = "list_execution_store_records"); Description("List execution store records for an agent, optionally narrowed to a specific host/session. This is the formal execution-store alias of list_fsi_results.")>]
+    static member ListExecutionStoreRecords
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Optional host id filter. Use an empty string to omit.")>] hostId: string,
+            [<Description("Optional session id filter. Use an empty string to omit.")>] sessionId: string
+        ) : string =
+        McpResultTools.ListFsiResults(fsiService, agentId, hostId, sessionId)
+
+    [<McpServerTool(Name = "list_execution_store_records_by_session_id"); Description("List execution store records by session id only. This is the formal execution-store alias of list_fsi_results_by_session_id.")>]
+    static member ListExecutionStoreRecordsBySessionId
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        McpResultTools.ListFsiResultsBySessionId(fsiService, sessionId)
+
     [<McpServerTool(Name = "import_winagent_execution_envelope"); Description("Import one WinAgent shared execution envelope JSON into the DevKit result/output fabric.")>]
     static member ImportWinAgentExecutionEnvelope
         (

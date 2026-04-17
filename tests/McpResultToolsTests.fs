@@ -235,7 +235,7 @@ let ``JsonLineResultRegistry serializes concurrent writes across instances`` () 
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let service = createIsolatedResultService ()
         use _cleanup = service :> IDisposable
 
         let! _ = service.ExecuteOperation(ExecuteCode, "let resultQueryValue = 10", timeout = TimeSpan.FromSeconds 30.0)
@@ -245,6 +245,8 @@ let ``McpResultTools get list query compare and resources work`` () =
 
         let singleJson = McpResultTools.GetFsiResult(service, "default-agent", first.ResultId)
         let listJson = McpResultTools.ListFsiResults(service, "default-agent", "", "")
+        let executionStoreSingleJson = McpResultTools.GetExecutionStoreRecord(service, "default-agent", first.ResultId)
+        let executionStoreListJson = McpResultTools.ListExecutionStoreRecords(service, "default-agent", "", "")
 
         let mapJson =
             McpResultTools.QueryFsiResults(
@@ -298,6 +300,7 @@ let ``McpResultTools get list query compare and resources work`` () =
         let sessionResultsJson = resultResource.SessionResults("default-host", "default-session")
         let sessionIdResultsJson = resultResource.SessionResultsBySessionId("default-session")
         let sessionIdToolJson = McpResultTools.ListFsiResultsBySessionId(service, "default-session")
+        let executionStoreSessionIdToolJson = McpResultTools.ListExecutionStoreRecordsBySessionId(service, "default-session")
 
         let single = FSharpJson.deserialize<FsiExecutionRecord option> singleJson
         let listed = FSharpJson.deserialize<FsiExecutionRecord list> listJson
@@ -308,6 +311,9 @@ let ``McpResultTools get list query compare and resources work`` () =
         let materializedResponse = FSharpJson.deserialize<ResultQueryResponse> filterMaterializedJson
         let synthetic = materializedResponse.ProducedResultIds |> List.head |> fun resultId -> service.TryGetResult(resultId)
 
+        Assert.Equal(singleJson, executionStoreSingleJson)
+        Assert.Equal(listJson, executionStoreListJson)
+        Assert.Equal(sessionIdToolJson, executionStoreSessionIdToolJson)
         Assert.True(single.IsSome)
         Assert.Equal(first.ResultId, single.Value.ResultId)
         Assert.True(listed |> List.exists (fun value -> value.ResultId = first.ResultId))
