@@ -1,8 +1,11 @@
 module RemoteMessageContractTests
 
 open System
+open System.IO
 open Xunit
+open Akka.FSI.Contracts
 open FSharp.MCP.DevKit.Messages
+open FSharp.MCP.DevKit.Server.ControlPlane
 
 [<Fact>]
 let ``FsiRemoteCommandRequest carries route and timeout`` () =
@@ -107,3 +110,73 @@ let ``BrowserInventorySnapshotDto carries browser companion and tab summaries`` 
     Assert.Equal(Some "https://example.test/news", tab.Url)
     Assert.True(tab.IsActive)
     Assert.Contains("browser-companion", browser.Tags)
+
+[<Fact>]
+let ``SubscribeSessionOutput contract attaches subscriber and returns replay events`` () =
+    let outputStore =
+        SessionOutputStore(
+            InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker,
+            JsonLineSessionOutputLiveStore(Path.Combine(Path.GetTempPath(), "PulseTrade.WBS71", Guid.NewGuid().ToString("N")))
+            :> ISessionOutputLiveStore)
+        :> IOutputStore
+
+    let eventRecord, _ =
+        outputStore.Publish(
+            { SessionId = "session-1"
+              ExecutionId = Some "exec-1"
+              SequenceNo = 0L
+              StreamKind = "stdout"
+              TimestampUtc = DateTime.SpecifyKind(DateTime.Parse("2026-04-18T01:58:00Z"), DateTimeKind.Utc)
+              Payload = "hello"
+              IsReplay = false })
+
+    let result =
+        OutputSubscriptionContracts.subscribe
+            outputStore
+            (DateTime.SpecifyKind(DateTime.Parse("2026-04-18T01:59:00Z"), DateTimeKind.Utc))
+            { session = " session-1 "
+              subscriberId = " mgmt2 "
+              fromSequenceNo = Some 0L
+              includeHistory = Some true }
+
+    let subscribers = outputStore.ListSubscribers("session-1")
+
+    Assert.True(result.Subscription.accepted)
+    Assert.Equal("session-1", result.Subscription.session)
+    Assert.Equal("mgmt2", result.Subscription.subscriberId)
+    Assert.Equal(Some 2L, result.Subscription.nextSequenceNo)
+    Assert.Single(result.ReplayEvents) |> ignore
+    Assert.Equal(eventRecord.Payload, result.ReplayEvents.Head.payload)
+    Assert.Equal(Some true, result.ReplayEvents.Head.isReplay)
+    Assert.Single(subscribers) |> ignore
+
+[<Fact>]
+let ``UnsubscribeSessionOutput contract removes subscriber and reports missing subscriber`` () =
+    let outputStore =
+        SessionOutputStore(InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker)
+        :> IOutputStore
+
+    let _ =
+        OutputSubscriptionContracts.subscribe
+            outputStore
+            DateTime.UtcNow
+            { session = "session-2"
+              subscriberId = "codex"
+              fromSequenceNo = None
+              includeHistory = None }
+
+    let removed =
+        OutputSubscriptionContracts.unsubscribe
+            outputStore
+            { session = "session-2"
+              subscriberId = "codex" }
+
+    let missing =
+        OutputSubscriptionContracts.unsubscribe
+            outputStore
+            { session = "session-2"
+              subscriberId = "codex" }
+
+    Assert.True(removed.accepted)
+    Assert.False(missing.accepted)
+    Assert.Equal(Some "subscriber was not registered", missing.message)

@@ -41,6 +41,7 @@
     <Compile Include="Backends\InProcBackend.fs" />
     <Compile Include="Backends\NetFxHostBackend.fs" />
     <Compile Include="ControlPlane\RegistryContracts.fs" />
+    <Compile Include="ControlPlane\OutputSubscriptionContracts.fs" />
     <Compile Include="ControlPlane\AgentRegistry.fs" />
     <Compile Include="ControlPlane\HostRegistry.fs" />
     <Compile Include="ControlPlane\SessionRegistry.fs" />
