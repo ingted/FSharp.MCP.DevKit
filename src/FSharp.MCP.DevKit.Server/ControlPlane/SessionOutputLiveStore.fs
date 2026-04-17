@@ -58,3 +58,46 @@ type JsonLineSessionOutputLiveStore(?executionStoreRoot: string) =
             lock (sessionGate sessionId) (fun () ->
                 if File.Exists(path) then
                     File.Delete(path))
+
+type SessionOutputStore
+    (
+        ?outputSubscriberBroker: IOutputSubscriberBroker,
+        ?sessionOutputLiveStore: ISessionOutputLiveStore
+    ) =
+    let outputSubscriberBroker =
+        defaultArg outputSubscriberBroker (InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker)
+
+    let sessionOutputLiveStore =
+        defaultArg sessionOutputLiveStore (JsonLineSessionOutputLiveStore() :> ISessionOutputLiveStore)
+
+    interface IOutputStore with
+        member _.Subscribe(record: OutputSubscriberRecord) =
+            outputSubscriberBroker.Subscribe(record)
+
+        member _.Unsubscribe(sessionId: string, subscriberId: string) =
+            outputSubscriberBroker.Unsubscribe(sessionId, subscriberId)
+
+        member _.ListSubscribers(sessionId: string) =
+            outputSubscriberBroker.ListSubscribers(sessionId)
+
+        member _.Publish(record: OutputEventRecord) =
+            let eventRecord, subscribers = outputSubscriberBroker.Publish(record)
+            sessionOutputLiveStore.Append(eventRecord)
+            eventRecord, subscribers
+
+        member _.ListEvents(sessionId: string, ?afterSequenceNo: int64, ?limit: int) =
+            let afterSequenceNo = defaultArg afterSequenceNo 0L
+            let limit = defaultArg limit Int32.MaxValue
+
+            [ outputSubscriberBroker.ListEvents(sessionId, afterSequenceNo = afterSequenceNo)
+              sessionOutputLiveStore.ListEvents(sessionId, afterSequenceNo = afterSequenceNo) ]
+            |> List.concat
+            |> List.sortBy (fun eventRecord -> eventRecord.SequenceNo)
+            |> List.groupBy (fun eventRecord -> eventRecord.SequenceNo)
+            |> List.map (fun (_, grouped) -> grouped |> List.last)
+            |> List.truncate limit
+
+        member _.ClearSession(sessionId: string) =
+            let cleared = outputSubscriberBroker.ClearSessionEvents(sessionId)
+            sessionOutputLiveStore.ClearSession(sessionId)
+            cleared

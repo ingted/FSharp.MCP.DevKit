@@ -77,6 +77,14 @@ type IOutputSubscriberBroker =
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
     abstract member ClearSessionEvents: sessionId: string -> int
 
+type IOutputStore =
+    abstract member Subscribe: OutputSubscriberRecord -> OutputSubscriberRecord
+    abstract member Unsubscribe: sessionId: string * subscriberId: string -> bool
+    abstract member ListSubscribers: sessionId: string -> OutputSubscriberRecord list
+    abstract member Publish: OutputEventRecord -> OutputEventRecord * OutputSubscriberRecord list
+    abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
+    abstract member ClearSession: sessionId: string -> int
+
 type ISessionOutputLiveStore =
     abstract member Append: eventRecord: OutputEventRecord -> unit
     abstract member ListEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list

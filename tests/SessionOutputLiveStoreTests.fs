@@ -55,3 +55,37 @@ let ``JsonLineSessionOutputLiveStore clear session removes live file`` () =
 
     Assert.False(File.Exists(path))
     Assert.Empty(store.ListEvents(sessionId))
+
+[<Fact>]
+let ``SessionOutputStore publishes to subscribers and persists live events`` () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.SessionOutputLiveStoreTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+
+    let sessionId = "session-output-store-01"
+    let broker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+    let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+    let outputStore = SessionOutputStore(broker, liveStore) :> IOutputStore
+
+    let _ =
+        outputStore.Subscribe(
+            { SessionId = sessionId
+              SubscriberId = "ui-reader"
+              FromSequenceNo = 0L
+              IncludeHistory = true
+              SubscribedAt = DateTime.UtcNow }
+        )
+
+    let eventRecord, subscribers = outputStore.Publish(mkLiveEvent sessionId 0L "alpha")
+    let events = outputStore.ListEvents(sessionId)
+    let persistedEvents =
+        (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore).ListEvents(sessionId)
+    let cleared = outputStore.ClearSession(sessionId)
+
+    Assert.Equal(1L, eventRecord.SequenceNo)
+    Assert.Single(subscribers) |> ignore
+    Assert.Single(events) |> ignore
+    Assert.Single(persistedEvents) |> ignore
+    Assert.Equal("alpha", events[0].Payload)
+    Assert.Equal("alpha", persistedEvents[0].Payload)
+    Assert.Equal(1, cleared)
+    Assert.Empty(outputStore.ListEvents(sessionId))
