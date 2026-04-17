@@ -160,6 +160,41 @@ let ``ExecutionStore lists by route metadata and limit`` () =
     Assert.Equal("r3", sessionResults.Head.ResultId)
 
 [<Fact>]
+let ``FsiMcpService uses injected execution store for executed records`` () =
+    task {
+        let executionStore = InMemoryResultRegistry() :> IExecutionStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                executionStore = executionStore
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let! record =
+            service.ExecuteOperation(
+                ExecuteCode,
+                "let executionStoreInjectedValue = 42",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let stored = executionStore.TryGet(record.ResultId)
+
+        let routeResults =
+            executionStore.List(
+                agentId = "default-agent",
+                hostId = "default-host",
+                sessionId = "default-session",
+                limit = 10
+            )
+
+        Assert.True(stored.IsSome)
+        Assert.True(routeResults |> List.exists (fun item -> item.ResultId = record.ResultId))
+    }
+
+[<Fact>]
 let ``JsonLineResultRegistry serializes concurrent writes across instances`` () =
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))

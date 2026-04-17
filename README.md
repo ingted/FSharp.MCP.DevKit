@@ -117,6 +117,7 @@ This is the shared execution fabric entry point used by `PulseTrade.Mcp.WinAgent
 This fork persists result and output data so multiple human and agent clients can inspect the same execution fabric.
 
 - `FsiExecutionRecord` JSONL files are stored under `misc/execution-store/result-index/{agentId}.jsonl` by default.
+- `IExecutionStore` is the service-facing execution/result contract. `FsiMcpService` accepts `executionStore` first, while the legacy `resultRegistry` constructor argument is adapted for backward compatibility.
 - Session output events are stored under `misc/execution-store/output/live/{sessionId}.jsonl` and can later be sealed into archive paths.
 - `IOutputStore` is the service-facing output contract. The default `SessionOutputStore` aggregates the in-memory subscriber broker and persisted live output store, so subscribe/list/publish/clear callers no longer need to know which backing store owns a given event.
 - `FsiMcpService.ExecuteOperation` and async queue execution publish non-empty `FsiResult.Output` as `stdout` and non-empty `FsiResult.Errors` as `stderr` session output events.

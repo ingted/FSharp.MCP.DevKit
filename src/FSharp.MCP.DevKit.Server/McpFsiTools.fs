@@ -333,6 +333,7 @@ module McpFsiTools =
             ?sessionOutputLiveStore: ISessionOutputLiveStore,
             ?outputStore: IOutputStore,
             ?sessionOutputArchiveStore: ISessionOutputArchiveStore,
+            ?executionStore: IExecutionStore,
             ?resultRegistry: IResultRegistry,
             ?browserInventoryRegistry: IBrowserInventoryRegistry,
             ?scheduledExecutionQueue: ScheduledExecutionQueue,
@@ -359,7 +360,13 @@ module McpFsiTools =
             defaultArg sessionOutputArchiveStore (JsonLineSessionOutputArchiveStore() :> ISessionOutputArchiveStore)
 
         let asyncJobRegistry = InMemoryAsyncJobRegistry() :> IAsyncJobRegistry
-        let resultRegistry = defaultArg resultRegistry (JsonLineResultRegistry() :> IResultRegistry)
+        let executionStore =
+            match executionStore, resultRegistry with
+            | Some store, _ -> store
+            | None, Some registry -> ExecutionStore.ofResultRegistry registry
+            | None, None -> JsonLineResultRegistry() :> IExecutionStore
+
+        let resultRegistry = executionStore :> IResultRegistry
         let pathMappingRegistry = InMemoryPathMappingRegistry() :> IPathMappingRegistry
         let browserInventoryRegistry =
             defaultArg browserInventoryRegistry (InMemoryBrowserInventoryRegistry() :> IBrowserInventoryRegistry)

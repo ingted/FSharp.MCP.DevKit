@@ -56,6 +56,42 @@ module ExecutionStoreQuery =
         |> Seq.truncate (normalizeLimit limit)
         |> Seq.toList
 
+module ExecutionStore =
+    let ofResultRegistry (registry: IResultRegistry) =
+        match registry with
+        | :? IExecutionStore as store -> store
+        | _ ->
+            { new IExecutionStore with
+                member _.Put(record: FsiExecutionRecord) =
+                    registry.Put record
+
+                member _.TryGet(resultId: string) =
+                    registry.TryGet resultId
+
+                member _.ListBySession(route: ExecutionRoute) =
+                    registry.ListBySession route
+
+                member _.ListBySessionId(sessionId: string) =
+                    registry.ListBySessionId sessionId
+
+                member _.ListByAgent(agentId: string) =
+                    registry.ListByAgent agentId
+
+                member _.List(?agentId: string, ?hostId: string, ?sessionId: string, ?metadata: (string * string) list, ?limit: int) =
+                    let records =
+                        match agentId, hostId, sessionId with
+                        | Some agentId, Some hostId, Some sessionId ->
+                            registry.ListBySession(
+                                { AgentId = agentId
+                                  HostId = hostId
+                                  SessionId = sessionId }
+                            )
+                        | _, _, Some sessionId -> registry.ListBySessionId sessionId
+                        | Some agentId, _, _ -> registry.ListByAgent agentId
+                        | _ -> []
+
+                    ExecutionStoreQuery.list agentId hostId sessionId metadata limit records }
+
 type InMemoryResultRegistry() =
     let results = ConcurrentDictionary<string, FsiExecutionRecord>()
 
