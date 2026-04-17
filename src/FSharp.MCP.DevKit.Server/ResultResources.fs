@@ -1,6 +1,7 @@
 namespace FSharp.MCP.DevKit.Server
 
 open System.ComponentModel
+open System.Threading.Tasks
 open ModelContextProtocol.Server
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -17,6 +18,14 @@ type ResultResources(fsiService: FsiMcpService) =
     member _.Result(resultId: string) =
         fsiService.TryGetResult(resultId)
         |> FSharpJson.serialize
+
+    [<McpServerResource(Name = "fsiExecutionFabricRecord", Title = "FSI Execution Fabric Record", MimeType = "application/json", UriTemplate = "fsi/results/{resultId}/execution-fabric")>]
+    [<Description("Read one execution result projected into the shared FAkka execution fabric contract.")>]
+    member _.ExecutionFabricRecord(resultId: string) =
+        task {
+            let! record = fsiService.TryGetExecutionFabricRecord(resultId)
+            return record |> FSharpJson.serialize
+        }
 
     [<McpServerResource(Name = "fsiAgentResults", Title = "FSI Agent Results", MimeType = "application/json", UriTemplate = "fsi/agents/{agentId}/results")>]
     [<Description("List execution results owned by an agent.")>]

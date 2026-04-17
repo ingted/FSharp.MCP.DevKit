@@ -40,6 +40,7 @@
     <Compile Include="BackendAdaptersTests.fs" />
     <Compile Include="ControlPlaneTests.fs" />
     <Compile Include="ExecutionRouterTests.fs" />
+    <Compile Include="ExecutionFabricProjectionTests.fs" />
     <Compile Include="FsiMcpServiceTests.fs" />
     <Compile Include="InProcBackendTests.fs" />
     <Compile Include="McpControlPlaneToolsTests.fs" />

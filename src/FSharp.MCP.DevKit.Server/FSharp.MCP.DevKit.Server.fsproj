@@ -50,6 +50,7 @@
     <Compile Include="ControlPlane\SessionOutputLiveStore.fs" />
     <Compile Include="ControlPlane\AsyncJobRegistry.fs" />
     <Compile Include="ControlPlane\ResultRegistry.fs" />
+    <Compile Include="ControlPlane\ExecutionFabricProjection.fs" />
     <Compile Include="ControlPlane\ScheduledExecutionQueue.fs" />
     <Compile Include="ControlPlane\WinAgentEnvelopeImport.fs" />
     <Compile Include="ControlPlane\PathMappingRegistry.fs" />

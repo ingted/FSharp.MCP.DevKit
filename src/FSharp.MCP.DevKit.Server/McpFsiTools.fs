@@ -373,6 +373,7 @@ module McpFsiTools =
         let scheduledExecutionQueue = defaultArg scheduledExecutionQueue (ScheduledExecutionQueue())
 
         let resultQueryService = ResultQueryService()
+        let resultSerializer = ResultSerialization.createDefault()
         let inProcBackend = InProcBackend() :> IFsiExecutionBackend
 
         let enableRemoteClient = defaultArg enableRemoteClient true
@@ -1018,6 +1019,31 @@ module McpFsiTools =
         member _.TryGetResultForAgent(agentId: string, resultId: string) =
             resultRegistry.TryGet resultId
             |> Option.filter (fun value -> value.AgentId = agentId)
+
+        member _.TryGetExecutionFabricRecord(resultId: string) =
+            task {
+                match resultRegistry.TryGet resultId with
+                | None -> return None
+                | Some record ->
+                    let outputEvents =
+                        outputStore.ListEvents(record.SessionId)
+                        |> List.filter (fun event -> event.ExecutionId = Some record.ResultId)
+
+                    let! fabricRecord =
+                        ExecutionFabricProjection.toExecutionFabricRecord resultSerializer outputEvents record
+                        |> Async.StartAsTask
+
+                    return Some fabricRecord
+            }
+
+        member this.TryGetExecutionFabricRecordForAgent(agentId: string, resultId: string) =
+            task {
+                let! record = this.TryGetExecutionFabricRecord(resultId)
+
+                return
+                    record
+                    |> Option.filter (fun value -> value.target.agentId = agentId)
+            }
 
         member _.ListSessionResults(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute

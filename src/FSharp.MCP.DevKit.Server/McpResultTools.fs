@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
+open System.Threading.Tasks
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.McpFsiTools
@@ -60,6 +61,18 @@ type McpResultTools =
         ) : string =
         fsiService.TryGetResultForAgent(agentId, resultId)
         |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "get_execution_fabric_record"); Description("Project one FSI execution result into the shared FAkka execution fabric record, including serialized result envelope and matching output events.")>]
+    static member GetExecutionFabricRecord
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target result id.")>] resultId: string
+        ) : Task<string> =
+        task {
+            let! record = fsiService.TryGetExecutionFabricRecordForAgent(agentId, resultId)
+            return record |> FSharpJson.serialize
+        }
 
     [<McpServerTool(Name = "list_fsi_results"); Description("List execution results for an agent, optionally narrowed to a specific host/session.")>]
     static member ListFsiResults
