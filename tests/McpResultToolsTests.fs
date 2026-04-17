@@ -127,6 +127,38 @@ let private createIsolatedResultService () =
         resultRegistry = (InMemoryResultRegistry() :> IResultRegistry)
     )
 
+let private executionRecord resultId agentId hostId sessionId submittedAt metadata =
+    { ResultId = resultId
+      RequestId = "request-" + resultId
+      AgentId = agentId
+      BackendKind = InProc
+      HostId = hostId
+      SessionId = sessionId
+      OperationKind = ExecuteCode
+      SubmittedAt = submittedAt
+      StartedAt = Some submittedAt
+      CompletedAt = Some(submittedAt.AddMilliseconds 1.0)
+      RawErrorType = None
+      Metadata = metadata
+      Result = FsiResult.empty }
+
+[<Fact>]
+let ``ExecutionStore lists by route metadata and limit`` () =
+    let store = InMemoryResultRegistry() :> IExecutionStore
+    let baseTime = DateTime.Parse("2026-04-17T08:55:00Z").ToUniversalTime()
+
+    store.Put(executionRecord "r1" "agent-a" "host-a" "session-a" baseTime (Map.ofList [ "principal.id", "codex"; "browser.id", "sb-1" ]))
+    store.Put(executionRecord "r2" "agent-a" "host-a" "session-b" (baseTime.AddSeconds 1.0) (Map.ofList [ "principal.id", "gemini"; "browser.id", "sb-1" ]))
+    store.Put(executionRecord "r3" "agent-b" "host-b" "session-a" (baseTime.AddSeconds 2.0) (Map.ofList [ "principal.id", "codex"; "browser.id", "sb-2" ]))
+
+    let codexResults = store.List(agentId = "agent-a", metadata = [ "principal.id", "codex" ])
+    let sessionResults = store.List(sessionId = "session-a", limit = 1)
+
+    Assert.Single(codexResults) |> ignore
+    Assert.Equal("r1", codexResults.Head.ResultId)
+    Assert.Single(sessionResults) |> ignore
+    Assert.Equal("r3", sessionResults.Head.ResultId)
+
 [<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
     task {

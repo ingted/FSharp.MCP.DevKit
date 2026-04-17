@@ -17,10 +17,49 @@ module ResultRegistryPath =
             $"{SessionOutputArchivePath.normalizePathToken agentId}.jsonl"
         )
 
+module ExecutionStoreQuery =
+    let private matchesOptional expected actual =
+        match expected with
+        | Some value -> String.Equals(value, actual, StringComparison.OrdinalIgnoreCase)
+        | None -> true
+
+    let private matchesMetadata (expected: (string * string) list option) (record: FsiExecutionRecord) =
+        match expected with
+        | None -> true
+        | Some values ->
+            values
+            |> List.forall (fun (key, value) ->
+                match record.Metadata |> Map.tryFind key with
+                | Some actual -> String.Equals(actual, value, StringComparison.OrdinalIgnoreCase)
+                | None -> false)
+
+    let normalizeLimit limit =
+        match limit with
+        | Some value when value > 0 -> min value 500
+        | _ -> 100
+
+    let list
+        (agentId: string option)
+        (hostId: string option)
+        (sessionId: string option)
+        (metadata: (string * string) list option)
+        (limit: int option)
+        (records: seq<FsiExecutionRecord>)
+        =
+        records
+        |> Seq.filter (fun record ->
+            matchesOptional agentId record.AgentId
+            && matchesOptional hostId record.HostId
+            && matchesOptional sessionId record.SessionId
+            && matchesMetadata metadata record)
+        |> Seq.sortByDescending (fun record -> record.SubmittedAt)
+        |> Seq.truncate (normalizeLimit limit)
+        |> Seq.toList
+
 type InMemoryResultRegistry() =
     let results = ConcurrentDictionary<string, FsiExecutionRecord>()
 
-    interface IResultRegistry with
+    interface IExecutionStore with
         member _.Put(record: FsiExecutionRecord) = results.[record.ResultId] <- record
 
         member _.TryGet(resultId: string) =
@@ -48,6 +87,9 @@ type InMemoryResultRegistry() =
             |> Seq.filter (fun record -> record.AgentId = agentId)
             |> Seq.sortByDescending (fun record -> record.SubmittedAt)
             |> Seq.toList
+
+        member _.List(?agentId: string, ?hostId: string, ?sessionId: string, ?metadata: (string * string) list, ?limit: int) =
+            ExecutionStoreQuery.list agentId hostId sessionId metadata limit results.Values
 
 type private FsiExecutionRecordV1 =
     { ResultId: string
@@ -122,7 +164,7 @@ type JsonLineResultRegistry(?executionStoreRoot: string) =
 
     member _.ExecutionStoreRoot = executionStoreRoot
 
-    interface IResultRegistry with
+    interface IExecutionStore with
         member _.Put(record: FsiExecutionRecord) =
             results.[record.ResultId] <- record
             appendRecord record
@@ -152,3 +194,6 @@ type JsonLineResultRegistry(?executionStoreRoot: string) =
             |> Seq.filter (fun record -> record.AgentId = agentId)
             |> Seq.sortByDescending (fun record -> record.SubmittedAt)
             |> Seq.toList
+
+        member _.List(?agentId: string, ?hostId: string, ?sessionId: string, ?metadata: (string * string) list, ?limit: int) =
+            ExecutionStoreQuery.list agentId hostId sessionId metadata limit results.Values

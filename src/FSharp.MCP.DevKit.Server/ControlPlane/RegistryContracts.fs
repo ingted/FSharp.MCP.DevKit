@@ -108,6 +108,17 @@ type IResultRegistry =
     abstract member ListBySessionId: sessionId: string -> FsiExecutionRecord list
     abstract member ListByAgent: string -> FsiExecutionRecord list
 
+type IExecutionStore =
+    inherit IResultRegistry
+
+    abstract member List:
+        ?agentId: string *
+        ?hostId: string *
+        ?sessionId: string *
+        ?metadata: (string * string) list *
+        ?limit: int ->
+            FsiExecutionRecord list
+
 type PathMappingRecord =
     { MappingId: string
       AgentId: string option
