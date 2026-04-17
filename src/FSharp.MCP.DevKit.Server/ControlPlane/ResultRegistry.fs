@@ -127,13 +127,14 @@ module private PersistedExecutionRecord =
               Result = legacy.Result }
 
 type JsonLineResultRegistry(?executionStoreRoot: string) =
+    static let fileGates = ConcurrentDictionary<string, obj>(StringComparer.OrdinalIgnoreCase)
+
     let executionStoreRoot =
         executionStoreRoot
         |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace(value)))
         |> Option.defaultWith SessionOutputArchivePath.resolveExecutionStoreRoot
 
     let results = ConcurrentDictionary<string, FsiExecutionRecord>()
-    let fileGates = ConcurrentDictionary<string, obj>()
 
     let ensureDirectories () =
         Directory.CreateDirectory(ResultRegistryPath.resultIndexRoot executionStoreRoot) |> ignore
@@ -150,14 +151,28 @@ type JsonLineResultRegistry(?executionStoreRoot: string) =
             use writer = new StreamWriter(stream, Encoding.UTF8)
             writer.Write(line))
 
+    let readPersistedRecords (path: string) =
+        lock (fileGate path) (fun () ->
+            if File.Exists(path) then
+                use stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                use reader = new StreamReader(stream, Encoding.UTF8)
+                let lines = ResizeArray<string>()
+
+                while not reader.EndOfStream do
+                    lines.Add(reader.ReadLine())
+
+                lines
+                |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace(line)))
+                |> Seq.map PersistedExecutionRecord.deserialize
+                |> Seq.toList
+            else
+                [])
+
     let loadPersistedRecords () =
         ensureDirectories ()
 
         Directory.EnumerateFiles(ResultRegistryPath.resultIndexRoot executionStoreRoot, "*.jsonl")
-        |> Seq.collect (fun path ->
-            File.ReadLines(path)
-            |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace(line)))
-            |> Seq.map PersistedExecutionRecord.deserialize)
+        |> Seq.collect readPersistedRecords
         |> Seq.iter (fun record -> results.[record.ResultId] <- record)
 
     do loadPersistedRecords ()

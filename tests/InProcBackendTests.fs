@@ -73,8 +73,9 @@ let ``InProcBackend returns execution metadata and session state`` () =
     task {
         let backend = InProcBackend() :> IFsiExecutionBackend
         let routeA = route "agent-a" "default-host" "session-meta"
+        let tempPath = IO.Path.GetTempPath().TrimEnd(IO.Path.DirectorySeparatorChar, IO.Path.AltDirectorySeparatorChar)
 
-        let! record = backend.Execute(request routeA AddSearchPath "/tmp")
+        let! record = backend.Execute(request routeA AddSearchPath tempPath)
         let! state = backend.GetSessionState(routeA)
 
         Assert.Equal(InProc, record.BackendKind)
@@ -82,6 +83,6 @@ let ``InProcBackend returns execution metadata and session state`` () =
         Assert.Equal("default-host", record.HostId)
         Assert.Equal("session-meta", record.SessionId)
         Assert.False(String.IsNullOrWhiteSpace(record.ResultId))
-        Assert.Contains("/tmp", state.SearchPaths)
+        Assert.Contains(tempPath, state.SearchPaths)
         Assert.Equal(SessionReady, state.Status)
     }

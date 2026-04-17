@@ -160,6 +160,44 @@ let ``ExecutionStore lists by route metadata and limit`` () =
     Assert.Equal("r3", sessionResults.Head.ResultId)
 
 [<Fact>]
+let ``JsonLineResultRegistry serializes concurrent writes across instances`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let store1 = JsonLineResultRegistry(tempRoot) :> IResultRegistry
+        let store2 = JsonLineResultRegistry(tempRoot) :> IResultRegistry
+        let baseTime = DateTime.Parse("2026-04-17T10:18:00Z").ToUniversalTime()
+
+        let records =
+            [ 1..20 ]
+            |> List.map (fun index ->
+                executionRecord
+                    $"concurrent-{index}"
+                    "agent-concurrent"
+                    "host-concurrent"
+                    "session-concurrent"
+                    (baseTime.AddMilliseconds(float index))
+                    Map.empty)
+
+        let writes =
+            records
+            |> List.mapi (fun index record ->
+                Task.Run(fun () ->
+                    if index % 2 = 0 then
+                        store1.Put record
+                    else
+                        store2.Put record))
+
+        do! Task.WhenAll(writes)
+
+        let reloaded = JsonLineResultRegistry(tempRoot) :> IExecutionStore
+        let results = reloaded.List(agentId = "agent-concurrent", limit = 50)
+
+        Assert.Equal(records.Length, results.Length)
+        Assert.True(records |> List.forall (fun record -> results |> List.exists (fun stored -> stored.ResultId = record.ResultId)))
+    }
+
+[<Fact>]
 let ``McpResultTools get list query compare and resources work`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)

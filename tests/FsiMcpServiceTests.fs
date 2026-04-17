@@ -66,6 +66,44 @@ let ``FsiMcpService executes through default routed in-proc path and stores resu
     }
 
 [<Fact>]
+let ``FsiMcpService execute operation auto publishes stdout to session output`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.SubscribeSessionOutput("ui-reader")
+        let! record =
+            service.ExecuteOperation(
+                ExecuteCode,
+                "printfn \"auto-published-output\"",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let events = service.ListSessionOutput()
+        let outputEvent =
+            events
+            |> List.find (fun eventRecord ->
+                eventRecord.ExecutionId = Some record.ResultId
+                && eventRecord.StreamKind = "stdout"
+                && eventRecord.Payload.Contains("auto-published-output"))
+
+        Assert.True(record.Result.IsSuccess)
+        Assert.Contains("auto-published-output", record.Result.Output)
+        Assert.Equal("default-session", outputEvent.SessionId)
+        Assert.Equal(Some record.ResultId, outputEvent.ExecutionId)
+    }
+
+[<Fact>]
 let ``FsiMcpService async queue completes and exposes status`` () =
     task {
         let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
@@ -84,6 +122,43 @@ let ``FsiMcpService async queue completes and exposes status`` () =
         Assert.True(status.Result.IsSome)
         Assert.True(evalRecord.Result.IsSuccess)
         Assert.Equal(Some "21", evalRecord.Result.Value)
+    }
+
+[<Fact>]
+let ``FsiMcpService async queue auto publishes stdout to session output`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let asyncId =
+            service.EnqueueExecuteCode(
+                "printfn \"async-auto-output\"",
+                TimeSpan.FromSeconds 30.0
+            )
+
+        let! status = waitForCompletion service asyncId
+        let events = service.ListSessionOutput()
+
+        Assert.True(status.Exists)
+        Assert.True(status.IsCompleted)
+        Assert.True(status.ResultId.IsSome)
+        Assert.True(
+            events
+            |> List.exists (fun eventRecord ->
+                eventRecord.ExecutionId = status.ResultId
+                && eventRecord.StreamKind = "stdout"
+                && eventRecord.Payload.Contains("async-auto-output"))
+        )
     }
 
 type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =

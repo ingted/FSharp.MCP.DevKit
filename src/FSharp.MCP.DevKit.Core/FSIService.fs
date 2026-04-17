@@ -173,6 +173,8 @@ module FsiConfig =
 
 /// FSI Service wrapper class using F# Compiler Services
 type FsiService(config: FsiConfig) =
+    // Console.Out/Error are process-wide; capture must be serialized across in-proc sessions.
+    static let consoleCaptureGate = new SemaphoreSlim(1, 1)
     let mutable fsiSession: FsiEvaluationSession option = None
     let mutable isStarted = false
     let mutable isDisposed = false
@@ -274,6 +276,35 @@ type FsiService(config: FsiConfig) =
             | None -> ""
 
         (rawOutput, errors)
+
+    member private this.CaptureConsoleAsync(operation: unit -> Task<'T>) : Task<'T> =
+        task {
+            do! consoleCaptureGate.WaitAsync()
+
+            let previousOut = Console.Out
+            let previousError = Console.Error
+
+            try
+                outStream |> Option.iter Console.SetOut
+                errStream |> Option.iter Console.SetError
+
+                let! result = operation ()
+                return result
+            finally
+                try
+                    Console.Out.Flush()
+                with _ ->
+                    ()
+
+                try
+                    Console.Error.Flush()
+                with _ ->
+                    ()
+
+                Console.SetOut(previousOut)
+                Console.SetError(previousError)
+                consoleCaptureGate.Release() |> ignore
+        }
 
     /// Execute F# code using EvalInteraction (for statements, declarations, directives)
     member this.ExecuteInteraction(code: string) : FsiResult =
@@ -833,108 +864,128 @@ type FsiService(config: FsiConfig) =
                       ExecutionTime = None
                       Diagnostics = [||] }
             else
-                let stopwatch = System.Diagnostics.Stopwatch.StartNew()
-                let session = fsiSession.Value
+                return!
+                    this.CaptureConsoleAsync(fun () ->
+                        task {
+                            let stopwatch = System.Diagnostics.Stopwatch.StartNew()
+                            let session = fsiSession.Value
 
-                try
-                    this.GetAndClearOutput() |> ignore
+                            try
+                                this.GetAndClearOutput() |> ignore
 
-                    let _, checkResults, _ = session.ParseAndCheckInteraction(code)
-                    let initialDiagnostics = checkResults.Diagnostics
+                                let diagnostics = ResizeArray<FSharpDiagnostic>()
+                                let chunks = InteractionBatch.split code
+                                let mutable hasParseErrors = false
+                                let mutable executionError: exn option = None
 
-                    let hasParseErrors =
-                        initialDiagnostics
-                        |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
+                                for chunk in chunks do
+                                    if not hasParseErrors && Option.isNone executionError then
+                                        let _, checkResults, _ = session.ParseAndCheckInteraction(chunk)
+                                        diagnostics.AddRange(checkResults.Diagnostics)
 
-                    if hasParseErrors then
-                        stopwatch.Stop()
-                        let (output, errors) = this.GetAndClearOutput()
+                                        hasParseErrors <-
+                                            checkResults.Diagnostics
+                                            |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
 
-                        return
-                            { Output = output
-                              Errors = errors
-                              IsSuccess = false
-                              Value = None
-                              ExecutionTime =
-                                if config.CaptureTimings then
-                                    Some stopwatch.Elapsed
+                                        if not hasParseErrors then
+                                            let! choice, executionDiagnostics =
+                                                Task.Run((fun () -> session.EvalInteractionNonThrowing(chunk)), cancellationToken)
+
+                                            diagnostics.AddRange(executionDiagnostics)
+
+                                            match choice with
+                                            | Choice1Of2 _ -> ()
+                                            | Choice2Of2 ex -> executionError <- Some ex
+
+                                if hasParseErrors then
+                                    stopwatch.Stop()
+                                    let (output, errors) = this.GetAndClearOutput()
+
+                                    return
+                                        { Output = output
+                                          Errors = errors
+                                          IsSuccess = false
+                                          Value = None
+                                          ExecutionTime =
+                                            if config.CaptureTimings then
+                                                Some stopwatch.Elapsed
+                                            else
+                                                None
+                                          Diagnostics = diagnostics.ToArray() |> FsiResultAdapter.ofCompilerDiagnostics }
                                 else
-                                    None
-                              Diagnostics = initialDiagnostics |> FsiResultAdapter.ofCompilerDiagnostics }
-                    else
-                        let! (choice, executionDiagnostics) =
-                            Task.Run((fun () -> session.EvalInteractionNonThrowing(code)), cancellationToken)
+                                    stopwatch.Stop()
+                                    let (output, errors) = this.GetAndClearOutput()
 
-                        stopwatch.Stop()
-                        let (output, errors) = this.GetAndClearOutput()
+                                    let _, postCheckResults, _ = session.ParseAndCheckInteraction("")
+                                    let postDiagnostics = postCheckResults.Diagnostics
 
-                        let _, postCheckResults, _ = session.ParseAndCheckInteraction("")
-                        let postDiagnostics = postCheckResults.Diagnostics
+                                    diagnostics.AddRange(postDiagnostics)
 
-                        let allDiagnostics =
-                            Array.concat [ initialDiagnostics; executionDiagnostics; postDiagnostics ]
-                            |> FsiResultAdapter.ofCompilerDiagnostics
+                                    let allDiagnostics =
+                                        diagnostics.ToArray()
+                                        |> FsiResultAdapter.ofCompilerDiagnostics
 
-                        match choice with
-                        | Choice1Of2 _ ->
-                            let hasExecutionErrors =
-                                postDiagnostics
-                                |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
+                                    match executionError with
+                                    | None ->
+                                        let hasExecutionErrors =
+                                            postDiagnostics
+                                            |> Array.exists (fun d -> d.Severity = FSharpDiagnosticSeverity.Error)
 
-                            return
-                                { Output = output
-                                  Errors = errors
-                                  IsSuccess = String.IsNullOrEmpty(errors) && not hasExecutionErrors
-                                  Value = None
-                                  ExecutionTime =
-                                    if config.CaptureTimings then
-                                        Some stopwatch.Elapsed
-                                    else
-                                        None
-                                  Diagnostics = allDiagnostics }
-                        | Choice2Of2 ex ->
-                            return
-                                { Output = output
-                                  Errors = errors + "" + ex.Message
-                                  IsSuccess = false
-                                  Value = None
-                                  ExecutionTime =
-                                    if config.CaptureTimings then
-                                        Some stopwatch.Elapsed
-                                    else
-                                        None
-                                  Diagnostics = allDiagnostics }
-                with
-                | :? OperationCanceledException as ex ->
-                    stopwatch.Stop()
-                    let (output, errors) = this.GetAndClearOutput()
+                                        return
+                                            { Output = output
+                                              Errors = errors
+                                              IsSuccess = String.IsNullOrEmpty(errors) && not hasExecutionErrors
+                                              Value = None
+                                              ExecutionTime =
+                                                if config.CaptureTimings then
+                                                    Some stopwatch.Elapsed
+                                                else
+                                                    None
+                                              Diagnostics = allDiagnostics }
+                                    | Some ex ->
+                                        return
+                                            { Output = output
+                                              Errors = errors + "" + ex.Message
+                                              IsSuccess = false
+                                              Value = None
+                                              ExecutionTime =
+                                                if config.CaptureTimings then
+                                                    Some stopwatch.Elapsed
+                                                else
+                                                    None
+                                              Diagnostics = allDiagnostics }
+                            with
+                            | :? OperationCanceledException as ex ->
+                                stopwatch.Stop()
+                                let (output, errors) = this.GetAndClearOutput()
 
-                    return
-                        { Output = output
-                          Errors = errors + "" + ex.Message
-                          IsSuccess = false
-                          Value = None
-                          ExecutionTime =
-                            if config.CaptureTimings then
-                                Some stopwatch.Elapsed
-                            else
-                                None
-                          Diagnostics = [||] }
-                | ex ->
-                    stopwatch.Stop()
-                    let (output, errors) = this.GetAndClearOutput()
+                                return
+                                    { Output = output
+                                      Errors = errors + "" + ex.Message
+                                      IsSuccess = false
+                                      Value = None
+                                      ExecutionTime =
+                                        if config.CaptureTimings then
+                                            Some stopwatch.Elapsed
+                                        else
+                                            None
+                                      Diagnostics = [||] }
+                            | ex ->
+                                stopwatch.Stop()
+                                let (output, errors) = this.GetAndClearOutput()
 
-                    return
-                        { Output = output
-                          Errors = errors + "" + ex.Message
-                          IsSuccess = false
-                          Value = None
-                          ExecutionTime =
-                            if config.CaptureTimings then
-                                Some stopwatch.Elapsed
-                            else
-                                None
-                          Diagnostics = [||] }
+                                return
+                                    { Output = output
+                                      Errors = errors + "" + ex.Message
+                                      IsSuccess = false
+                                      Value = None
+                                      ExecutionTime =
+                                        if config.CaptureTimings then
+                                            Some stopwatch.Elapsed
+                                        else
+                                            None
+                                      Diagnostics = [||] }
+                        })
         }
 
     /// Parse FSI result to extract diagnostic information

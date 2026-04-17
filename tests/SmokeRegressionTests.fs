@@ -588,3 +588,22 @@ let ``Smoke FsiService path directives accept Windows style paths`` () =
         Assert.True(addPathResult.IsSuccess, addPathResult.Errors)
     finally
         service.Stop()
+
+[<Fact>]
+let ``Smoke FsiService execute interaction captures printf stdout`` () =
+    task {
+        let service = FsiService(FsiConfig.defaultConfig)
+        service.Start()
+
+        try
+            let! result =
+                service.ExecuteInteractionAsync(
+                    "printfn \"captured-printf-output\"",
+                    Threading.CancellationToken.None
+                )
+
+            Assert.True(result.IsSuccess, result.Errors)
+            Assert.Contains("captured-printf-output", result.Output)
+        finally
+            service.Stop()
+    }

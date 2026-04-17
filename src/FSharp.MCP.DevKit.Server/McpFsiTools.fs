@@ -555,6 +555,57 @@ module McpFsiTools =
               UsePackageTargets = usePackageTargets
               Metadata = metadata }
 
+        let isUserExecutionOperation operationKind =
+            match operationKind with
+            | ExecuteCode
+            | EvaluateExpression
+            | LoadScript
+            | ReferenceAssembly
+            | ReferenceNuget
+            | AddSearchPath -> true
+            | GetState
+            | ResetSession
+            | RestartHost
+            | ResultQuery -> false
+
+        let publishSessionOutputCore
+            (route: ExecutionRoute)
+            (streamKind: string)
+            (payload: string)
+            (executionId: string option)
+            (isReplay: bool)
+            =
+            let eventRecord, subscribers =
+                outputSubscriberBroker.Publish(
+                    { SessionId = route.SessionId
+                      ExecutionId = executionId
+                      SequenceNo = 0L
+                      StreamKind = streamKind
+                      TimestampUtc = DateTime.UtcNow
+                      Payload = payload
+                      IsReplay = isReplay }
+                )
+
+            sessionOutputLiveStore.Append(eventRecord)
+            eventRecord, subscribers
+
+        let publishExecutionResultOutput (record: FsiExecutionRecord) =
+            if isUserExecutionOperation record.OperationKind then
+                let route: ExecutionRoute =
+                    { AgentId = record.AgentId
+                      HostId = record.HostId
+                      SessionId = record.SessionId }
+
+                if not (String.IsNullOrWhiteSpace record.Result.Output) then
+                    publishSessionOutputCore route "stdout" record.Result.Output (Some record.ResultId) false
+                    |> ignore
+
+                if not (String.IsNullOrWhiteSpace record.Result.Errors) then
+                    publishSessionOutputCore route "stderr" record.Result.Errors (Some record.ResultId) false
+                    |> ignore
+
+            record
+
         let startBackgroundSweepTimer () =
             match sessionLivenessBackgroundSweepInterval with
             | Some interval ->
@@ -585,6 +636,7 @@ module McpFsiTools =
                 asyncJobRegistry.MarkRunning(request.AsyncId, DateTime.UtcNow)
 
                 let! record = executionRouter.RouteAndExecute(request.Request)
+                let record = publishExecutionResultOutput record
                 asyncResultCache.[request.AsyncId] <- Some record.Result
 
                 if record.Result.IsSuccess then
@@ -836,19 +888,7 @@ module McpFsiTools =
             ) =
             let route = resolveRoute requestedRoute
 
-            let eventRecord, subscribers =
-                outputSubscriberBroker.Publish(
-                    { SessionId = route.SessionId
-                      ExecutionId = executionId
-                      SequenceNo = 0L
-                      StreamKind = streamKind
-                      TimestampUtc = DateTime.UtcNow
-                      Payload = payload
-                      IsReplay = defaultArg isReplay false }
-                )
-
-            sessionOutputLiveStore.Append(eventRecord)
-            eventRecord, subscribers
+            publishSessionOutputCore route streamKind payload executionId (defaultArg isReplay false)
 
         member _.SealSessionOutputArchive(?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
@@ -956,7 +996,8 @@ module McpFsiTools =
                     resultRegistry.Put record
                     return record
                 | _ ->
-                    return! executionRouter.RouteAndExecute(request)
+                    let! record = executionRouter.RouteAndExecute(request)
+                    return publishExecutionResultOutput record
             }
 
         member _.GetSessionState(?requestedRoute: ExecutionRoute) : Task<SessionRecord> =

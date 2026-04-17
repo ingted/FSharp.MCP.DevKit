@@ -112,6 +112,17 @@ Behavior:
 
 This is the shared execution fabric entry point used by `PulseTrade.Mcp.WinAgent.Server` tool `agent.syncToolResultToDevKit`.
 
+## Execution And Output Fabric Notes
+
+This fork persists result and output data so multiple human and agent clients can inspect the same execution fabric.
+
+- `FsiExecutionRecord` JSONL files are stored under `misc/execution-store/result-index/{agentId}.jsonl` by default.
+- Session output events are stored under `misc/execution-store/output/live/{sessionId}.jsonl` and can later be sealed into archive paths.
+- `FsiMcpService.ExecuteOperation` and async queue execution publish non-empty `FsiResult.Output` as `stdout` and non-empty `FsiResult.Errors` as `stderr` session output events.
+- In-proc `FsiService.ExecuteInteractionAsync` captures `Console.Out` / `Console.Error`, so evaluated code such as `printfn` is visible through `FsiResult.Output` and the session output stream.
+- Because `Console.Out` and `Console.Error` are process-wide, in-proc console capture is serialized with a process-wide gate. Remote out-of-proc FSI hosts do not share that in-proc limitation.
+- `JsonLineResultRegistry` serializes read/write access per result-index file across registry instances to avoid concurrent writer/reader file-lock failures.
+
 ## Recommended Execution Pattern
 
 For short setup and quick probes:
