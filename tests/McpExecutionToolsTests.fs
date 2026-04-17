@@ -63,22 +63,32 @@ type private ScheduledExecutionBatchDto =
     { ProcessedCount: int
       Items: ScheduledExecutionProcessDto list }
 
-let private isolatedSchedulerService () =
+let private isolatedService () =
     let root =
         Path.Combine(
             Path.GetTempPath(),
-            "fsharp-devkit-scheduler-tests",
+            "fsharp-devkit-mcp-execution-tools-tests",
             Guid.NewGuid().ToString("N")
         )
 
     Directory.CreateDirectory(root) |> ignore
 
+    let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+    let sessionOutputLiveStore = JsonLineSessionOutputLiveStore(root) :> ISessionOutputLiveStore
+    let outputStore = SessionOutputStore(outputSubscriberBroker, sessionOutputLiveStore) :> IOutputStore
+    let sessionOutputArchiveStore = JsonLineSessionOutputArchiveStore(root) :> ISessionOutputArchiveStore
+    let executionStore = JsonLineResultRegistry(root) :> IExecutionStore
     let queue = ScheduledExecutionQueue(root)
 
     let service =
         new FsiMcpService(
             NullLogger<FsiMcpService>.Instance,
             enableRemoteClient = false,
+            outputSubscriberBroker = outputSubscriberBroker,
+            sessionOutputLiveStore = sessionOutputLiveStore,
+            outputStore = outputStore,
+            sessionOutputArchiveStore = sessionOutputArchiveStore,
+            executionStore = executionStore,
             scheduledExecutionQueue = queue
         )
 
@@ -97,8 +107,8 @@ let private isolatedSchedulerService () =
 [<Fact>]
 let ``McpExecutionTools browser-aware routed execution records schedule target metadata`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedService()
+        use _cleanup = cleanup
 
         let! _ =
             service.ExecuteOperation(
@@ -149,8 +159,8 @@ let ``McpExecutionTools browser-aware routed execution records schedule target m
 [<Fact>]
 let ``McpExecutionTools execute evaluate reset and async on explicit default route work`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedService()
+        use _cleanup = cleanup
         let tempPath = Path.GetTempPath()
 
         let! _ = service.ExecuteOperation(FSharp.MCP.DevKit.Core.ExecuteCode, "let routedBootstrap = 40", timeout = TimeSpan.FromSeconds 30.0)
@@ -266,7 +276,7 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
 [<Fact>]
 let ``McpExecutionTools schedule routed FSI execution processes due item into result fabric`` () =
     task {
-        let service, cleanup = isolatedSchedulerService()
+        let service, cleanup = isolatedService()
         use _cleanup = cleanup
 
         let! _ =
@@ -340,7 +350,7 @@ let ``McpExecutionTools schedule routed FSI execution processes due item into re
 [<Fact>]
 let ``McpExecutionTools scheduled browser execution preserves target metadata`` () =
     task {
-        let service, cleanup = isolatedSchedulerService()
+        let service, cleanup = isolatedService()
         use _cleanup = cleanup
 
         let! _ =
@@ -396,7 +406,7 @@ let ``McpExecutionTools scheduled browser execution preserves target metadata`` 
 [<Fact>]
 let ``McpExecutionTools scheduled execution supports cancel and failed requeue`` () =
     task {
-        let service, cleanup = isolatedSchedulerService()
+        let service, cleanup = isolatedService()
         use _cleanup = cleanup
 
         let! _ =
@@ -463,7 +473,7 @@ let ``McpExecutionTools scheduled execution supports cancel and failed requeue``
 [<Fact>]
 let ``McpExecutionTools scheduled execution requeue with backoff computes next due`` () =
     task {
-        let service, cleanup = isolatedSchedulerService()
+        let service, cleanup = isolatedService()
         use _cleanup = cleanup
 
         let! _ =
@@ -550,8 +560,8 @@ let ``ScheduledExecutionQueue persists latest item state for reload`` () =
 [<Fact>]
 let ``get_async_status can observe routed async completion without resources`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedService()
+        use _cleanup = cleanup
 
         let! _ =
             service.ExecuteOperation(
@@ -592,8 +602,8 @@ let ``get_async_status can observe routed async completion without resources`` (
 [<Fact>]
 let ``McpExecutionTools returns actionable error when session is already faulted`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
-        use _cleanup = service :> IDisposable
+        let service, cleanup = isolatedService()
+        use _cleanup = cleanup
 
         let! failedRecord =
             service.ExecuteOperation(
