@@ -48,10 +48,22 @@ let private waitUntil (timeoutMs: int) (predicate: unit -> bool) =
         return done'
     }
 
+let private createIsolatedService () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+
+    new FsiMcpService(
+        NullLogger<FsiMcpService>.Instance,
+        enableRemoteClient = false,
+        sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+        sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+        executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
+    )
+
 [<Fact>]
 let ``FsiMcpService executes through default routed in-proc path and stores results`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let service = createIsolatedService ()
         use _cleanup = service :> IDisposable
 
         let! _ = service.ExecuteOperation(ExecuteCode, "let serviceValue = 7", timeout = TimeSpan.FromSeconds 30.0)
@@ -69,17 +81,7 @@ let ``FsiMcpService executes through default routed in-proc path and stores resu
 [<Fact>]
 let ``FsiMcpService execute operation auto publishes stdout to session output`` () =
     task {
-        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
-        Directory.CreateDirectory(tempRoot) |> ignore
-
-        let service =
-            new FsiMcpService(
-                NullLogger<FsiMcpService>.Instance,
-                enableRemoteClient = false,
-                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
-                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
-            )
-
+        let service = createIsolatedService ()
         use _cleanup = service :> IDisposable
 
         let _ = service.SubscribeSessionOutput("ui-reader")
@@ -105,9 +107,122 @@ let ``FsiMcpService execute operation auto publishes stdout to session output`` 
     }
 
 [<Fact>]
+let ``FsiMcpService net10 remote execution publishes stdout to session output`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+
+        let hostSpec =
+            { ExecutablePath = "dotnet"
+              Arguments = [ "fsi-host.dll" ]
+              WorkingDirectory = Some "/srv/fsi"
+              Role = Some "procnode"
+              ProbeMessage = Some "PING"
+              ProbeCron = None
+              ProbeIntervalMs = Some 1000 }
+
+        let procSnapshot procId spec =
+            { ProcId = procId
+              Status = "running"
+              ProcessId = Some 9911
+              FsiSupervisorPath = Some "akka://remote-output/user/fsi/supervisor"
+              NodeAddress = Some "akka://remote-output"
+              LastProbeUtc = Some DateTime.UtcNow
+              LastProbeOk = Some true
+              ProbeFailures = 0
+              Spec = spec
+              LastError = None }
+
+        let procClient =
+            FakeProcSupervisorClient(
+                (fun (procId, spec) -> procSnapshot procId (Some spec)),
+                (fun procId -> Some(procSnapshot procId None))
+            )
+
+        let fsiClient =
+            { new IFsiSupervisorClient with
+                member _.Execute(_host: HostRecord, request: FsiSupervisorExecRequest) =
+                    Task.FromResult(
+                        { SessionId = request.SessionId
+                          RawErrorType = None
+                          Result =
+                            { Output = "remote stdout line"
+                              Errors = ""
+                              IsSuccess = true
+                              ExecutionTime = Some(TimeSpan.FromMilliseconds 7.0)
+                              Diagnostics = [||]
+                              Value = Some "remote-value" } }
+                    )
+
+                member _.GetSessionInfo(_host: HostRecord, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Status = "ready"
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = Some DateTime.UtcNow }
+                    )
+
+                member _.ListSessions(_) = Task.FromResult([])
+
+                member _.EnsureSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = false
+                          Status = "created" }
+                    )
+
+                member _.ResetSession(_, sessionId: string) =
+                    Task.FromResult(
+                        { SessionId = sessionId
+                          Existed = true
+                          Status = "reset" }
+                    ) }
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let _ = service.RegisterAgent("agent-remote-output", "Agent Remote Output")
+        let! _ = service.CreateHost("agent-remote-output", Net10Host, hostSpec, requestedHostId = "host-remote-output")
+        let! _ = service.CreateSession("agent-remote-output", "host-remote-output", sessionId = "session-remote-output")
+
+        let route =
+            { AgentId = "agent-remote-output"
+              HostId = "host-remote-output"
+              SessionId = "session-remote-output" }
+
+        let _ = service.SubscribeSessionOutput("remote-reader", requestedRoute = route)
+        let! record = service.ExecuteOperation(ExecuteCode, "printfn \"remote stdout line\"", timeout = TimeSpan.FromSeconds 30.0, requestedRoute = route)
+        let events = service.ListSessionOutput(requestedRoute = route)
+        let outputEvent = events |> List.find (fun eventRecord -> eventRecord.ExecutionId = Some record.ResultId)
+
+        Assert.Equal(Net10Remote, record.BackendKind)
+        Assert.Equal("host-remote-output", record.HostId)
+        Assert.Equal("session-remote-output", record.SessionId)
+        Assert.Contains("remote stdout line", record.Result.Output)
+        Assert.Equal("session-remote-output", outputEvent.SessionId)
+        Assert.Equal("stdout", outputEvent.StreamKind)
+        Assert.Equal("remote stdout line", outputEvent.Payload)
+        Assert.Equal(Some record.ResultId, outputEvent.ExecutionId)
+    }
+
+[<Fact>]
 let ``FsiMcpService async queue completes and exposes status`` () =
     task {
-        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        let service = createIsolatedService ()
         use _cleanup = service :> IDisposable
 
         let asyncId = service.EnqueueExecuteCode("let asyncValue = 21", TimeSpan.FromSeconds 30.0)
@@ -128,17 +243,7 @@ let ``FsiMcpService async queue completes and exposes status`` () =
 [<Fact>]
 let ``FsiMcpService async queue auto publishes stdout to session output`` () =
     task {
-        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))
-        Directory.CreateDirectory(tempRoot) |> ignore
-
-        let service =
-            new FsiMcpService(
-                NullLogger<FsiMcpService>.Instance,
-                enableRemoteClient = false,
-                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
-                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore)
-            )
-
+        let service = createIsolatedService ()
         use _cleanup = service :> IDisposable
 
         let asyncId =
@@ -193,7 +298,7 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
 
 [<Fact>]
 let ``FsiMcpService output subscriber broker tracks subscribers on default route`` () =
-    let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    let service = createIsolatedService ()
     use _cleanup = service :> IDisposable
 
     let subscription = service.SubscribeSessionOutput("ui-reader", fromSequenceNo = 3L, includeHistory = true)
@@ -207,7 +312,7 @@ let ``FsiMcpService output subscriber broker tracks subscribers on default route
 
 [<Fact>]
 let ``FsiMcpService output subscriber broker publishes monotonic sequence and supports unsubscribe`` () =
-    let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+    let service = createIsolatedService ()
     use _cleanup = service :> IDisposable
 
     let _ = service.SubscribeSessionOutput("ui-reader")
@@ -321,7 +426,8 @@ let ``FsiMcpService reset seals session output into archive before lifecycle res
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = archiveStore
+                sessionOutputArchiveStore = archiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
@@ -387,7 +493,8 @@ let ``FsiMcpService restart host seals current session output before lifecycle r
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = archiveStore
+                sessionOutputArchiveStore = archiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
@@ -419,7 +526,8 @@ let ``FsiMcpService reset marks seal pending and allows recovery when archive se
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = flakyArchiveStore
+                sessionOutputArchiveStore = flakyArchiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
