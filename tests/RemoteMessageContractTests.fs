@@ -151,6 +151,38 @@ let ``SubscribeSessionOutput contract attaches subscriber and returns replay eve
     Assert.Single(subscribers) |> ignore
 
 [<Fact>]
+let ``SubscribeSessionOutput without history reports next live sequence`` () =
+    let outputStore =
+        SessionOutputStore(
+            InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker,
+            JsonLineSessionOutputLiveStore(Path.Combine(Path.GetTempPath(), "PulseTrade.WBS72", Guid.NewGuid().ToString("N")))
+            :> ISessionOutputLiveStore)
+        :> IOutputStore
+
+    let firstEvent, _ =
+        outputStore.Publish(
+            { SessionId = "session-live"
+              ExecutionId = Some "exec-live"
+              SequenceNo = 0L
+              StreamKind = "stdout"
+              TimestampUtc = DateTime.SpecifyKind(DateTime.Parse("2026-04-18T06:24:00Z"), DateTimeKind.Utc)
+              Payload = "already-there"
+              IsReplay = false })
+
+    let result =
+        OutputSubscriptionContracts.subscribe
+            outputStore
+            (DateTime.SpecifyKind(DateTime.Parse("2026-04-18T06:25:00Z"), DateTimeKind.Utc))
+            { session = "session-live"
+              subscriberId = "remote-transport"
+              fromSequenceNo = Some 0L
+              includeHistory = Some false }
+
+    Assert.True(result.Subscription.accepted)
+    Assert.Empty(result.ReplayEvents)
+    Assert.Equal(Some(firstEvent.SequenceNo + 1L), result.Subscription.nextSequenceNo)
+
+[<Fact>]
 let ``UnsubscribeSessionOutput contract removes subscriber and reports missing subscriber`` () =
     let outputStore =
         SessionOutputStore(InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker)

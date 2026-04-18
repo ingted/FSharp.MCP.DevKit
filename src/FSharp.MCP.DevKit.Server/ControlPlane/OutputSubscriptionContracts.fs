@@ -53,13 +53,7 @@ module OutputSubscriptionContracts =
           nextSequenceNo = None
           message = Some message }
 
-    let acceptedSubscription (record: OutputSubscriberRecord) (replayEvents: SessionOutputEvent list) =
-        let nextSequenceNo =
-            replayEvents
-            |> List.tryLast
-            |> Option.map (fun eventRecord -> eventRecord.sequenceNo + 1L)
-            |> Option.defaultValue record.FromSequenceNo
-
+    let acceptedSubscription (record: OutputSubscriberRecord) (nextSequenceNo: int64) =
         { session = record.SessionId
           subscriberId = record.SubscriberId
           accepted = true
@@ -74,14 +68,22 @@ module OutputSubscriptionContracts =
         | Ok record ->
             let subscribed = outputStore.Subscribe record
 
+            let existingEvents =
+                outputStore.ListEvents(subscribed.SessionId, afterSequenceNo = subscribed.FromSequenceNo)
+
+            let nextSequenceNo =
+                existingEvents
+                |> List.tryLast
+                |> Option.map (fun eventRecord -> eventRecord.SequenceNo + 1L)
+                |> Option.defaultValue subscribed.FromSequenceNo
+
             let replayEvents =
                 if subscribed.IncludeHistory then
-                    outputStore.ListEvents(subscribed.SessionId, afterSequenceNo = subscribed.FromSequenceNo)
-                    |> List.map (toContractEvent (Some true))
+                    existingEvents |> List.map (toContractEvent (Some true))
                 else
                     []
 
-            { Subscription = acceptedSubscription subscribed replayEvents
+            { Subscription = acceptedSubscription subscribed nextSequenceNo
               ReplayEvents = replayEvents }
 
     let unsubscribe (outputStore: IOutputStore) (request: UnsubscribeSessionOutput) =
