@@ -72,14 +72,17 @@ module WinAgentEnvelopeImport =
               HostId = hostId
               SessionId = sessionId }
 
+        let addIfMissing key value (metadata: Map<string, string>) =
+            if metadata.ContainsKey key then metadata else metadata.Add(key, value)
+
         envelope.Metadata
         |> Map.add "winagent.schemaVersion" (string envelope.SchemaVersion)
         |> Map.add "winagent.executionPlane" envelope.ExecutionPlane
         |> Map.add "winagent.executionId" envelope.ExecutionId
         |> Map.add "winagent.toolName" envelope.ToolName
         |> Map.add "winagent.routeName" envelope.RouteName
-        |> Map.add "execution.plane" envelope.ExecutionPlane
-        |> Map.add "execution.source" "PulseTrade.Mcp.WinAgent"
+        |> addIfMissing "execution.plane" envelope.ExecutionPlane
+        |> addIfMissing "execution.source" "PulseTrade.Mcp.WinAgent"
         |> PrincipalAttribution.normalize route
 
     let toExecutionRecord agentId hostId sessionId (envelope: WinAgentSharedExecutionEnvelope) =

@@ -87,7 +87,17 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
                   Status = "reset" }
             )
 
-let private createWinAgentEnvelopeJson executionId requestId =
+let private createWinAgentEnvelopeJsonWithMetadata executionId requestId (extraMetadata: Map<string, string>) =
+    let baseMetadata: Map<string, string> =
+        Map.ofList
+            [ "execution.plane", "winagent"
+              "execution.route", "shared-fsi-host"
+              "browser.id", "sharpbrowser" ]
+
+    let metadata =
+        extraMetadata
+        |> Map.fold (fun state key value -> Map.add key value state) baseMetadata
+
     let envelope: WinAgentEnvelopeImport.WinAgentSharedExecutionEnvelope =
         { SchemaVersion = 1
           ExecutionPlane = "winagent"
@@ -101,11 +111,7 @@ let private createWinAgentEnvelopeJson executionId requestId =
           Output = "planned companion"
           Error = None
           ExceptionType = None
-          Metadata =
-            Map.ofList
-                [ "execution.plane", "winagent"
-                  "execution.route", "shared-fsi-host"
-                  "browser.id", "sharpbrowser" ]
+          Metadata = metadata
           OutputEvents =
             [ ({ SequenceNo = 1L
                  StreamKind = "stdout"
@@ -114,6 +120,9 @@ let private createWinAgentEnvelopeJson executionId requestId =
                  TimestampUtc = DateTimeOffset.Parse("2026-04-16T10:00:01Z") }: WinAgentEnvelopeImport.WinAgentOutputEventEnvelope) ] }
 
     JsonSerializer.Serialize(envelope, WinAgentEnvelopeImport.jsonOptions)
+
+let private createWinAgentEnvelopeJson executionId requestId =
+    createWinAgentEnvelopeJsonWithMetadata executionId requestId Map.empty
 
 let private createIsolatedResultService () =
     let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
@@ -384,12 +393,41 @@ let ``McpResultTools import WinAgent execution envelope into result and output f
         Assert.Equal("winagent-host-single", imported.Metadata[PrincipalAttribution.PrincipalHostId])
         Assert.Equal("winagent-session-single", imported.Metadata[PrincipalAttribution.PrincipalSessionId])
         Assert.Equal("winagent", imported.Metadata["winagent.executionPlane"])
+        Assert.Equal("PulseTrade.Mcp.WinAgent", imported.Metadata["execution.source"])
         Assert.Equal("sharpbrowser", imported.Metadata["browser.id"])
         Assert.True(imported.Result.IsSuccess)
         Assert.Contains(listed, fun record -> record.ResultId = "winagent-result-1")
         Assert.Single(outputEvents) |> ignore
         Assert.Equal("planned companion", outputEvents[0].Payload)
         Assert.Equal(Some "winagent-result-1", outputEvents[0].ExecutionId)
+    }
+
+[<Fact>]
+let ``McpResultTools import envelope preserves explicit execution source metadata`` () =
+    task {
+        let service = createIsolatedResultService ()
+        use _cleanup = service :> IDisposable
+
+        let envelopeJson =
+            createWinAgentEnvelopeJsonWithMetadata
+                "mgmt2-direct-result-1"
+                "mgmt2-direct-request-1"
+                (Map.ofList [ "execution.source", "Mgmt2.DirectProcSupervisor" ])
+
+        let importedJson =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                "PulseTrade.Management2",
+                "procnode-01",
+                "s2",
+                envelopeJson
+            )
+
+        let imported = FSharpJson.deserialize<FsiExecutionRecord> importedJson
+
+        Assert.Equal("Mgmt2.DirectProcSupervisor", imported.Metadata["execution.source"])
+        Assert.Equal("winagent", imported.Metadata["execution.plane"])
+        Assert.Equal("PulseTrade.Management2", imported.Metadata[PrincipalAttribution.PrincipalId])
     }
 
 [<Fact>]
