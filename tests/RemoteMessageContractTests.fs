@@ -112,7 +112,8 @@ let ``BrowserInventorySnapshotDto carries browser companion and tab summaries`` 
                         { AgentId = Some "winagent"
                           HostId = Some "desk-01-winagent"
                           SessionId = "desk-01-browser-01-browser"
-                          ExecutionPlane = Some "winagent-shared-fsi-host" }
+                          ExecutionPlane = Some "winagent-shared-fsi-host"
+                          BrowserActorPath = Some "akka.tcp://proc-system@desk-01:11111/user/sharpbrowser/browser-01" }
                 Tabs =
                     [ { TabId = "tab-active"
                         Title = Some "Market News"
@@ -130,6 +131,7 @@ let ``BrowserInventorySnapshotDto carries browser companion and tab summaries`` 
     Assert.Equal("browser-01", browser.BrowserId)
     Assert.Equal(Some "desk-01-winagent", companion.HostId)
     Assert.Equal("desk-01-browser-01-browser", companion.SessionId)
+    Assert.Equal(Some "akka.tcp://proc-system@desk-01:11111/user/sharpbrowser/browser-01", companion.BrowserActorPath)
     Assert.Equal(Some "https://example.test/news", tab.Url)
     Assert.True(tab.IsActive)
     Assert.Contains("browser-companion", browser.Tags)

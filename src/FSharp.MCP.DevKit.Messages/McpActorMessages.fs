@@ -63,7 +63,8 @@ type BrowserCompanionSessionDto =
     { AgentId: string option
       HostId: string option
       SessionId: string
-      ExecutionPlane: string option }
+      ExecutionPlane: string option
+      BrowserActorPath: string option }
 
 type BrowserInventoryDto =
     { BrowserId: string

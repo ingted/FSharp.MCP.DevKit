@@ -1016,7 +1016,8 @@ let ``Browser inventory tools and resources register list get and remove records
                 { AgentId = Some "agent-sb"
                   HostId = Some "host-sb-01"
                   SessionId = "session-sb-companion"
-                  ExecutionPlane = Some "proc-supervisor" }
+                  ExecutionPlane = Some "proc-supervisor"
+                  BrowserActorPath = Some "akka.tcp://proc-system@host-sb-01:11111/user/sharpbrowser/sb-remote-01" }
           Tabs =
             [ { TabId = "tab-news"
                 Title = Some "Market News"
@@ -1038,6 +1039,10 @@ let ``Browser inventory tools and resources register list get and remove records
     let snapshot = FSharpJson.deserialize<BrowserInventorySnapshotDto> listJson
     Assert.Single(snapshot.Items) |> ignore
     Assert.Equal("session-sb-companion", snapshot.Items.Head.CompanionSession.Value.SessionId)
+    Assert.Equal(
+        Some "akka.tcp://proc-system@host-sb-01:11111/user/sharpbrowser/sb-remote-01",
+        snapshot.Items.Head.CompanionSession.Value.BrowserActorPath
+    )
 
     let resources = ControlPlaneResources(service)
     let resourceSnapshot = FSharpJson.deserialize<BrowserInventorySnapshotDto>(resources.BrowserInventory())
