@@ -41,6 +41,29 @@ let ``FsiRemoteResult carries value and raw error type`` () =
     Assert.Equal(Some "RemoteExecutionError", result.RawErrorType)
 
 [<Fact>]
+let ``SerializedResultEnvelope diagnostic fallback is bound for remote contract serialization`` () =
+    let envelope =
+        InvalidOperationException("serializer rejected remote diagnostic value")
+        |> ResultSerialization.failureEnvelope "remote-contract-test" (box "diagnostic-value")
+        |> ResultSerialization.withExecutionContext (Some "exec-diagnostic") (Some "session-diagnostic")
+
+    let config =
+        ContractSerialization.configForAssemblies [ typeof<IMessage>.Assembly ]
+
+    let envelopeTypeName = typeof<SerializedResultEnvelope>.AssemblyQualifiedName
+
+    Assert.False(String.IsNullOrWhiteSpace envelopeTypeName)
+    Assert.Contains(envelopeTypeName, config.ToString())
+    Assert.IsAssignableFrom<IMessage>(box envelope) |> ignore
+    Assert.Equal(ResultSerialization.FallbackSerializer, envelope.serializer)
+    Assert.Equal("text/plain; charset=utf-8", envelope.contentType)
+    Assert.True(envelope.payloadBase64.IsNone)
+    Assert.Equal(Some "exec-diagnostic", envelope.executionId)
+    Assert.Equal(Some "session-diagnostic", envelope.session)
+    Assert.Contains("serializer=remote-contract-test", envelope.diagnostic.Value)
+    Assert.Contains("serializer rejected remote diagnostic value", envelope.serializationError.Value)
+
+[<Fact>]
 let ``FsiRemoteCommandResponse carries host and session ids`` () =
     let response =
         { RequestId = "req-2"
