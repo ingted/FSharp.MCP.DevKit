@@ -107,6 +107,32 @@ let ``FsiMcpService execute operation auto publishes stdout to session output`` 
     }
 
 [<Fact>]
+let ``FsiMcpService failed execute operation auto publishes stderr to session output`` () =
+    task {
+        let service = createIsolatedService ()
+        use _cleanup = service :> IDisposable
+
+        let! record =
+            service.ExecuteOperation(
+                ExecuteCode,
+                "let broken =",
+                timeout = TimeSpan.FromSeconds 30.0
+            )
+
+        let events = service.ListSessionOutput()
+        let errorEvent =
+            events
+            |> List.find (fun eventRecord ->
+                eventRecord.ExecutionId = Some record.ResultId
+                && eventRecord.StreamKind = "stderr"
+                && not (String.IsNullOrWhiteSpace eventRecord.Payload))
+
+        Assert.False(record.Result.IsSuccess)
+        Assert.Equal("default-session", errorEvent.SessionId)
+        Assert.Equal(Some record.ResultId, errorEvent.ExecutionId)
+    }
+
+[<Fact>]
 let ``FsiMcpService net10 remote execution publishes stdout to session output`` () =
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))

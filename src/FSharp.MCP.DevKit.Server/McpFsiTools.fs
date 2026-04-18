@@ -612,9 +612,22 @@ module McpFsiTools =
                     publishSessionOutputCore route "stdout" record.Result.Output (Some record.ResultId) false
                     |> ignore
 
-                if not (String.IsNullOrWhiteSpace record.Result.Errors) then
-                    publishSessionOutputCore route "stderr" record.Result.Errors (Some record.ResultId) false
+                let errorPayload =
+                    if not (String.IsNullOrWhiteSpace record.Result.Errors) then
+                        Some record.Result.Errors
+                    elif not record.Result.IsSuccess && record.Result.Diagnostics.Length > 0 then
+                        record.Result.Diagnostics
+                        |> Array.map (fun diagnostic -> $"{diagnostic.Severity} at line {diagnostic.StartLine}: {diagnostic.Message}")
+                        |> String.concat Environment.NewLine
+                        |> Some
+                    else
+                        None
+
+                match errorPayload with
+                | Some payload when not (String.IsNullOrWhiteSpace payload) ->
+                    publishSessionOutputCore route "stderr" payload (Some record.ResultId) false
                     |> ignore
+                | _ -> ()
 
             record
 
