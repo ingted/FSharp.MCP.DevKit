@@ -36,9 +36,12 @@ G:\PulseTrade.fs\Libs\FSharp.MCP.DevKit\tmp\agent_mcp_scratch.fsx
 
 暫時 workaround：
 
-- 不要使用 `insert_code`。
-- 新增程式碼改用安全的 patch 工具，或先用 `replace_text_range` 針對明確範圍替換。
-- 若一定要測，僅能在 scratch file 上測。
+修復狀態：
+
+- 2026-04-18 已修復。`insert_code` 現在只允許插入既有 F# 檔案，不再把不存在檔案默默當空檔。
+- 寫入前加入原文保留 sanity guard，若輸出比原文短或找不到原始 anchor 會拒絕寫入。
+- `preview_code_injection` 與 `insert_code` 已共用同一個 insertion planning function，避免 preview/actual 邏輯分叉。
+- 已補 regression tests：既有檔案插入、preview 保留原文、缺檔拒絕建立。
 
 ## P1：`preview_code_injection` 對存在檔案回報 0 lines
 
@@ -63,8 +66,11 @@ preview 無法作為 `insert_code` 的安全檢查，而且與讀檔工具的 li
 
 暫時 workaround：
 
-- 不要用 `preview_code_injection` 判斷可插入位置。
-- 用 `count_lines` + `get_lines` 取代。
+修復狀態：
+
+- 2026-04-18 已修復。`preview_code_injection` 現在使用與 `insert_code` 相同的讀檔與插入規劃邏輯。
+- 存在檔案不再回報 `File has 0 lines`。
+- regression test 已驗證 preview 不會修改原檔，且輸出包含原文與插入內容。
 
 ## P1：`analyze_code_structure` 小檔案 timeout
 
@@ -88,8 +94,10 @@ Agent 不能依賴它做快速結構分析。
 
 暫時 workaround：
 
-- 用 `get_all_symbols`。
-- 或用 `get_symbol_at_position`、`get_symbol_signature_at_position`、`what_is_at_position` 做局部查詢。
+修復狀態：
+
+- 2026-04-18 已修復。`analyze_code_structure` 已改走 static FSharpChecker / symbol detection 路徑，不再依賴 FSI interactive `PARSE`。
+- regression test 已覆蓋小型 `.fsx`，要求快速回傳 file summary、symbol count，且不得包含 timeout。
 
 ## P1：`parse_and_check_f_sharp_code` 與 `parse_source_to_ast` timeout
 
@@ -117,8 +125,11 @@ Parse failed: Timeout after 30.00 seconds
 
 暫時 workaround：
 
-- 靜態資訊先用 symbol tools。
-- 真正型別驗證可暫時用 `execute_f_sharp_code` 或 `execute_f_sharp_code_routed` 讓 FSI 編譯。
+修復狀態：
+
+- 2026-04-18 已修復。`parse_and_check_f_sharp_code` 與 `parse_source_to_ast` 已改走 static FSharpChecker / symbol detection 路徑。
+- `parse_and_check_f_sharp_code` 仍保留 timeoutSeconds 參數，但不再卡住 FSI session。
+- regression tests 已覆蓋合法小型 source、非法 source diagnostics、`parse_source_to_ast` symbol summary，且都不得包含 timeout。
 
 ## P1：`ensure_fsi_route` generic error
 

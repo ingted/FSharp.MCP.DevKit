@@ -1,6 +1,8 @@
 module McpSurfaceTests
 
 open System
+open System.IO
+open System.Text
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
@@ -20,6 +22,25 @@ let private waitForCompletion (service: FsiMcpService) asyncId =
         return status
     }
 
+let private createTempFsx (content: string) =
+    let dir =
+        Path.Combine(Path.GetTempPath(), "FSharp.MCP.DevKit.McpSurfaceTests", Guid.NewGuid().ToString("N"))
+
+    Directory.CreateDirectory(dir) |> ignore
+    let filePath = Path.Combine(dir, "scratch.fsx")
+    File.WriteAllText(filePath, content, Encoding.UTF8)
+
+    let cleanup =
+        { new IDisposable with
+            member _.Dispose() =
+                if Directory.Exists(dir) then
+                    try
+                        Directory.Delete(dir, true)
+                    with _ ->
+                        () }
+
+    filePath, cleanup
+
 [<Fact>]
 let ``FSharpInteractiveTools execute evaluate add-path and state use routed service`` () =
     task {
@@ -28,12 +49,26 @@ let ``FSharpInteractiveTools execute evaluate add-path and state use routed serv
 
         let! execResult = FSharpInteractiveTools.ExecuteFSharpCode(service, "let toolValue = 31", 30)
         let! evalResult = FSharpInteractiveTools.EvaluateFSharpExpression(service, "toolValue", 30)
-        let! addPathResult = FSharpInteractiveTools.AddSearchPath(service, "/tmp", 30)
+        let searchPath =
+            Path.Combine(Path.GetTempPath(), "FSharp.MCP.DevKit.McpSurfaceTests", Guid.NewGuid().ToString("N"))
+
+        Directory.CreateDirectory(searchPath) |> ignore
+
+        use _searchPathCleanup =
+            { new IDisposable with
+                member _.Dispose() =
+                    if Directory.Exists(searchPath) then
+                        try
+                            Directory.Delete(searchPath, true)
+                        with _ ->
+                            () }
+
+        let! addPathResult = FSharpInteractiveTools.AddSearchPath(service, searchPath, 30)
         let! stateResult = FSharpInteractiveTools.GetFSIState(service, 30)
 
         Assert.Contains("toolValue", execResult)
         Assert.Equal("31", evalResult)
-        Assert.Equal("Search path added successfully: /tmp", addPathResult)
+        Assert.Equal(sprintf "Search path added successfully: %s" searchPath, addPathResult)
         Assert.Contains("FSI Session State", stateResult)
     }
 
@@ -93,4 +128,143 @@ let ``get_async_status tool matches async resource status`` () =
         Assert.Equal(resourceStatus.AgentId, toolStatus.AgentId)
         Assert.Equal(resourceStatus.HostId, toolStatus.HostId)
         Assert.Equal(resourceStatus.SessionId, toolStatus.SessionId)
+    }
+
+[<Fact>]
+let ``ParseAndCheckFSharpCode uses static analysis without timing out on small valid source`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let source =
+            "module Scratch\n\nlet add x y = x + y\nlet answer = add 1 2"
+
+        let! result = FSharpInteractiveTools.ParseAndCheckFSharpCode(service, source, 5)
+
+        Assert.Contains("Static parse/check completed", result)
+        Assert.Contains("Success: true", result)
+        Assert.DoesNotContain("Timeout", result)
+    }
+
+[<Fact>]
+let ``ParseAndCheckFSharpCode reports diagnostics for invalid source without timing out`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let! result = FSharpInteractiveTools.ParseAndCheckFSharpCode(service, "let broken =", 5)
+
+        Assert.Contains("Static parse/check completed", result)
+        Assert.Contains("Diagnostics:", result)
+        Assert.DoesNotContain("Timeout", result)
+    }
+
+[<Fact>]
+let ``ParseSourceToAST uses static analysis and returns symbol summary`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+
+        let source =
+            "module Scratch\n\ntype Person = { Name: string }\nlet create name = { Name = name }"
+
+        let! result = CodeInjectionTools.ParseSourceToAST(service, source)
+
+        Assert.Contains("Static AST summary", result)
+        Assert.Contains("Symbol count:", result)
+        Assert.DoesNotContain("Timeout", result)
+    }
+
+[<Fact>]
+let ``AnalyzeCodeStructure uses static analysis and returns file summary`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let filePath, tempCleanup = createTempFsx "module Scratch\n\nlet add x y = x + y"
+        use _tempCleanup = tempCleanup
+
+        let! result = CodeInjectionTools.AnalyzeCodeStructure(service, filePath)
+
+        Assert.Contains("File:", result)
+        Assert.Contains("Symbol count:", result)
+        Assert.DoesNotContain("Timeout", result)
+    }
+
+[<Fact>]
+let ``CodeInjectionTools preview preserves existing file content`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let original = "let a = 1\nlet b = 2\nlet c = 3"
+        let filePath, tempCleanup = createTempFsx original
+        use _tempCleanup = tempCleanup
+
+        let! preview =
+            CodeInjectionTools.PreviewCodeInjection(
+                service,
+                "let inserted = 99",
+                filePath,
+                insertAtLine = 2
+            )
+
+        Assert.Contains("let a = 1", preview)
+        Assert.Contains("let inserted = 99", preview)
+        Assert.Contains("let b = 2", preview)
+        Assert.Equal(original, File.ReadAllText(filePath))
+    }
+
+[<Fact>]
+let ``InsertCode inserts into existing file without dropping original content`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let filePath, tempCleanup = createTempFsx "let a = 1\nlet b = 2\nlet c = 3"
+        use _tempCleanup = tempCleanup
+
+        let! result =
+            KillMCPServer.InsertCode(
+                service,
+                "let inserted = 99",
+                filePath,
+                2,
+                1,
+                shouldFormat = false,
+                shouldValidate = false
+            )
+
+        let updated = File.ReadAllText(filePath)
+        Assert.Contains("Code successfully inserted", result)
+        Assert.Equal("let a = 1\nlet inserted = 99\nlet b = 2\nlet c = 3", updated)
+    }
+
+[<Fact>]
+let ``InsertCode refuses missing file instead of creating destructive empty-file insertion`` () =
+    task {
+        let service = new FsiMcpService(NullLogger<FsiMcpService>.Instance, enableRemoteClient = false)
+        use _cleanup = service :> IDisposable
+        let dir =
+            Path.Combine(Path.GetTempPath(), "FSharp.MCP.DevKit.McpSurfaceTests", Guid.NewGuid().ToString("N"))
+
+        Directory.CreateDirectory(dir) |> ignore
+        use _tempCleanup =
+            { new IDisposable with
+                member _.Dispose() =
+                    if Directory.Exists(dir) then
+                        Directory.Delete(dir, true) }
+
+        let missingPath = Path.Combine(dir, "missing.fsx")
+
+        let! result =
+            KillMCPServer.InsertCode(
+                service,
+                "// inserted header",
+                missingPath,
+                1,
+                1,
+                shouldFormat = false,
+                shouldValidate = false
+            )
+
+        Assert.Contains("File not found", result)
+        Assert.False(File.Exists(missingPath))
     }

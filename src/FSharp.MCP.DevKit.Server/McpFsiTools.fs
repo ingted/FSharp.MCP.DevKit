@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.IO
+open System.Text
 open System.Threading
 open System.ComponentModel
 open System.Threading.Tasks
@@ -21,6 +22,9 @@ open FSharp.MCP.DevKit.Server.ResultQuery
 open FSharp.MCP.DevKit.Messages
 open FSharp.MCP.DevKit.Analysis
 open FSharp.MCP.DevKit.Analysis.SmartSymbolDetection
+open FSharp.Compiler.CodeAnalysis
+open FSharp.Compiler.Diagnostics
+open FSharp.Compiler.Text
 open ModelContextProtocol.Server
 open Fantomas.Core
 
@@ -106,6 +110,134 @@ module McpFsiTools =
 
             $"{baseError}\n\nDiagnostics:\n{diagnosticMessages}"
         | _ -> baseError
+
+    type private StaticParseCheckResult =
+        { Diagnostics: FsiDiagnostic array
+          IsSuccess: bool
+          HasFullTypeCheckInfo: bool
+          Symbols: SymbolInfo array }
+
+    let private diagnosticKey (diagnostic: FSharpDiagnostic) =
+        (diagnostic.FileName,
+         diagnostic.StartLine,
+         diagnostic.StartColumn,
+         diagnostic.EndLine,
+         diagnostic.EndColumn,
+         diagnostic.Severity.ToString(),
+         diagnostic.Message)
+
+    let private toTimeoutMilliseconds (timeout: TimeSpan) =
+        if timeout.TotalMilliseconds < 1.0 then
+            1
+        elif timeout.TotalMilliseconds > float Int32.MaxValue then
+            Int32.MaxValue
+        else
+            int timeout.TotalMilliseconds
+
+    let private staticParseAndCheckSource (sourceCode: string) (timeout: TimeSpan) =
+        task {
+            if isNull sourceCode then
+                return Error "Source code is required."
+            else
+                let timeoutMs = toTimeoutMilliseconds timeout
+
+                let work =
+                    Task.Run(fun () ->
+                        try
+                            let checker = FSharpChecker.Create(keepAssemblyContents = true)
+                            let sourceText = SourceText.ofString sourceCode
+
+                            let fileName =
+                                Path.Combine(Path.GetTempPath(), sprintf "mcp-static-analysis-%s.fsx" (Guid.NewGuid().ToString("N")))
+
+                            let projectOptions, _ =
+                                checker.GetProjectOptionsFromScript(fileName, sourceText, assumeDotNetFramework = false)
+                                |> Async.RunSynchronously
+
+                            let parseResults, checkAnswer =
+                                checker.ParseAndCheckFileInProject(fileName, 0, sourceText, projectOptions)
+                                |> Async.RunSynchronously
+
+                            let checkDiagnostics, hasFullTypeCheckInfo =
+                                match checkAnswer with
+                                | FSharpCheckFileAnswer.Succeeded checkResults ->
+                                    checkResults.Diagnostics, checkResults.HasFullTypeCheckInfo
+                                | _ -> [||], false
+
+                            let diagnostics =
+                                Array.append parseResults.Diagnostics checkDiagnostics
+                                |> Array.distinctBy diagnosticKey
+
+                            let hasErrors =
+                                diagnostics
+                                |> Array.exists (fun diagnostic -> diagnostic.Severity = FSharpDiagnosticSeverity.Error)
+
+                            let symbols =
+                                if hasErrors then
+                                    [||]
+                                else
+                                    match SmartSymbolDetection.createSymbolDetectionService().GetAllSymbols(sourceCode) with
+                                    | Ok values -> values
+                                    | Error _ -> [||]
+
+                            Ok
+                                { Diagnostics = diagnostics |> Array.map FsiDiagnostic.ofCompilerDiagnostic
+                                  IsSuccess = not hasErrors
+                                  HasFullTypeCheckInfo = hasFullTypeCheckInfo
+                                  Symbols = symbols }
+                        with ex ->
+                            Error ex.Message)
+
+                let! completed = Task.WhenAny(work :> Task, Task.Delay(timeoutMs))
+
+                if Object.ReferenceEquals(completed, work :> Task) then
+                    return work.Result
+                else
+                    return Error(sprintf "Timeout after %.2f seconds" timeout.TotalSeconds)
+        }
+
+    let private countDiagnostics severity (diagnostics: FsiDiagnostic array) =
+        diagnostics
+        |> Array.filter (fun diagnostic -> diagnostic.Severity.Equals(severity, StringComparison.OrdinalIgnoreCase))
+        |> Array.length
+
+    let private formatDiagnostics maxCount (diagnostics: FsiDiagnostic array) =
+        if diagnostics.Length = 0 then
+            "No diagnostics."
+        else
+            let lines =
+                diagnostics
+                |> Array.truncate maxCount
+                |> Array.map (fun diagnostic ->
+                    sprintf "%s at line %d: %s" diagnostic.Severity diagnostic.StartLine diagnostic.Message)
+                |> String.concat "\n"
+
+            if diagnostics.Length > maxCount then
+                sprintf "%s\n... and %d more diagnostics" lines (diagnostics.Length - maxCount)
+            else
+                lines
+
+    let private formatSymbolSummary (symbols: SymbolInfo array) =
+        if Array.isEmpty symbols then
+            "Symbols: (none)"
+        else
+            symbols
+            |> Array.groupBy (fun symbol -> symbol.SymbolKind)
+            |> Array.sortBy fst
+            |> Array.map (fun (kind, values) ->
+                let names =
+                    values
+                    |> Array.map (fun symbol -> symbol.Name)
+                    |> Array.distinct
+                    |> Array.truncate 8
+                    |> String.concat ", "
+
+                let more =
+                    let distinctCount = values |> Array.map (fun symbol -> symbol.Name) |> Array.distinct |> Array.length
+                    if distinctCount > 8 then sprintf ", ... +%d" (distinctCount - 8) else ""
+
+                sprintf "%s: %s%s" kind names more)
+            |> String.concat "\n"
 
     let private preferValueOrOutput (result: FsiResult) =
         result.Value
@@ -198,6 +330,122 @@ module McpFsiTools =
             | Some before, Some after when before.EndsWith("{") && after.StartsWith("}") ->
                 Error("Cannot insert code in the middle of a record definition")
             | _ -> Ok()
+
+    type private CodeInsertionPlan =
+        { FilePath: string
+          OriginalText: string
+          NewText: string
+          OriginalLineCount: int
+          InsertedLineCount: int
+          InsertAtLine: int
+          InsertAtColumn: int option
+          ContextWarning: string option }
+
+    let private normalizeToolFilePath (filePath: string) =
+        if String.IsNullOrWhiteSpace filePath then
+            Error "Error: File path is required."
+        else
+            try
+                Ok(Path.GetFullPath(filePath))
+            with ex ->
+                Error(sprintf "Error: Invalid file path '%s': %s" filePath ex.Message)
+
+    let private readExistingFSharpFile (filePath: string) =
+        match normalizeToolFilePath filePath with
+        | Error errorMsg -> Error errorMsg
+        | Ok fullPath ->
+            if not (File.Exists(fullPath)) then
+                Error(sprintf "Error: File not found: %s" fullPath)
+            else
+                match validateFSharpFileType fullPath with
+                | Error errorMsg -> Error errorMsg
+                | Ok() -> Ok(fullPath, File.ReadAllText(fullPath))
+
+    let private applyInsertColumn (insertAtColumn: int option) (newCodeLines: string[]) =
+        match insertAtColumn with
+        | Some column when column > 1 ->
+            let indent = String.replicate (column - 1) " "
+
+            newCodeLines
+            |> Array.mapi (fun i line ->
+                if i = 0 then indent + line.TrimStart()
+                elif String.IsNullOrWhiteSpace line then line
+                else indent + line)
+        | _ -> newCodeLines
+
+    let private nonEmptyTrimmedLines (text: string) =
+        splitLinesPreservingLineEndings text
+        |> Array.map (fun line -> line.Trim())
+        |> Array.filter (fun line -> line <> "")
+
+    let private validateInsertionPreservesOriginal (originalText: string) (plannedText: string) =
+        if String.IsNullOrWhiteSpace originalText then
+            Ok()
+        elif plannedText.Length < originalText.Length then
+            Error "Refusing to write: insertion output is shorter than the original file."
+        else
+            let originalLines = nonEmptyTrimmedLines originalText
+
+            let missingAnchor =
+                originalLines
+                |> Array.truncate 3
+                |> Array.tryFind (fun anchor -> not (plannedText.Contains(anchor, StringComparison.Ordinal)))
+
+            match missingAnchor with
+            | Some anchor ->
+                Error(
+                    sprintf
+                        "Refusing to write: insertion output does not preserve original content near '%s'."
+                        anchor
+                )
+            | None -> Ok()
+
+    let private planCodeInsertion
+        (filePath: string)
+        (existingCode: string)
+        (newCode: string)
+        (insertAtLine: int option)
+        (insertAtColumn: int option)
+        =
+        let existingLines = splitLinesPreservingLineEndings existingCode
+        let targetLine = insertAtLine |> Option.defaultValue (existingLines.Length + 1)
+
+        if targetLine <= 0 || targetLine > existingLines.Length + 1 then
+            Error(sprintf "Error: Invalid line number %d. File has %d lines." targetLine existingLines.Length)
+        else
+            let newCodeLines = splitLinesPreservingLineEndings newCode
+            let indentedNewCodeLines = applyInsertColumn insertAtColumn newCodeLines
+
+            let contextWarning =
+                match validateInsertionContext existingLines targetLine indentedNewCodeLines with
+                | Error msg -> Some msg
+                | Ok() -> None
+
+            let combinedCode =
+                match insertAtLine with
+                | Some _ ->
+                    let beforeLines = existingLines |> Array.take (targetLine - 1)
+                    let afterLines = existingLines |> Array.skip (targetLine - 1)
+                    Array.concat [ beforeLines; indentedNewCodeLines; afterLines ]
+                    |> joinLinesWithConsistentEndings
+                | None ->
+                    if String.IsNullOrWhiteSpace existingCode then
+                        newCode
+                    else
+                        existingCode.TrimEnd() + "\n\n" + newCode
+
+            match validateInsertionPreservesOriginal existingCode combinedCode with
+            | Error errorMsg -> Error(sprintf "Error: %s" errorMsg)
+            | Ok() ->
+                Ok
+                    { FilePath = filePath
+                      OriginalText = existingCode
+                      NewText = combinedCode
+                      OriginalLineCount = existingLines.Length
+                      InsertedLineCount = indentedNewCodeLines.Length
+                      InsertAtLine = targetLine
+                      InsertAtColumn = insertAtColumn
+                      ContextWarning = contextWarning }
 
     let toPipeDiagnostic (diagnostic: FsiRemoteDiagnostic) : PipeDiagnostic =
         { FileName = diagnostic.FileName
@@ -1991,34 +2239,33 @@ module McpFsiTools =
                 [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
             ) : Task<string> =
             task {
-                let client = fsiService.GetClient()
-
                 let timeout =
                     match timeoutSeconds with
                     | Some seconds -> TimeSpan.FromSeconds(float seconds)
                     | None -> fsiService.DefaultTimeout
 
-                let! response = client.ParseAndCheck(code, timeout)
+                let! response = staticParseAndCheckSource code timeout
 
-                if response.IsSuccess then
-                    match response.Diagnostics with
-                    | Some diagnostics when diagnostics.Length > 0 ->
-                        let diagnosticStrings =
-                            diagnostics
-                            |> Array.map (fun d -> $"{d.Severity} at line {d.StartLine}: {d.Message}")
+                match response with
+                | Ok result ->
+                    let errorCount = countDiagnostics "Error" result.Diagnostics
+                    let warningCount = countDiagnostics "Warning" result.Diagnostics
+                    let infoCount = countDiagnostics "Info" result.Diagnostics
 
-                        let diagnosticStr = String.Join("\n", diagnosticStrings)
-                        return $"Code parsed successfully with diagnostics:\n{diagnosticStr}"
-                    | _ -> return "Code parsed successfully with no diagnostics"
-                else
-                    let baseError =
-                        if String.IsNullOrEmpty(response.Errors) then
-                            "Code parsing failed"
-                        else
-                            $"Error parsing code: {response.Errors}"
+                    let summary =
+                        sprintf
+                            "Static parse/check completed. Success: %b. Full type check: %b. Errors: %d, Warnings: %d, Info: %d."
+                            result.IsSuccess
+                            result.HasFullTypeCheckInfo
+                            errorCount
+                            warningCount
+                            infoCount
 
-                    let errorMessage = formatErrorWithDiagnostics baseError response
-                    return errorMessage
+                    if result.Diagnostics.Length > 0 then
+                        return sprintf "%s\n\nDiagnostics:\n%s" summary (formatDiagnostics 20 result.Diagnostics)
+                    else
+                        return sprintf "%s\nNo diagnostics." summary
+                | Error errorMsg -> return sprintf "Error parsing code: %s" errorMsg
             }
 
         [<McpServerTool; Description("Reset the F# Interactive session, clearing all bindings and state")>]
@@ -2097,47 +2344,33 @@ module McpFsiTools =
             : Task<string> =
             task {
                 try
-                    let client = fsiService.GetClient()
-                    let! parseResult = client.ParseAndCheck(sourceCode)
+                    let! parseResult = staticParseAndCheckSource sourceCode fsiService.DefaultTimeout
 
-                    if parseResult.IsSuccess then
-                        match parseResult.Diagnostics with
-                        | Some diagnostics ->
-                            let errorCount =
-                                diagnostics
-                                |> Array.filter (fun d -> d.Severity.ToString() = "Error")
-                                |> Array.length
+                    match parseResult with
+                    | Ok result ->
+                        let errorCount = countDiagnostics "Error" result.Diagnostics
+                        let warningCount = countDiagnostics "Warning" result.Diagnostics
+                        let infoCount = countDiagnostics "Info" result.Diagnostics
 
-                            let warningCount =
-                                diagnostics
-                                |> Array.filter (fun d -> d.Severity.ToString() = "Warning")
-                                |> Array.length
+                        let summary =
+                            sprintf
+                                "Static AST summary. Success: %b. Full type check: %b. Errors: %d, Warnings: %d, Info: %d. Symbol count: %d."
+                                result.IsSuccess
+                                result.HasFullTypeCheckInfo
+                                errorCount
+                                warningCount
+                                infoCount
+                                result.Symbols.Length
 
-                            let infoCount =
-                                diagnostics
-                                |> Array.filter (fun d -> d.Severity.ToString() = "Info")
-                                |> Array.length
-
-                            let summary =
-                                sprintf
-                                    "Parse successful. Errors: %d, Warnings: %d, Info: %d"
-                                    errorCount
-                                    warningCount
-                                    infoCount
-
-                            if diagnostics.Length > 0 then
-                                let diagnosticDetails =
-                                    diagnostics
-                                    |> Array.map (fun d ->
-                                        sprintf "%s at line %d: %s" (d.Severity.ToString()) d.StartLine d.Message)
-                                    |> String.concat "\n"
-
-                                return sprintf "%s\n\nDiagnostics:\n%s" summary diagnosticDetails
+                        let diagnostics =
+                            if result.Diagnostics.Length > 0 then
+                                sprintf "\n\nDiagnostics:\n%s" (formatDiagnostics 20 result.Diagnostics)
                             else
-                                return summary
-                        | None -> return "Parse successful with no diagnostics"
-                    else
-                        return sprintf "Parse failed: %s" parseResult.Errors
+                                "\n\nDiagnostics:\nNo diagnostics."
+
+                        let symbols = sprintf "\n\n%s" (formatSymbolSummary result.Symbols)
+                        return sprintf "%s%s%s" summary diagnostics symbols
+                    | Error errorMsg -> return sprintf "Parse failed: %s" errorMsg
                 with ex ->
                     return sprintf "Error parsing source code: %s" ex.Message
             }
@@ -2148,8 +2381,6 @@ module McpFsiTools =
             : Task<string> =
             task {
                 try
-                    let client = fsiService.GetClient()
-
                     if not (System.IO.File.Exists(filePath)) then
                         return sprintf "Error: File not found: %s" filePath
                     else
@@ -2157,67 +2388,36 @@ module McpFsiTools =
                         | Error errorMsg -> return errorMsg
                         | Ok() ->
                             let sourceCode = System.IO.File.ReadAllText(filePath)
-                            let! parseResult = client.ParseAndCheck(sourceCode)
+                            let! parseResult = staticParseAndCheckSource sourceCode fsiService.DefaultTimeout
 
-                            if parseResult.IsSuccess then
+                            match parseResult with
+                            | Ok result ->
                                 let lineCount = sourceCode.Split([| '\n' |], StringSplitOptions.None).Length
                                 let charCount = sourceCode.Length
+                                let errorCount = countDiagnostics "Error" result.Diagnostics
+                                let warningCount = countDiagnostics "Warning" result.Diagnostics
 
                                 let analysisResult =
-                                    sprintf "File: %s\nLines: %d\nCharacters: %d\n" filePath lineCount charCount
+                                    sprintf
+                                        "File: %s\nLines: %d\nCharacters: %d\nSuccess: %b\nFull type check: %b\nErrors: %d, Warnings: %d\nSymbol count: %d"
+                                        filePath
+                                        lineCount
+                                        charCount
+                                        result.IsSuccess
+                                        result.HasFullTypeCheckInfo
+                                        errorCount
+                                        warningCount
+                                        result.Symbols.Length
 
-                                match parseResult.Diagnostics with
-                                | Some diagnostics ->
-                                    let errorCount =
-                                        diagnostics
-                                        |> Array.filter (fun d -> d.Severity.ToString() = "Error")
-                                        |> Array.length
-
-                                    let warningCount =
-                                        diagnostics
-                                        |> Array.filter (fun d -> d.Severity.ToString() = "Warning")
-                                        |> Array.length
-
-                                    let diagnosticSummary = sprintf "Errors: %d, Warnings: %d" errorCount warningCount
-
-                                    if diagnostics.Length > 0 then
-                                        let topIssues =
-                                            diagnostics
-                                            |> Array.take (min 5 diagnostics.Length)
-                                            |> Array.map (fun d ->
-                                                sprintf
-                                                    "  %s at line %d: %s"
-                                                    (d.Severity.ToString())
-                                                    d.StartLine
-                                                    d.Message)
-                                            |> String.concat "\n"
-
-                                        let moreMsg =
-                                            if diagnostics.Length > 5 then
-                                                sprintf "\n  ... and %d more issues" (diagnostics.Length - 5)
-                                            else
-                                                ""
-
-                                        return
-                                            sprintf
-                                                "%s%s\n\nTop Issues:\n%s%s"
-                                                analysisResult
-                                                diagnosticSummary
-                                                topIssues
-                                                moreMsg
+                                let diagnostics =
+                                    if result.Diagnostics.Length > 0 then
+                                        sprintf "\n\nTop Issues:\n%s" (formatDiagnostics 5 result.Diagnostics)
                                     else
-                                        return
-                                            sprintf
-                                                "%s%s\n\nNo issues found - file is ready for code injection."
-                                                analysisResult
-                                                diagnosticSummary
-                                | None ->
-                                    return
-                                        sprintf
-                                            "%sNo diagnostics available\n\nFile appears to be valid for code injection."
-                                            analysisResult
-                            else
-                                return sprintf "Error analyzing file: %s" parseResult.Errors
+                                        "\n\nNo issues found - file is ready for code injection."
+
+                                let symbols = sprintf "\n\n%s" (formatSymbolSummary result.Symbols)
+                                return sprintf "%s%s%s" analysisResult diagnostics symbols
+                            | Error errorMsg -> return sprintf "Error analyzing file: %s" errorMsg
                 with ex ->
                     return sprintf "Error analyzing code structure: %s" ex.Message
             }
@@ -2234,73 +2434,23 @@ module McpFsiTools =
             ) : Task<string> =
             task {
                 try
-                    // Validate file type first
-                    let fileTypeValidation =
-                        if System.IO.File.Exists(filePath) then
-                            validateFSharpFileType filePath
-                        else
-                            // For new files, validate based on the provided path extension
-                            validateFSharpFileType filePath
-
-                    match fileTypeValidation with
+                    match readExistingFSharpFile filePath with
                     | Error errorMsg -> return errorMsg
-                    | Ok() ->
+                    | Ok(fullPath, existingCode) ->
+                        match planCodeInsertion fullPath existingCode newCode insertAtLine insertAtColumn with
+                        | Error errorMsg -> return errorMsg
+                        | Ok plan ->
+                            let previewTitle =
+                                match insertAtLine, insertAtColumn with
+                                | Some line, Some col ->
+                                    sprintf "Preview of code injection into %s at line %d, column %d:" fullPath line col
+                                | Some line, None ->
+                                    sprintf "Preview of code injection into %s at line %d:" fullPath line
+                                | None, Some col ->
+                                    sprintf "Preview of code injection into %s (end of file, column %d):" fullPath col
+                                | None, None -> sprintf "Preview of code injection into %s:" fullPath
 
-                        // Read the existing file content
-                        let existingCode =
-                            if System.IO.File.Exists(filePath) then
-                                System.IO.File.ReadAllText(filePath)
-                            else
-                                ""
-
-                        // Determine insertion point
-                        let combinedCode =
-                            match insertAtLine with
-                            | Some lineNum ->
-                                let lines = splitLinesPreservingLineEndings existingCode
-
-                                if lineNum <= 0 || lineNum > lines.Length + 1 then
-                                    sprintf "Error: Invalid line number %d. File has %d lines." lineNum lines.Length
-                                else
-                                    let newCodeLines = splitLinesPreservingLineEndings newCode
-
-                                    // Apply column positioning if specified
-                                    let indentedNewCodeLines =
-                                        match insertAtColumn with
-                                        | Some column when column > 1 ->
-                                            let indent = String.replicate (column - 1) " "
-
-                                            newCodeLines
-                                            |> Array.mapi (fun i line ->
-                                                if i = 0 then indent + line.TrimStart()
-                                                else if String.IsNullOrWhiteSpace(line) then line
-                                                else indent + line)
-                                        | _ -> newCodeLines
-
-                                    let beforeLines = lines |> Array.take (lineNum - 1)
-                                    let afterLines = lines |> Array.skip (lineNum - 1)
-                                    let allLines = Array.concat [ beforeLines; indentedNewCodeLines; afterLines ]
-                                    joinLinesWithConsistentEndings allLines
-                            | None ->
-                                // FIXED: Append to end with proper spacing, matching InsertCodeUnified behavior
-                                let combined =
-                                    if String.IsNullOrWhiteSpace(existingCode) then
-                                        newCode
-                                    else
-                                        existingCode.TrimEnd() + "\n\n" + newCode
-
-                                combined
-
-                        let previewTitle =
-                            match insertAtLine, insertAtColumn with
-                            | Some line, Some col ->
-                                sprintf "Preview of code injection into %s at line %d, column %d:" filePath line col
-                            | Some line, None -> sprintf "Preview of code injection into %s at line %d:" filePath line
-                            | None, Some col ->
-                                sprintf "Preview of code injection into %s (end of file, column %d):" filePath col
-                            | None, None -> sprintf "Preview of code injection into %s:" filePath
-
-                        return sprintf "%s\n\n%s" previewTitle combinedCode
+                            return sprintf "%s\n\n%s" previewTitle plan.NewText
 
                 with ex ->
                     return sprintf "Error previewing code injection: %s" ex.Message
@@ -2818,21 +2968,10 @@ module McpFsiTools =
                 try
                     let shouldFormat = defaultArg shouldFormat true
                     let shouldValidate = defaultArg shouldValidate false
-                    let client = fsiService.GetClient()
 
-                    // Validate file type first
-                    match validateFSharpFileType filePath with
+                    match readExistingFSharpFile filePath with
                     | Error errorMsg -> return errorMsg
-                    | Ok() ->
-
-                        // Step 1: Read existing file content
-                        let existingCode =
-                            if System.IO.File.Exists(filePath) then
-                                System.IO.File.ReadAllText(filePath)
-                            else
-                                ""
-
-                        // Step 2: Pre-format new code if requested
+                    | Ok(fullPath, existingCode) ->
                         let! preformattedNewCode =
                             if shouldFormat then
                                 task {
@@ -2845,63 +2984,25 @@ module McpFsiTools =
                             else
                                 Task.FromResult(newCode)
 
-                        // Step 3: Validate and combine code safely with optional column positioning
-                        let validateAndCombine () =
-                            let lines = splitLinesPreservingLineEndings existingCode
-
-                            if insertAtLine <= 0 || insertAtLine > lines.Length + 1 then
-                                Error(
-                                    sprintf
-                                        "Error: Invalid line number %d. File has %d lines."
-                                        insertAtLine
-                                        lines.Length
-                                )
-                            else
-                                // Split the new code into lines
-                                let newCodeLines = splitLinesPreservingLineEndings preformattedNewCode
-
-                                // Apply column positioning/indentation if specified
-                                let indentedNewCodeLines =
-                                    if insertAtColumn > 1 then
-                                        let indent = String.replicate (insertAtColumn - 1) " "
-
-                                        newCodeLines
-                                        |> Array.mapi (fun i line ->
-                                            if i = 0 then
-                                                // First line: preserve any existing indentation in the new code
-                                                indent + line.TrimStart()
-                                            else if
-                                                // Subsequent lines: add the base indent but preserve relative indentation
-                                                String.IsNullOrWhiteSpace(line)
-                                            then
-                                                line // Keep empty lines as-is
-                                            else
-                                                indent + line)
-                                    else
-                                        newCodeLines // No column specified, use original indentation
-
-                                // Validate insertion context (but don't fail on it, just warn)
-                                let contextWarning =
-                                    match validateInsertionContext lines insertAtLine indentedNewCodeLines with
-                                    | Error msg -> Some msg
-                                    | Ok() -> None
-
-                                let beforeLines = lines |> Array.take (insertAtLine - 1)
-                                let afterLines = lines |> Array.skip (insertAtLine - 1)
-                                let allLines = Array.concat [ beforeLines; indentedNewCodeLines; afterLines ]
-                                let combinedCode = joinLinesWithConsistentEndings allLines
-
-                                Ok(combinedCode, contextWarning)
-
-                        let combinedResult = validateAndCombine ()
+                        let combinedResult =
+                            planCodeInsertion
+                                fullPath
+                                existingCode
+                                preformattedNewCode
+                                (Some insertAtLine)
+                                (if insertAtColumn > 1 then Some insertAtColumn else None)
 
                         match combinedResult with
                         | Error errorMsg -> return errorMsg
-                        | Ok(combinedCode, contextWarning) ->
+                        | Ok plan ->
+                            let combinedCode = plan.NewText
+                            let contextWarning = plan.ContextWarning
+
                             // Step 4: Validate combined code if requested (but don't fail, just report)
                             let! validationResult =
                                 if shouldValidate then
                                     task {
+                                        let client = fsiService.GetClient()
                                         let! parseResult = client.ParseAndCheck(combinedCode)
 
                                         if not parseResult.IsSuccess then
@@ -2968,61 +3069,64 @@ module McpFsiTools =
                                 else
                                     Task.FromResult(combinedCode)
 
-                            // Step 6: Atomic write operation with backup
-                            let writeFileSafely () =
-                                try
-                                    let backupPath = filePath + ".backup"
-                                    let tempPath = filePath + ".tmp"
-
-                                    // Create backup if file exists
-                                    if System.IO.File.Exists(filePath) then
-                                        System.IO.File.Copy(filePath, backupPath, true)
-
-                                    // Write to temp file
-                                    System.IO.File.WriteAllText(tempPath, finalCode)
-
-                                    // Atomic move
-                                    if System.IO.File.Exists(filePath) then
-                                        System.IO.File.Delete(filePath)
-
-                                    System.IO.File.Move(tempPath, filePath)
-
-                                    // Clean up backup
-                                    if System.IO.File.Exists(backupPath) then
-                                        System.IO.File.Delete(backupPath)
-
-                                    Ok()
-                                with ex ->
-                                    Error ex.Message
-
-                            match writeFileSafely () with
+                            match validateInsertionPreservesOriginal existingCode finalCode with
+                            | Error errorMsg -> return sprintf "Error: %s" errorMsg
                             | Ok() ->
-                                let locationMsg = sprintf "line %d" insertAtLine
 
-                                let columnMsg =
-                                    if insertAtColumn > 1 then
-                                        sprintf " at column %d" insertAtColumn
-                                    else
-                                        ""
+                            // Step 6: Atomic write operation with backup
+                                let writeFileSafely () =
+                                    let backupPath = fullPath + ".backup"
+                                    let tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp"
 
-                                let formatMsg = if shouldFormat then " and formatted" else ""
+                                    try
+                                        File.Copy(fullPath, backupPath, true)
+                                        File.WriteAllText(tempPath, finalCode, Encoding.UTF8)
 
-                                let validationMsg =
-                                    if shouldValidate then
-                                        " (validated)"
-                                    else
-                                        " (validation skipped)"
+                                        if Environment.OSVersion.Platform = PlatformID.Win32NT then
+                                            File.Replace(tempPath, fullPath, backupPath, true)
+                                        else
+                                            File.Move(tempPath, fullPath, true)
 
-                                return
-                                    sprintf
-                                        "Code successfully inserted%s into %s at %s%s%s%s"
-                                        formatMsg
-                                        filePath
-                                        locationMsg
-                                        columnMsg
-                                        validationMsg
-                                        combinedDiagnostics
-                            | Error errorMsg -> return sprintf "Failed to write file: %s" errorMsg
+                                        if File.Exists(backupPath) then
+                                            File.Delete(backupPath)
+
+                                        Ok()
+                                    with ex ->
+                                        if File.Exists(tempPath) then
+                                            try
+                                                File.Delete(tempPath)
+                                            with _ ->
+                                                ()
+
+                                        Error ex.Message
+
+                                match writeFileSafely () with
+                                | Ok() ->
+                                    let locationMsg = sprintf "line %d" plan.InsertAtLine
+
+                                    let columnMsg =
+                                        match plan.InsertAtColumn with
+                                        | Some column -> sprintf " at column %d" column
+                                        | None -> ""
+
+                                    let formatMsg = if shouldFormat then " and formatted" else ""
+
+                                    let validationMsg =
+                                        if shouldValidate then
+                                            " (validated)"
+                                        else
+                                            " (validation skipped)"
+
+                                    return
+                                        sprintf
+                                            "Code successfully inserted%s into %s at %s%s%s%s"
+                                            formatMsg
+                                            fullPath
+                                            locationMsg
+                                            columnMsg
+                                            validationMsg
+                                            combinedDiagnostics
+                                | Error errorMsg -> return sprintf "Failed to write file: %s" errorMsg
 
                 with ex ->
                     return sprintf "Error during unified code insertion: %s" ex.Message

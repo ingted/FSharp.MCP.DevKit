@@ -144,7 +144,7 @@ what_is_at_position
 
 `get_all_symbols` 對小型 F# source 很快，會列出 function/value/type/record 與 signature。position-based tools 也能正確辨識，例如 `add`、`describe`、`Person`。
 
-暫時不建議依賴：
+已修復後可用：
 
 ```text
 analyze_code_structure
@@ -152,7 +152,13 @@ parse_and_check_f_sharp_code
 parse_source_to_ast
 ```
 
-本次測試它們在很小的 source/file 上都 timeout。詳見 `Agent踩雷經驗.md`。
+2026-04-18 已改走 static FSharpChecker / symbol detection 路徑，不再依賴 FSI interactive session 的 `PARSE`。建議用法：
+
+- `parse_and_check_f_sharp_code`：快速檢查小型 source，會回 static parse/check summary 與 diagnostics。
+- `parse_source_to_ast`：目前輸出是 static AST summary + symbol summary，不是完整 AST DTO。
+- `analyze_code_structure`：分析 `.fsx/.fs/.fsi` 檔案，回 line/character count、diagnostics、symbol summary。
+
+若需要特定位置的型別或簽章，仍優先使用 `get_symbol_at_position`、`get_symbol_signature_at_position`、`what_is_at_position`。
 
 ## 檔案工具的安全用法
 
@@ -182,7 +188,11 @@ format_file
 4. 最後 `format_file`。
 5. 再 `get_lines` 驗證。
 
-暫時不要用 `insert_code` 與 `preview_code_injection`，本次測試有高風險問題，詳見踩雷文件。
+`insert_code` 與 `preview_code_injection` 已於 2026-04-18 修復。建議用法：
+
+- `preview_code_injection` 先看結果，不會寫檔。
+- `insert_code` 僅對已存在 F# 檔案運作，缺檔會直接失敗。
+- 寫入前仍建議用 `get_lines` 驗證目標位置；若要建立新檔，改用明確的新檔建立流程，不要靠 `insert_code` 隱含建立。
 
 ## 排程工具的基本節奏
 

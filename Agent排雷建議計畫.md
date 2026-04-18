@@ -12,6 +12,16 @@
 
 ## P0：修復 `insert_code` 可能覆寫整檔
 
+### 修復狀態
+
+2026-04-18 已完成。
+
+- `preview_code_injection` 與 `insert_code` 已共用 `planCodeInsertion`。
+- `insert_code` 不再對不存在檔案建立/覆寫內容，缺檔會直接回 `File not found`。
+- 寫入前加入原文保留 sanity guard。
+- 寫入流程改為 UTF-8 temp file + Windows `File.Replace`，降低半寫入風險。
+- 已補 `McpSurfaceTests` regression tests，覆蓋 preview、insert、missing file。
+
 ### 實測發現
 
 測試檔案：
@@ -155,6 +165,16 @@ tests/McpClientE2ETests.fs
 - 測試能重現舊問題並在修正後通過。
 
 ## P1：修復 parse/check/analyze timeout
+
+### 修復狀態
+
+2026-04-18 已完成第一階段修復。
+
+- `parse_and_check_f_sharp_code` 改走 static FSharpChecker，不再呼叫 FSI interactive `PARSE`。
+- `parse_source_to_ast` 改走 static parse/check + symbol summary。
+- `analyze_code_structure` 改走 static parse/check + symbol summary。
+- 已補 `McpSurfaceTests` regression tests，覆蓋合法小型 source、非法 diagnostics、source AST summary、file structure summary。
+- 後續若要更精準 AST，仍可再拆出 dedicated AST DTO；目前輸出定位是 static parse/check summary + symbol summary。
 
 ### 實測發現
 
@@ -301,6 +321,11 @@ tests/McpClientSmokeTests.fs
 - `analyze_code_structure` 可用於新 Agent 的 codebase 快速掃描。
 
 ## 建議修復順序
+
+2026-04-18 執行狀態：
+
+- 1 到 4 已完成。
+- 5 已部分完成：`Agent使用經驗談.md` 已改為可用建議；P2/P3 尚保留為踩雷項目。
 
 1. 先補 regression tests，重現 `insert_code` 覆寫與 `preview_code_injection` 0 lines。
 2. 修 `insert_code` / `preview_code_injection`，並加寫入前 sanity guard。
