@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <PulseTradeFSharpCoreVersion>10.1.201</PulseTradeFSharpCoreVersion>
+    <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.fsproj'">
+    <PackageReference Include="FSharp.Core" Version="$(PulseTradeFSharpCoreVersion)" />
+  </ItemGroup>
+</Project>

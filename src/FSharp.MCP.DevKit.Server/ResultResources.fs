@@ -27,6 +27,46 @@ type ResultResources(fsiService: FsiMcpService) =
             return record |> FSharpJson.serialize
         }
 
+    [<McpServerResource(Name = "fsiAgentExecutionFabric", Title = "FSI Agent Execution Fabric", MimeType = "application/json", UriTemplate = "fsi/agents/{agentId}/execution-fabric")>]
+    [<Description("List shared FAkka execution fabric records owned by an agent.")>]
+    member _.AgentExecutionFabric(agentId: string) =
+        task {
+            let! records = fsiService.ListExecutionFabricRecords(agentId = agentId)
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerResource(Name = "fsiSessionExecutionFabric", Title = "FSI Session Execution Fabric", MimeType = "application/json", UriTemplate = "fsi/sessions/{sessionId}/execution-fabric")>]
+    [<Description("List shared FAkka execution fabric records by session id, including archived sessions retained by the execution store.")>]
+    member _.SessionExecutionFabric(sessionId: string) =
+        task {
+            let! records = fsiService.ListExecutionFabricRecords(sessionId = sessionId)
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerResource(Name = "fsiHostSessionExecutionFabric", Title = "FSI Host Session Execution Fabric", MimeType = "application/json", UriTemplate = "fsi/hosts/{hostId}/sessions/{sessionId}/execution-fabric")>]
+    [<Description("List shared FAkka execution fabric records by concrete host/session route.")>]
+    member _.HostSessionExecutionFabric(hostId: string, sessionId: string) =
+        task {
+            let! records = fsiService.ListExecutionFabricRecords(hostId = hostId, sessionId = sessionId)
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerResource(Name = "fsiBrowserExecutionFabric", Title = "FSI Browser Execution Fabric", MimeType = "application/json", UriTemplate = "fsi/browsers/{browserId}/execution-fabric")>]
+    [<Description("List shared FAkka execution fabric records by SharpBrowser/browser id.")>]
+    member _.BrowserExecutionFabric(browserId: string) =
+        task {
+            let! records = fsiService.ListExecutionFabricRecords(browserId = browserId)
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerResource(Name = "fsiPrincipalExecutionFabric", Title = "FSI Principal Execution Fabric", MimeType = "application/json", UriTemplate = "fsi/principals/{principalId}/execution-fabric")>]
+    [<Description("List shared FAkka execution fabric records by principal id.")>]
+    member _.PrincipalExecutionFabric(principalId: string) =
+        task {
+            let! records = fsiService.ListExecutionFabricRecords(principalId = principalId)
+            return records |> FSharpJson.serialize
+        }
+
     [<McpServerResource(Name = "fsiAgentResults", Title = "FSI Agent Results", MimeType = "application/json", UriTemplate = "fsi/agents/{agentId}/results")>]
     [<Description("List execution results owned by an agent.")>]
     member _.AgentResults(agentId: string) =

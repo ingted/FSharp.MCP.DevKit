@@ -228,3 +228,98 @@ let ``get_execution_fabric_record MCP tool serializes shared fabric projection``
         Assert.Contains("\"serializer\":\"FsPickler\"", json)
         Assert.Contains("\"valueText\":\"tool-value\"", json)
     } :> Task
+
+[<Fact>]
+let ``execution fabric list tools and resources filter by route browser and principal`` () =
+    task {
+        let resultRegistry = InMemoryResultRegistry() :> IResultRegistry
+        let outputStore = InMemoryOutputStore() :> IOutputStore
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                resultRegistry = resultRegistry,
+                outputStore = outputStore
+            )
+
+        let route =
+            { AgentId = DefaultRouting.DefaultAgentId
+              HostId = DefaultRouting.DefaultHostId
+              SessionId = DefaultRouting.DefaultSessionId }
+
+        let baseTime = DateTime(2026, 4, 17, 7, 0, 0, DateTimeKind.Utc)
+
+        let codexRecord =
+            { sampleRecord (Some "codex-value") with
+                ResultId = "result-codex"
+                RequestId = "request-codex"
+                AgentId = route.AgentId
+                HostId = route.HostId
+                SessionId = route.SessionId
+                SubmittedAt = baseTime
+                Metadata =
+                    (sampleRecord None).Metadata
+                    |> Map.add PrincipalAttribution.PrincipalId "codex" }
+
+        let geminiRecord =
+            { codexRecord with
+                ResultId = "result-gemini"
+                RequestId = "request-gemini"
+                SubmittedAt = baseTime.AddSeconds(1.0)
+                Metadata = codexRecord.Metadata |> Map.add PrincipalAttribution.PrincipalId "gemini"
+                Result = { codexRecord.Result with Value = Some "gemini-value" } }
+
+        resultRegistry.Put codexRecord
+        resultRegistry.Put geminiRecord
+
+        service.PublishSessionOutput("stdout", "codex stdout", executionId = codexRecord.ResultId)
+        |> ignore
+
+        let! byBrowserAndPrincipal =
+            service.ListExecutionFabricRecords(browserId = "sb-main", principalId = "codex", limit = 10)
+
+        let! latestBySession =
+            service.ListExecutionFabricRecords(sessionId = route.SessionId, limit = 1)
+
+        let! toolJson =
+            McpResultTools.ListExecutionFabricRecords(
+                service,
+                route.AgentId,
+                "",
+                "",
+                "sb-main",
+                "codex",
+                10
+            )
+
+        let! sessionToolJson =
+            McpResultTools.ListExecutionFabricRecordsBySessionId(service, route.SessionId, 10)
+
+        let! hostSessionToolJson =
+            McpResultTools.ListExecutionFabricRecordsByHostSession(service, route.HostId, route.SessionId, 10)
+
+        let resources = ResultResources(service)
+        let! hostSessionResourceJson = resources.HostSessionExecutionFabric(route.HostId, route.SessionId)
+        let! browserResourceJson = resources.BrowserExecutionFabric("sb-main")
+        let! principalResourceJson = resources.PrincipalExecutionFabric("gemini")
+
+        let toolRecords = FSharpJson.deserialize<ExecutionFabricRecord list> toolJson
+        let sessionToolRecords = FSharpJson.deserialize<ExecutionFabricRecord list> sessionToolJson
+        let hostSessionToolRecords = FSharpJson.deserialize<ExecutionFabricRecord list> hostSessionToolJson
+        let hostSessionResourceRecords = FSharpJson.deserialize<ExecutionFabricRecord list> hostSessionResourceJson
+        let browserResourceRecords = FSharpJson.deserialize<ExecutionFabricRecord list> browserResourceJson
+        let principalResourceRecords = FSharpJson.deserialize<ExecutionFabricRecord list> principalResourceJson
+
+        Assert.Single(byBrowserAndPrincipal) |> ignore
+        Assert.Equal("result-codex", byBrowserAndPrincipal[0].executionId)
+        Assert.Equal("codex stdout", byBrowserAndPrincipal[0].outputEvents[0].payload)
+        Assert.Equal("result-gemini", latestBySession[0].executionId)
+        Assert.Single(toolRecords) |> ignore
+        Assert.Equal("result-codex", toolRecords[0].executionId)
+        Assert.Equal(2, sessionToolRecords.Length)
+        Assert.Equal(2, hostSessionToolRecords.Length)
+        Assert.Equal(2, hostSessionResourceRecords.Length)
+        Assert.Equal(2, browserResourceRecords.Length)
+        Assert.Single(principalResourceRecords) |> ignore
+        Assert.Equal("result-gemini", principalResourceRecords[0].executionId)
+    } :> Task

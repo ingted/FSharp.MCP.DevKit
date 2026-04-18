@@ -49,6 +49,12 @@ module private McpResultToolParsing =
         | Some "result" -> SyntheticResult
         | _ -> NoMaterialization
 
+    let optionalText (value: string) =
+        if String.IsNullOrWhiteSpace value then None else Some value
+
+    let optionalPositiveInt value =
+        if value <= 0 then None else Some value
+
 [<McpServerToolType>]
 type McpResultTools =
 
@@ -72,6 +78,101 @@ type McpResultTools =
         task {
             let! record = fsiService.TryGetExecutionFabricRecordForAgent(agentId, resultId)
             return record |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_execution_fabric_records"); Description("List shared FAkka execution fabric records, optionally filtered by agent, host, session, browser id, principal id, and limit. Use empty strings to omit string filters and 0 to use the default limit.")>]
+    static member ListExecutionFabricRecords
+        (
+            fsiService: FsiMcpService,
+            [<Description("Optional owning agent id filter. Use an empty string to omit and list across agents when the execution store supports it.")>] agentId: string,
+            [<Description("Optional host id filter. Use an empty string to omit.")>] hostId: string,
+            [<Description("Optional session id filter. Use an empty string to omit. This works for archived sessions as long as the execution store retained their records.")>] sessionId: string,
+            [<Description("Optional SharpBrowser/browser id filter. Use an empty string to omit.")>] browserId: string,
+            [<Description("Optional principal id filter, e.g. codex, gemini, mgmt2, or a human operator id. Use an empty string to omit.")>] principalId: string,
+            [<Description("Optional maximum number of records. Use 0 for default.")>] limit: int
+        ) : Task<string> =
+        task {
+            let! records =
+                fsiService.ListExecutionFabricRecords(
+                    ?agentId = optionalText agentId,
+                    ?hostId = optionalText hostId,
+                    ?sessionId = optionalText sessionId,
+                    ?browserId = optionalText browserId,
+                    ?principalId = optionalText principalId,
+                    ?limit = optionalPositiveInt limit
+                )
+
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_execution_fabric_records_by_session_id"); Description("List shared FAkka execution fabric records by session id only. Use this for live or archived sessions.")>]
+    static member ListExecutionFabricRecordsBySessionId
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("Optional maximum number of records. Use 0 for default.")>] limit: int
+        ) : Task<string> =
+        task {
+            let! records =
+                fsiService.ListExecutionFabricRecords(
+                    sessionId = sessionId,
+                    ?limit = optionalPositiveInt limit
+                )
+
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_execution_fabric_records_by_host_session"); Description("List shared FAkka execution fabric records by host/session route. Use this for Mgmt2 or agents observing one concrete remote FSI session.")>]
+    static member ListExecutionFabricRecordsByHostSession
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string,
+            [<Description("Optional maximum number of records. Use 0 for default.")>] limit: int
+        ) : Task<string> =
+        task {
+            let! records =
+                fsiService.ListExecutionFabricRecords(
+                    hostId = hostId,
+                    sessionId = sessionId,
+                    ?limit = optionalPositiveInt limit
+                )
+
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_execution_fabric_records_by_browser_id"); Description("List shared FAkka execution fabric records by SharpBrowser/browser id.")>]
+    static member ListExecutionFabricRecordsByBrowserId
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target SharpBrowser/browser id.")>] browserId: string,
+            [<Description("Optional maximum number of records. Use 0 for default.")>] limit: int
+        ) : Task<string> =
+        task {
+            let! records =
+                fsiService.ListExecutionFabricRecords(
+                    browserId = browserId,
+                    ?limit = optionalPositiveInt limit
+                )
+
+            return records |> FSharpJson.serialize
+        }
+
+    [<McpServerTool(Name = "list_execution_fabric_records_by_principal_id"); Description("List shared FAkka execution fabric records by principal id, e.g. codex, gemini, mgmt2, or a human operator id.")>]
+    static member ListExecutionFabricRecordsByPrincipalId
+        (
+            fsiService: FsiMcpService,
+            [<Description("Target principal id.")>] principalId: string,
+            [<Description("Optional maximum number of records. Use 0 for default.")>] limit: int
+        ) : Task<string> =
+        task {
+            let! records =
+                fsiService.ListExecutionFabricRecords(
+                    principalId = principalId,
+                    ?limit = optionalPositiveInt limit
+                )
+
+            return records |> FSharpJson.serialize
         }
 
     [<McpServerTool(Name = "list_fsi_results"); Description("List execution results for an agent, optionally narrowed to a specific host/session.")>]

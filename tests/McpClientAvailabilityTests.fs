@@ -23,9 +23,11 @@ type McpClientAvailabilityTests() =
                 assertContains "register_fsi_agent" toolNames
                 assertContains "ensure_fsi_route" toolNames
                 assertContains "query_fsi_results" toolNames
+                assertContains "list_execution_fabric_records_by_host_session" toolNames
                 assertContains "worldtime" resourceUris
                 assertContains "fsi/async/{asyncId}" templateUris
                 assertContains "fsi/hosts/{hostId}/sessions/{sessionId}" templateUris
+                assertContains "fsi/hosts/{hostId}/sessions/{sessionId}/execution-fabric" templateUris
                 assertContains "fsi/results/{resultId}" templateUris
             })
 

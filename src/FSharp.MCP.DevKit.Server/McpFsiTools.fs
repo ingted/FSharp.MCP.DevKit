@@ -683,6 +683,29 @@ module McpFsiTools =
 
         let resolveRoute (requestedRoute: ExecutionRoute option) = executionRouter.ResolveRoute requestedRoute
 
+        let nonBlankOption (value: string option) =
+            value
+            |> Option.bind (fun text ->
+                if String.IsNullOrWhiteSpace text then
+                    None
+                else
+                    Some text)
+
+        let positiveLimitOption (value: int option) =
+            value |> Option.filter (fun limit -> limit > 0)
+
+        let executionFabricMetadataFilters (browserId: string option) (principalId: string option) =
+            [ match nonBlankOption browserId with
+              | Some value -> "browser.id", value
+              | None -> ()
+
+              match nonBlankOption principalId with
+              | Some value -> PrincipalAttribution.PrincipalId, value
+              | None -> () ]
+            |> function
+                | [] -> None
+                | values -> Some values
+
         let resolveHost (route: ExecutionRoute) =
             hostRegistry.TryGet route.HostId
             |> Option.defaultWith (fun () -> invalidOp $"Host '{route.HostId}' was not found.")
@@ -1307,6 +1330,41 @@ module McpFsiTools =
         member _.TryGetResultForAgent(agentId: string, resultId: string) =
             resultRegistry.TryGet resultId
             |> Option.filter (fun value -> value.AgentId = agentId)
+
+        member _.ListExecutionFabricRecords
+            (
+                ?agentId: string,
+                ?hostId: string,
+                ?sessionId: string,
+                ?browserId: string,
+                ?principalId: string,
+                ?limit: int
+            ) =
+            task {
+                let metadata = executionFabricMetadataFilters browserId principalId
+
+                let records =
+                    executionStore.List(
+                        ?agentId = nonBlankOption agentId,
+                        ?hostId = nonBlankOption hostId,
+                        ?sessionId = nonBlankOption sessionId,
+                        ?metadata = metadata,
+                        ?limit = positiveLimitOption limit
+                    )
+
+                let! projected =
+                    records
+                    |> List.map (fun record ->
+                        let outputEvents =
+                            outputStore.ListEvents(record.SessionId)
+                            |> List.filter (fun event -> event.ExecutionId = Some record.ResultId)
+
+                        ExecutionFabricProjection.toExecutionFabricRecord resultSerializer outputEvents record
+                        |> Async.StartAsTask)
+                    |> Task.WhenAll
+
+                return projected |> Array.toList
+            }
 
         member _.TryGetExecutionFabricRecord(resultId: string) =
             task {

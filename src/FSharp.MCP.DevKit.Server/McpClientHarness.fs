@@ -186,7 +186,16 @@ type McpClientSession internal (client: McpClient, stderrLog: ConcurrentQueue<st
 module McpClientHarness =
     let private defaultCommand = "dotnet"
     let private defaultFramework = "net10.0"
-    let private defaultConfiguration = "Debug"
+    let private defaultConfiguration =
+        match Environment.GetEnvironmentVariable("FSHARP_MCP_DEVKIT_SERVER_CONFIGURATION") with
+        | value when not (String.IsNullOrWhiteSpace value) -> value
+        | _ ->
+#if DEBUG
+            "Debug"
+#else
+            "Release"
+#endif
+
     let private defaultServerAssemblyName = "FSharp.MCP.DevKit.dll"
 
     let private toDictionary (pairs: seq<string * string>) =

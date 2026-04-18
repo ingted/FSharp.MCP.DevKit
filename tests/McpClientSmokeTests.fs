@@ -129,19 +129,21 @@ module private McpClientSmokeScenarioCatalog =
             Assert.Equal("session-b", stateB.Value.SessionId)
         }
 
+    let latestTwoResultIdsChronological (records: FsiExecutionRecord list) =
+        records
+        |> List.sortByDescending (fun record -> record.SubmittedAt)
+        |> List.truncate 2
+        |> List.sortBy (fun record -> record.SubmittedAt)
+        |> List.map (fun record -> record.ResultId)
+        |> String.concat ","
+
     let resultQueryScenario (client: McpClientSession) =
         task {
             let! _ = callText client "execute_f_sharp_code" [ "code", box "let queryValue = 5"; "timeoutSeconds", box 30 ]
             let! _ = callText client "execute_f_sharp_code" [ "code", box "let queryValue = 9"; "timeoutSeconds", box 30 ]
             let! results = readJson<FsiExecutionRecord list> client "fsi/hosts/default-host/sessions/default-session/results"
 
-            let latestTwo =
-                results
-                |> List.rev
-                |> List.take 2
-                |> List.rev
-                |> List.map (fun record -> record.ResultId)
-                |> String.concat ","
+            let latestTwo = latestTwoResultIdsChronological results
 
             let! existsResponse =
                 callJson<FSharp.MCP.DevKit.Server.ResultQuery.ResultQueryResponse>
@@ -162,16 +164,19 @@ module private McpClientSmokeScenarioCatalog =
     let fsharpResultQueryScenario (client: McpClientSession) =
         task {
             let! _ = callText client "execute_f_sharp_code" [ "code", box "let fsharpQueryValue = 15"; "timeoutSeconds", box 30 ]
+            let! _ =
+                callText client "evaluate_f_sharp_expression" [ "expression", box "fsharpQueryValue"; "timeoutSeconds", box 30 ]
+
             let! _ = callText client "execute_f_sharp_code" [ "code", box "let fsharpQueryValue = 19"; "timeoutSeconds", box 30 ]
+            let! _ =
+                callText client "evaluate_f_sharp_expression" [ "expression", box "fsharpQueryValue"; "timeoutSeconds", box 30 ]
+
             let! results = readJson<FsiExecutionRecord list> client "fsi/hosts/default-host/sessions/default-session/results"
 
             let latestTwo =
                 results
-                |> List.rev
-                |> List.take 2
-                |> List.rev
-                |> List.map (fun record -> record.ResultId)
-                |> String.concat ","
+                |> List.filter (fun record -> record.OperationKind = EvaluateExpression && record.Result.Value.IsSome)
+                |> latestTwoResultIdsChronological
 
             let! response =
                 callJson<FSharp.MCP.DevKit.Server.ResultQuery.ResultQueryResponse>

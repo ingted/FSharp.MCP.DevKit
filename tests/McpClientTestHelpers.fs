@@ -108,11 +108,17 @@ let runDemoClientScenario scenario =
                 return proc.ExitCode, stdout, stderr
             }
 
-        let! buildExitCode, buildStdout, buildStderr =
-            runProcess "dotnet" [ "build"; demoClientProjectPath (); "--no-restore"; "-m:1" ]
+        let! restoreExitCode, restoreStdout, restoreStderr =
+            runProcess "dotnet" [ "restore"; demoClientProjectPath (); "-m:1" ]
 
-        if buildExitCode <> 0 then
-            return buildExitCode, buildStdout, buildStderr
+        if restoreExitCode <> 0 then
+            return restoreExitCode, restoreStdout, restoreStderr
         else
-            return! runProcess "dotnet" [ demoClientDllPath (); scenario ]
+            let! buildExitCode, buildStdout, buildStderr =
+                runProcess "dotnet" [ "build"; demoClientProjectPath (); "--no-restore"; "-m:1" ]
+
+            if buildExitCode <> 0 then
+                return buildExitCode, buildStdout, buildStderr
+            else
+                return! runProcess "dotnet" [ demoClientDllPath (); scenario ]
     }
