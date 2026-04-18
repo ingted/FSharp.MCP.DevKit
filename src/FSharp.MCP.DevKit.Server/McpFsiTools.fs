@@ -61,6 +61,11 @@ module McpFsiTools =
           ProbedAtUtc: DateTime
           Sessions: SessionLivenessRecord list }
 
+    [<CLIMutable>]
+    type SessionUnregisterResult =
+        { Session: SessionRecord
+          ArchiveOutcome: SessionOutputSealOutcome }
+
     type private SessionLivenessCacheEntry =
         { Record: SessionLivenessRecord
           ConsecutiveFailures: int
@@ -1204,6 +1209,41 @@ module McpFsiTools =
         member _.TryGetSession(hostId: string, sessionId: string) = sessionRegistry.TryGet(hostId, sessionId)
 
         member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+
+        member _.UnregisterSession(agentId: string, hostId: string, sessionId: string) =
+            match sessionRegistry.TryGet(hostId, sessionId) with
+            | None -> None
+            | Some session when session.AgentId <> agentId ->
+                invalidOp $"Session '{sessionId}' under host '{hostId}' does not belong to agent '{agentId}'."
+            | Some _ ->
+                let archiveOutcome = sealSessionOutputBySessionId sessionId
+
+                match sessionRegistry.Remove(hostId, sessionId) with
+                | None -> None
+                | Some removed ->
+                    clearSessionLivenessCache removed.HostId removed.SessionId
+                    agentRegistry.Touch removed.AgentId
+
+                    let archiveMessage =
+                        match archiveOutcome with
+                        | Archived archive -> $"output archived with {archive.EventCount} event(s)"
+                        | SealPending pending -> $"output seal pending with {pending.EventCount} event(s): {pending.ErrorMessage}"
+
+                    inventoryEventStore.Append(
+                        { SequenceId = 0L
+                          EventKind = "session.unregistered"
+                          SubjectKind = "session"
+                          AgentId = Some removed.AgentId
+                          HostId = Some removed.HostId
+                          SessionId = Some removed.SessionId
+                          CreatedAt = DateTime.UtcNow
+                          Message = Some $"Session '{removed.SessionId}' unregistered; {archiveMessage}." }
+                    )
+                    |> ignore
+
+                    Some
+                        { Session = removed
+                          ArchiveOutcome = archiveOutcome }
 
         member _.TryResolveRouteByHostSession(hostId: string, sessionId: string) : FSharp.MCP.DevKit.Core.ExecutionRoute option =
             sessionRegistry.TryGet(hostId, sessionId)

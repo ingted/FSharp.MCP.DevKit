@@ -25,3 +25,8 @@ type InMemorySessionRegistry() =
             sessions.Values
             |> Seq.filter (fun record -> record.HostId = hostId)
             |> Seq.toList
+
+        member _.Remove(hostId: string, sessionId: string) =
+            match sessions.TryRemove(keyOf hostId sessionId) with
+            | true, record -> Some record
+            | false, _ -> None

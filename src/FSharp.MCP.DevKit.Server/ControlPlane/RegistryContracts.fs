@@ -21,6 +21,7 @@ type ISessionRegistry =
     abstract member Update: SessionRecord -> unit
     abstract member TryGet: string * string -> SessionRecord option
     abstract member ListByHost: string -> SessionRecord list
+    abstract member Remove: string * string -> SessionRecord option
 
 type InventoryEventRecord =
     { SequenceId: int64

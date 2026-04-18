@@ -21,6 +21,35 @@ let ``DefaultRouting creates default agent host and session when route is omitte
     Assert.True(sessionRegistry.TryGet(DefaultRouting.DefaultHostId, DefaultRouting.DefaultSessionId).IsSome)
 
 [<Fact>]
+let ``InMemorySessionRegistry remove returns record and clears live lookup`` () =
+    let sessionRegistry = InMemorySessionRegistry() :> ISessionRegistry
+    let now = DateTime.UtcNow
+
+    let session =
+        { SessionId = "session-remove"
+          AgentId = "agent-remove"
+          HostId = "host-remove"
+          SessionName = "session-remove"
+          Status = SessionReady
+          Refs = []
+          Loads = []
+          SearchPaths = []
+          Variables = []
+          LastCheckpointId = None
+          RunningSinceUtc = Some now
+          LastExecutionAt = None }
+
+    sessionRegistry.Create(session) |> ignore
+
+    let removed = sessionRegistry.Remove("host-remove", "session-remove")
+    let missing = sessionRegistry.Remove("host-remove", "session-remove")
+
+    Assert.True(removed.IsSome)
+    Assert.Equal("session-remove", removed.Value.SessionId)
+    Assert.True(sessionRegistry.TryGet("host-remove", "session-remove").IsNone)
+    Assert.True(missing.IsNone)
+
+[<Fact>]
 let ``DefaultRouting returns explicit route when agent host and session are valid`` () =
     let agentRegistry = InMemoryAgentRegistry() :> IAgentRegistry
     let hostRegistry = InMemoryHostRegistry() :> IHostRegistry

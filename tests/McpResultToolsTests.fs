@@ -162,12 +162,16 @@ let ``ExecutionStore lists by route metadata and limit`` () =
 [<Fact>]
 let ``FsiMcpService uses injected execution store for executed records`` () =
     task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
         let executionStore = InMemoryResultRegistry() :> IExecutionStore
 
         let service =
             new FsiMcpService(
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
+                sessionOutputLiveStore = (JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore),
+                sessionOutputArchiveStore = (JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore),
                 executionStore = executionStore
             )
 
@@ -523,7 +527,8 @@ let ``McpResultTools output tools and resources expose live broker state`` () =
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = archiveStore
+                sessionOutputArchiveStore = archiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
@@ -620,7 +625,8 @@ let ``McpResultTools session output resources keep same read path after archive 
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = archiveStore
+                sessionOutputArchiveStore = archiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
@@ -675,7 +681,8 @@ let ``McpResultTools seal pending tool and resource expose status and recovery``
                 NullLogger<FsiMcpService>.Instance,
                 enableRemoteClient = false,
                 sessionOutputLiveStore = liveStore,
-                sessionOutputArchiveStore = archiveStore
+                sessionOutputArchiveStore = archiveStore,
+                executionStore = (JsonLineResultRegistry(tempRoot) :> IExecutionStore)
             )
 
         use _cleanup = service :> IDisposable
@@ -783,6 +790,51 @@ let ``McpResultTools explicit seal session output archives live events without l
         Assert.Equal(2, events.Length)
         Assert.Equal("seal-alpha", events[0].Payload)
         Assert.Equal("seal-beta", events[1].Payload)
+    }
+
+[<Fact>]
+let ``McpResultTools unregister fsi session seals archive and removes live lookup`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+        let route = service.ResolveRoute()
+        let _ = service.PublishSessionOutput("stdout", "tool-unregister", executionId = "exec-unregister-tool", requestedRoute = route)
+
+        let unregisterJson =
+            McpResultTools.UnregisterFsiSession(
+                service,
+                "default-agent",
+                "default-host",
+                "default-session"
+            )
+
+        let eventsJson =
+            McpResultTools.GetArchivedSessionOutputEvents(
+                service,
+                "default-session",
+                0L,
+                0
+            )
+
+        let result = FSharpJson.deserialize<SessionUnregisterResult option> unregisterJson
+        let events = FSharpJson.deserialize<OutputEventRecord list> eventsJson
+
+        Assert.True(result.IsSome)
+        Assert.True(service.TryGetSession("default-host", "default-session").IsNone)
+        Assert.Single(events) |> ignore
+        Assert.Equal("tool-unregister", events[0].Payload)
     }
 
 [<Fact>]

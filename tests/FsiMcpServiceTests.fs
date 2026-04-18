@@ -414,6 +414,34 @@ let ``FsiMcpService unified session output read returns archived events through 
     Assert.Equal("beta", eventsAfter[0].Payload)
 
 [<Fact>]
+let ``FsiMcpService unregister session seals output and removes live registry`` () =
+    let service = createIsolatedService ()
+    use _cleanup = service :> IDisposable
+
+    let route = service.ResolveRoute()
+    let _ = service.PublishSessionOutput("stdout", "before-unregister", executionId = "exec-unregister-1", requestedRoute = route)
+    let _ = service.PublishSessionOutput("stderr", "before-unregister-err", executionId = "exec-unregister-1", requestedRoute = route)
+
+    let result = service.UnregisterSession(route.AgentId, route.HostId, route.SessionId)
+    let archive = service.TryGetArchivedSessionOutputArchive(route.SessionId)
+    let archivedEvents = service.ListArchivedSessionOutput(route.SessionId)
+
+    Assert.True(result.IsSome)
+    Assert.True(service.TryGetSession(route.HostId, route.SessionId).IsNone)
+
+    match result.Value.ArchiveOutcome with
+    | Archived archived ->
+        Assert.Equal(route.SessionId, archived.SessionId)
+        Assert.Equal(2, archived.EventCount)
+    | SealPending pending -> failwithf "expected archived outcome but got pending: %s" pending.ErrorMessage
+
+    Assert.True(archive.IsSome)
+    Assert.Equal(2, archive.Value.EventCount)
+    Assert.Equal(2, archivedEvents.Length)
+    Assert.Equal("before-unregister", archivedEvents[0].Payload)
+    Assert.Equal("before-unregister-err", archivedEvents[1].Payload)
+
+[<Fact>]
 let ``FsiMcpService reset seals session output into archive before lifecycle reset`` () =
     task {
         let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.FsiMcpServiceTests", Guid.NewGuid().ToString("N"))

@@ -280,6 +280,17 @@ type McpResultTools =
         fsiService.SealSessionOutputArchive(requestedRoute = { AgentId = agentId; HostId = hostId; SessionId = sessionId })
         |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "unregister_fsi_session"); Description("Remove a live FSI session from the registry and seal its current output into archive so the session can still be queried after it disappears from the live tree.")>]
+    static member UnregisterFsiSession
+        (
+            fsiService: FsiMcpService,
+            [<Description("Owning agent id.")>] agentId: string,
+            [<Description("Target host id.")>] hostId: string,
+            [<Description("Target session id.")>] sessionId: string
+        ) : string =
+        fsiService.UnregisterSession(agentId, hostId, sessionId)
+        |> FSharpJson.serialize
+
     [<McpServerTool(Name = "get_session_output_archive"); Description("Read archive metadata for a specific route, if the session output has already been sealed into archive.")>]
     static member GetSessionOutputArchive
         (
