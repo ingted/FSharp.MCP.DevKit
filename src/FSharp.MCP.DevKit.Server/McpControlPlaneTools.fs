@@ -37,11 +37,20 @@ type McpControlPlaneTools =
                     tokens.Add(current.ToString())
                     current.Clear() |> ignore
 
-            for ch in value do
+            let mutable index = 0
+
+            while index < value.Length do
+                let ch = value.[index]
+
                 if escape then
                     current.Append(ch) |> ignore
                     escape <- false
-                elif ch = '\\' && not inSingle then
+                elif
+                    ch = '\\'
+                    && not inSingle
+                    && index + 1 < value.Length
+                    && (value.[index + 1] = '"' || value.[index + 1] = '\'' || Char.IsWhiteSpace value.[index + 1])
+                then
                     escape <- true
                 elif ch = '"' && not inSingle then
                     inDouble <- not inDouble
@@ -51,6 +60,8 @@ type McpControlPlaneTools =
                     flushToken ()
                 else
                     current.Append(ch) |> ignore
+
+                index <- index + 1
 
             if escape then
                 current.Append('\\') |> ignore

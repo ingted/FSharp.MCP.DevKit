@@ -268,6 +268,49 @@ let private createNet10SmokeService () =
         fsiSupervisorClient = fsiClient
     )
 
+[<Fact>]
+let ``Smoke create_fsi_host preserves Windows backslash paths in arguments`` () =
+    task {
+        let procClient = StatefulFakeProcSupervisorClient()
+        let fsiClient = StatefulFakeFsiSupervisorClient() :> IFsiSupervisorClient
+
+        use service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                procSupervisorClient = (procClient :> IProcSupervisorClient),
+                fsiSupervisorClient = fsiClient
+            )
+
+        let runtimePath = @"G:\PulseTrade.fs\some folder\FSharp.MCP.DevKit.runtimeconfig.json"
+        let depsPath = @"G:\PulseTrade.fs\some folder\FSharp.MCP.DevKit.deps.json"
+        let dllPath = @"G:\PulseTrade.fs\some folder\Akka.Proc.Supervisor.dll"
+
+        let arguments =
+            $"exec --runtimeconfig \"{runtimePath}\" --depsfile \"{depsPath}\" \"{dllPath}\" --mode procnode"
+
+        let! _ =
+            McpControlPlaneTools.CreateFsiHost(
+                service,
+                "agent-path",
+                "net10",
+                "dotnet",
+                arguments,
+                @"G:\PulseTrade.fs\some folder",
+                "windows-path-host",
+                "",
+                0
+            )
+
+        let! snapshotOpt = (procClient :> IProcSupervisorClient).GetProcInfo("windows-path-host")
+        let snapshot = snapshotOpt |> Option.defaultWith (fun () -> failwith "Expected windows-path-host snapshot.")
+        let parsedArgs = snapshot.Spec |> Option.map (fun spec -> spec.Arguments) |> Option.defaultValue []
+
+        Assert.Contains(runtimePath, parsedArgs)
+        Assert.Contains(depsPath, parsedArgs)
+        Assert.Contains(dllPath, parsedArgs)
+    }
+
 type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
     let mutable shouldFail = true
 
@@ -307,6 +350,7 @@ let ``Smoke old tools remain compatible on default route`` () =
         let! evalBeforeRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
         let! _ = FSharpInteractiveTools.ResetFSISession(service, 30)
         let! evalAfterRestart = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
+        let! _ = FSharpInteractiveTools.ResetFSISession(service, 30)
         let! asyncId = FSharpInteractiveTools.ExecuteFSharpCodeAsync(service, "let legacySmoke = 9", 30)
         let! asyncStatus = waitForCompletion service asyncId
         let! evalAfterAsync = FSharpInteractiveTools.EvaluateFSharpExpression(service, "legacySmoke", 30)
@@ -315,7 +359,7 @@ let ``Smoke old tools remain compatible on default route`` () =
         Assert.Equal("5", evalBeforeRestart)
         Assert.Contains("not defined", evalAfterRestart, StringComparison.OrdinalIgnoreCase)
         Assert.True(asyncStatus.IsCompleted)
-        Assert.True(asyncStatus.ResultId.IsSome)
+        Assert.True(asyncStatus.ResultId.IsSome, $"Async status did not contain ResultId: {asyncStatus}")
         Assert.Equal("9", evalAfterAsync)
     }
 

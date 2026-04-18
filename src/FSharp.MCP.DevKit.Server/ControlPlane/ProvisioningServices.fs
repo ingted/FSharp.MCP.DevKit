@@ -180,8 +180,18 @@ type HostProvisioningService
                         }
 
                 let readyRecord =
+                    let hasLiveRemoteAddress =
+                        snapshotHasUsableRemoteAddress hostKind finalizedSnapshot
+                        && finalizedSnapshot.ProcessId.IsSome
+                        && not (String.Equals(finalizedSnapshot.Status, "stopped", StringComparison.OrdinalIgnoreCase))
+                        && not (String.Equals(finalizedSnapshot.Status, "failed", StringComparison.OrdinalIgnoreCase))
+
                     { creatingRecord with
-                        Status = mapHostStatus finalizedSnapshot.Status
+                        Status =
+                            if hasLiveRemoteAddress then
+                                Ready
+                            else
+                                mapHostStatus finalizedSnapshot.Status
                         Address = finalizedSnapshot.FsiSupervisorPath |> Option.orElse finalizedSnapshot.NodeAddress
                         ProcId = finalizedSnapshot.ProcessId
                         LastHealthCheckAt = Some DateTime.UtcNow

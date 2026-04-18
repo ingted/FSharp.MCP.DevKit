@@ -10,6 +10,7 @@ open System.Threading.Tasks
 open Akka.Actor
 open Akka.Configuration
 open Microsoft.Extensions.Logging.Abstractions
+open Akka.Proc.Supervisor
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.Integration
@@ -22,8 +23,27 @@ type RealNet10HostIsolationTests() =
     static member private RepoRoot =
         Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, ".."))
 
+    static member private BuildConfiguration =
+        let configured = Environment.GetEnvironmentVariable("FSHARP_MCP_DEVKIT_SERVER_CONFIGURATION")
+
+        if not (String.IsNullOrWhiteSpace configured) then
+            configured.Trim()
+        else
+#if DEBUG
+            "Debug"
+#else
+            "Release"
+#endif
+
     static member private ServerOutputDir =
-        Path.Combine(RealNet10HostIsolationTests.RepoRoot, "src", "FSharp.MCP.DevKit.Server", "bin", "Debug", "net10.0")
+        Path.Combine(
+            RealNet10HostIsolationTests.RepoRoot,
+            "src",
+            "FSharp.MCP.DevKit.Server",
+            "bin",
+            RealNet10HostIsolationTests.BuildConfiguration,
+            "net10.0"
+        )
 
     static member private ServerRuntimeConfigPath =
         Path.Combine(RealNet10HostIsolationTests.ServerOutputDir, "FSharp.MCP.DevKit.runtimeconfig.json")
@@ -36,6 +56,8 @@ type RealNet10HostIsolationTests() =
 
     static member private AkkaConfigPath =
         Path.Combine(RealNet10HostIsolationTests.RepoRoot, "src", "FSharp.MCP.DevKit.Server", "akka.server.conf")
+
+    static member private FsiProbeMessage = "listsessions --all true"
 
     static member private getFreePort () =
         use listener = new TcpListener(System.Net.IPAddress.Loopback, 0)
@@ -50,6 +72,16 @@ type RealNet10HostIsolationTests() =
 
     static member private appendLine (builder: StringBuilder) (line: string) =
         lock builder (fun () -> builder.AppendLine(line) |> ignore)
+
+    static member private processOutputSummary (stdout: StringBuilder) (stderr: StringBuilder) =
+        let tail (builder: StringBuilder) =
+            builder.ToString().Split([| "\r\n"; "\n" |], StringSplitOptions.None)
+            |> Array.rev
+            |> Array.truncate 80
+            |> Array.rev
+            |> String.concat Environment.NewLine
+
+        $"stdout tail:{Environment.NewLine}{tail stdout}{Environment.NewLine}stderr tail:{Environment.NewLine}{tail stderr}"
 
     static member private waitUntil (timeoutMs: int) (pollMs: int) (operation: unit -> Task<'T option>) : Task<'T> =
         task {
@@ -124,45 +156,70 @@ type RealNet10HostIsolationTests() =
             use httpClient = new HttpClient()
 
             try
-                let! (_: unit) =
-                    RealNet10HostIsolationTests.waitUntil 15000 250 (fun () ->
-                        task {
-                            if proc.HasExited then
-                                let details =
-                                    $"ProcSupervisor exited early with code {proc.ExitCode}.{Environment.NewLine}stdout:{Environment.NewLine}{stdout}{Environment.NewLine}stderr:{Environment.NewLine}{stderr}"
+                try
+                    let! (_: unit) =
+                        RealNet10HostIsolationTests.waitUntil 15000 250 (fun () ->
+                            task {
+                                if proc.HasExited then
+                                    let details =
+                                        $"ProcSupervisor exited early with code {proc.ExitCode}.{Environment.NewLine}{RealNet10HostIsolationTests.processOutputSummary stdout stderr}"
 
-                                raise (InvalidOperationException details)
+                                    raise (InvalidOperationException details)
 
-                            try
-                                let! response = httpClient.GetAsync($"http://127.0.0.1:{webPort}/health")
+                                try
+                                    let! response = httpClient.GetAsync($"http://127.0.0.1:{webPort}/health")
 
-                                if response.IsSuccessStatusCode then
-                                    return Some()
-                                else
+                                    if response.IsSuccessStatusCode then
+                                        return Some()
+                                    else
+                                        return None
+                                with _ ->
                                     return None
-                            with _ ->
-                                return None
-                        })
+                            })
+                    ()
+                with ex ->
+                    raise
+                        (InvalidOperationException(
+                            $"Timed out waiting for ProcSupervisor HTTP health on 127.0.0.1:{webPort}.{Environment.NewLine}{RealNet10HostIsolationTests.processOutputSummary stdout stderr}",
+                            ex
+                        ))
+
                 ()
+
+                let clientContractConfig =
+                    Akka.FSI.Contracts.ContractSerialization.configForAssemblies [
+                        typeof<Akka.FSI.Contracts.IMessage>.Assembly
+                        typeof<ProcStartSpec>.Assembly
+                    ]
 
                 let clientConfig =
                     File.ReadAllText(RealNet10HostIsolationTests.AkkaConfigPath)
                     |> ConfigurationFactory.ParseString
+                    |> clientContractConfig.WithFallback
 
                 let actorSystem = ActorSystem.Create($"McpTestClient-{Guid.NewGuid():N}", clientConfig)
                 let supervisorPath = $"akka.tcp://{systemName}@127.0.0.1:{supervisorPort}/user/proc-supervisor"
                 let procClient = ProcSupervisorClient(actorSystem, supervisorPath, TimeSpan.FromSeconds 10.0) :> IProcSupervisorClient
                 let fsiClient = FsiSupervisorClient(actorSystem, TimeSpan.FromSeconds 30.0) :> IFsiSupervisorClient
 
-                let! (_: unit) =
-                    RealNet10HostIsolationTests.waitUntil 15000 250 (fun () ->
-                        task {
-                            try
-                                let! _ = procClient.ListProcInfo()
-                                return Some()
-                            with _ ->
-                                return None
-                        })
+                try
+                    let! (_: unit) =
+                        RealNet10HostIsolationTests.waitUntil 15000 250 (fun () ->
+                            task {
+                                try
+                                    let! _ = procClient.ListProcInfo()
+                                    return Some()
+                                with _ ->
+                                    return None
+                            })
+                    ()
+                with ex ->
+                    raise
+                        (InvalidOperationException(
+                            $"Timed out waiting for ProcSupervisor Akka client path {supervisorPath}.{Environment.NewLine}{RealNet10HostIsolationTests.processOutputSummary stdout stderr}",
+                            ex
+                        ))
+
                 ()
 
                 return proc, stdout, stderr, actorSystem, procClient, fsiClient, systemName, supervisorPort
@@ -254,17 +311,33 @@ type RealNet10HostIsolationTests() =
         }
 
     static member private waitForHostReady (procClient: IProcSupervisorClient) hostId : Task<ProcHostSnapshot> =
-        RealNet10HostIsolationTests.waitUntil 15000 250 (fun () ->
-            task {
+        task {
+            let started = DateTime.UtcNow
+            let mutable ready = None
+            let mutable lastSnapshot = None
+
+            while ready.IsNone && (DateTime.UtcNow - started).TotalMilliseconds < 15000.0 do
                 let! snapshotOpt = procClient.GetProcInfo(hostId)
+                lastSnapshot <- snapshotOpt
 
                 match snapshotOpt with
-                | Some snapshot when String.Equals(snapshot.Status, "running", StringComparison.OrdinalIgnoreCase)
-                                    && snapshot.FsiSupervisorPath.IsSome ->
-                    return Some snapshot
+                | Some snapshot when snapshot.ProcessId.IsSome
+                                    && snapshot.FsiSupervisorPath.IsSome
+                                    && not (String.Equals(snapshot.Status, "stopped", StringComparison.OrdinalIgnoreCase))
+                                    && not (String.Equals(snapshot.Status, "failed", StringComparison.OrdinalIgnoreCase)) ->
+                    ready <- Some snapshot
                 | _ ->
-                    return None
-            })
+                    do! Task.Delay 250
+
+            match ready with
+            | Some snapshot -> return snapshot
+            | None ->
+                return
+                    raise
+                        (InvalidOperationException(
+                            $"Timed out waiting for host '{hostId}' ready. Last snapshot: {lastSnapshot}"
+                        ))
+        }
 
     static member private retryTask (timeoutMs: int) (pollMs: int) (operation: unit -> Task<'T>) : Task<'T> =
         task {
@@ -313,7 +386,7 @@ type RealNet10HostIsolationTests() =
                             (RealNet10HostIsolationTests.getFreePort ()),
                         RealNet10HostIsolationTests.ServerOutputDir,
                         hostAId,
-                        "PING",
+                        RealNet10HostIsolationTests.FsiProbeMessage,
                         1000
                     )
 
@@ -330,7 +403,7 @@ type RealNet10HostIsolationTests() =
                             (RealNet10HostIsolationTests.getFreePort ()),
                         RealNet10HostIsolationTests.ServerOutputDir,
                         hostBId,
-                        "PING",
+                        RealNet10HostIsolationTests.FsiProbeMessage,
                         1000
                     )
 
@@ -405,7 +478,7 @@ type RealNet10HostIsolationTests() =
                             (RealNet10HostIsolationTests.getFreePort ()),
                         RealNet10HostIsolationTests.ServerOutputDir,
                         hostId,
-                        "PING",
+                        RealNet10HostIsolationTests.FsiProbeMessage,
                         1000
                     )
 
