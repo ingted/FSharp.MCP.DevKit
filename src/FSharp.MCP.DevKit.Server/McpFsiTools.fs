@@ -70,6 +70,15 @@ module McpFsiTools =
         { Session: SessionRecord
           ArchiveOutcome: SessionOutputSealOutcome }
 
+    [<CLIMutable>]
+    type ExternalFsiSessionRegistrationResult =
+        { Agent: AgentRecord
+          Host: HostRecord
+          Session: SessionRecord
+          CreatedAgent: bool
+          CreatedHost: bool
+          CreatedSession: bool }
+
     type private SessionLivenessCacheEntry =
         { Record: SessionLivenessRecord
           ConsecutiveFailures: int
@@ -1528,9 +1537,143 @@ module McpFsiTools =
 
         member _.ListHosts(agentId: string) = hostRegistry.ListByAgent(agentId)
 
+        member _.ListAllHosts() = hostRegistry.List()
+
         member _.TryGetSession(hostId: string, sessionId: string) = sessionRegistry.TryGet(hostId, sessionId)
 
         member _.ListHostSessions(hostId: string) = sessionRegistry.ListByHost(hostId)
+
+        member _.ListAllSessions() = sessionRegistry.List()
+
+        member _.RegisterExternalFsiSession
+            (
+                agentId: string,
+                hostId: string,
+                sessionId: string,
+                ?hostAddress: string,
+                ?sessionName: string,
+                ?hostStatus: HostStatus
+            ) =
+            if String.IsNullOrWhiteSpace agentId then
+                invalidArg (nameof agentId) "Agent id is required."
+
+            if String.IsNullOrWhiteSpace hostId then
+                invalidArg (nameof hostId) "Host id is required."
+
+            if String.IsNullOrWhiteSpace sessionId then
+                invalidArg (nameof sessionId) "Session id is required."
+
+            let now = DateTime.UtcNow
+            let hostAddressOpt = hostAddress |> Option.filter (String.IsNullOrWhiteSpace >> not)
+            let sessionName = sessionName |> Option.filter (String.IsNullOrWhiteSpace >> not) |> Option.defaultValue sessionId
+            let hostStatus = defaultArg hostStatus Ready
+            let agentPreviouslyExisted = agentRegistry.TryGet agentId |> Option.isSome
+            let hostPreviouslyExisted = hostRegistry.TryGet hostId |> Option.isSome
+            let sessionPreviouslyExisted = sessionRegistry.TryGet(hostId, sessionId) |> Option.isSome
+
+            let agentRecord =
+                match agentRegistry.TryGet agentId with
+                | Some existing ->
+                    { existing with
+                        LastSeenAt = now
+                        DefaultHostId = existing.DefaultHostId |> Option.orElse (Some hostId) }
+                | None ->
+                    { AgentId = agentId
+                      DisplayName = None
+                      CreatedAt = now
+                      LastSeenAt = now
+                      DefaultHostId = Some hostId
+                      Metadata = Map.empty }
+
+            let agent = agentRegistry.Register agentRecord
+
+            let host =
+                match hostRegistry.TryGet hostId with
+                | Some existing ->
+                    let updated =
+                        { existing with
+                            Status = hostStatus
+                            Address = hostAddressOpt |> Option.orElse existing.Address
+                            LastHealthCheckAt = Some now
+                            LastError = None }
+
+                    hostRegistry.Update updated
+                    updated
+                | None ->
+                    let created =
+                        { HostId = hostId
+                          AgentId = agent.AgentId
+                          HostKind = Net10Host
+                          BackendKind = Net10Remote
+                          Status = hostStatus
+                          Address = hostAddressOpt
+                          ProcId = None
+                          CreatedAt = now
+                          LastHealthCheckAt = Some now
+                          LastError = None }
+
+                    hostRegistry.Create created |> ignore
+                    created
+
+            let session =
+                match sessionRegistry.TryGet(host.HostId, sessionId) with
+                | Some existing ->
+                    let updated =
+                        { existing with
+                            SessionName = sessionName
+                            Status = SessionReady
+                            RunningSinceUtc = existing.RunningSinceUtc |> Option.orElse (Some now) }
+
+                    sessionRegistry.Update updated
+                    updated
+                | None ->
+                    let created =
+                        { SessionId = sessionId
+                          AgentId = agent.AgentId
+                          HostId = host.HostId
+                          SessionName = sessionName
+                          Status = SessionReady
+                          Refs = []
+                          Loads = []
+                          SearchPaths = []
+                          Variables = []
+                          LastCheckpointId = None
+                          RunningSinceUtc = Some now
+                          LastExecutionAt = None }
+
+                    sessionRegistry.Create created |> ignore
+                    created
+
+            inventoryEventStore.Append(
+                { SequenceId = 0L
+                  EventKind = "host.upserted"
+                  SubjectKind = "host"
+                  AgentId = Some host.AgentId
+                  HostId = Some host.HostId
+                  SessionId = None
+                  CreatedAt = now
+                  Message = Some $"External host '{host.HostId}' registered by '{agent.AgentId}'." }
+            )
+            |> ignore
+
+            inventoryEventStore.Append(
+                { SequenceId = 0L
+                  EventKind = "session.upserted"
+                  SubjectKind = "session"
+                  AgentId = Some session.AgentId
+                  HostId = Some session.HostId
+                  SessionId = Some session.SessionId
+                  CreatedAt = now
+                  Message = Some $"External session '{session.SessionId}' registered by '{agent.AgentId}'." }
+            )
+            |> ignore
+
+            { Agent = agent
+              Host = host
+              Session = session
+              CreatedAgent = not agentPreviouslyExisted
+              CreatedHost = not hostPreviouslyExisted
+              CreatedSession = not sessionPreviouslyExisted }
 
         member _.UnregisterSession(agentId: string, hostId: string, sessionId: string) =
             match sessionRegistry.TryGet(hostId, sessionId) with

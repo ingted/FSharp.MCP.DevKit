@@ -22,6 +22,22 @@ type McpControlPlaneTools =
         | "inproc" -> invalidOp "create_fsi_host does not support inproc. Use net10 or netfx for out-of-process hosts."
         | _ -> invalidOp $"Unsupported host kind '{hostKind}'. Valid values: netfx, net10."
 
+    static member private parseHostStatus(hostStatus: string) =
+        if String.IsNullOrWhiteSpace hostStatus then
+            Ready
+        else
+            match hostStatus.Trim().ToLowerInvariant() with
+            | "creating"
+            | "starting" -> Creating
+            | "ready"
+            | "running" -> Ready
+            | "busy" -> Busy
+            | "degraded" -> Degraded
+            | "stopped" -> Stopped
+            | "faulted"
+            | "failed" -> Faulted
+            | _ -> invalidOp $"Unsupported host status '{hostStatus}'."
+
     static member private parseArguments(arguments: string option) =
         arguments
         |> Option.filter (fun value -> not (String.IsNullOrWhiteSpace value))
@@ -132,6 +148,10 @@ type McpControlPlaneTools =
         ) : string =
         fsiService.ListHosts(agentId) |> FSharpJson.serialize
 
+    [<McpServerTool(Name = "list_all_fsi_hosts"); Description("List all FSI hosts known by this DevKit control plane, regardless of owning agent.")>]
+    static member ListAllFsiHosts(fsiService: FsiMcpService) : string =
+        fsiService.ListAllHosts() |> FSharpJson.serialize
+
     [<McpServerTool(Name = "create_fsi_session"); Description("Create or hydrate a session under an existing host. If later execution faults, create a fresh session before assuming the host itself is broken.")>]
     static member CreateFsiSession
         (
@@ -185,6 +205,38 @@ type McpControlPlaneTools =
             [<Description("Target host id.")>] hostId: string
         ) : string =
         fsiService.ListHostSessions(hostId) |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "list_all_fsi_sessions"); Description("List all FSI sessions known by this DevKit control plane, regardless of owning agent or host.")>]
+    static member ListAllFsiSessions(fsiService: FsiMcpService) : string =
+        fsiService.ListAllSessions() |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "register_external_fsi_session"); Description("Register or refresh an already-running external FSI host/session pair so Mgmt2, Codex, and other agents share the same inventory fabric. This does not start a process.")>]
+    static member RegisterExternalFsiSession
+        (
+            fsiService: FsiMcpService,
+            [<Description("Agent id that observed or owns the registration.")>] agentId: string,
+            [<Description("External host id, usually the procnode/proc id shown by ProcSupervisor.")>] hostId: string,
+            [<Description("External session id under the host.")>] sessionId: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional host address or FSI supervisor actor path.")>] hostAddress: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional display name for the session. Defaults to sessionId.")>] sessionName: string,
+            [<Optional; DefaultParameterValue(null: string)>]
+            [<Description("Optional host status, e.g. ready, running, degraded, stopped, faulted.")>] hostStatus: string
+        ) : string =
+        let hostAddressOpt = if String.IsNullOrWhiteSpace hostAddress then None else Some hostAddress
+        let sessionNameOpt = if String.IsNullOrWhiteSpace sessionName then None else Some sessionName
+        let parsedStatus = McpControlPlaneTools.parseHostStatus hostStatus
+
+        fsiService.RegisterExternalFsiSession(
+            agentId,
+            hostId,
+            sessionId,
+            ?hostAddress = hostAddressOpt,
+            ?sessionName = sessionNameOpt,
+            hostStatus = parsedStatus
+        )
+        |> FSharpJson.serialize
 
     [<McpServerTool(Name = "probe_fsi_host_sessions_liveness"); Description("Force-refresh liveness for all sessions under a host by bypassing the current liveness cache once.")>]
     static member ProbeFsiHostSessionsLiveness

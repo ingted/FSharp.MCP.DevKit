@@ -15,12 +15,14 @@ type IHostRegistry =
     abstract member Update: HostRecord -> unit
     abstract member TryGet: string -> HostRecord option
     abstract member ListByAgent: string -> HostRecord list
+    abstract member List: unit -> HostRecord list
 
 type ISessionRegistry =
     abstract member Create: SessionRecord -> SessionRecord
     abstract member Update: SessionRecord -> unit
     abstract member TryGet: string * string -> SessionRecord option
     abstract member ListByHost: string -> SessionRecord list
+    abstract member List: unit -> SessionRecord list
     abstract member Remove: string * string -> SessionRecord option
 
 type InventoryEventRecord =

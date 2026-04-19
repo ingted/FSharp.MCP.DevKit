@@ -58,6 +58,42 @@ type private FakeFsiSupervisorClient(sessionFactory: HostRecord * string -> FsiS
             )
 
 [<Fact>]
+let ``McpControlPlaneTools register external FSI session into shared inventory`` () =
+    let service =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false
+        )
+
+    use _cleanup = service :> IDisposable
+
+    let registeredJson =
+        McpControlPlaneTools.RegisterExternalFsiSession(
+            service,
+            "codex",
+            "procnode-shared-01",
+            "session-shared-01",
+            "akka.tcp://proc-system@10.28.112.94:54029/user/fsi/supervisor",
+            "Shared Session 01",
+            "running"
+        )
+
+    let allHostsJson = McpControlPlaneTools.ListAllFsiHosts(service)
+    let allSessionsJson = McpControlPlaneTools.ListAllFsiSessions(service)
+    let hostSessionsJson = McpControlPlaneTools.ListFsiSessions(service, "procnode-shared-01")
+    let inventoryEventsJson = service.ListInventoryEvents()
+    let agentHostsJson = McpControlPlaneTools.ListFsiHosts(service, "codex")
+
+    Assert.Contains("procnode-shared-01", registeredJson)
+    Assert.Contains("session-shared-01", registeredJson)
+    Assert.Contains("procnode-shared-01", allHostsJson)
+    Assert.Contains("session-shared-01", allSessionsJson)
+    Assert.Contains("session-shared-01", hostSessionsJson)
+    Assert.Contains("procnode-shared-01", agentHostsJson)
+    Assert.Contains(inventoryEventsJson, fun item -> item.EventKind = "host.upserted" && item.HostId = Some "procnode-shared-01")
+    Assert.Contains(inventoryEventsJson, fun item -> item.EventKind = "session.upserted" && item.SessionId = Some "session-shared-01")
+
+[<Fact>]
 let ``McpControlPlaneTools register host session and health flow works`` () =
     task {
         let mutable capturedSpec : ProcHostSpec option = None

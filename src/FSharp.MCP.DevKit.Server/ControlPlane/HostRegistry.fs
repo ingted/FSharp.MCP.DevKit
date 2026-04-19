@@ -22,3 +22,6 @@ type InMemoryHostRegistry() =
             hosts.Values
             |> Seq.filter (fun record -> record.AgentId = agentId)
             |> Seq.toList
+
+        member _.List() =
+            hosts.Values |> Seq.toList
