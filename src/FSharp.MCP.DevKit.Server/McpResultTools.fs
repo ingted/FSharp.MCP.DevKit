@@ -55,6 +55,12 @@ module private McpResultToolParsing =
     let optionalPositiveInt value =
         if value <= 0 then None else Some value
 
+    let optionalUtcDateTime (value: string) =
+        if String.IsNullOrWhiteSpace value then
+            None
+        else
+            Some(DateTimeOffset.Parse(value.Trim()).UtcDateTime)
+
 [<McpServerToolType>]
 type McpResultTools =
 
@@ -411,6 +417,20 @@ type McpResultTools =
         ) : string =
         let limitOpt = if limit <= 0 then None else Some limit
         fsiService.ListSessionOutputArchives(?limit = limitOpt)
+        |> FSharpJson.serialize
+
+    [<McpServerTool(Name = "prune_session_output_archives"); Description("Plan or execute archive cleanup. By default use dryRun=true to inspect candidates. Set keepLatest > 0 to preserve the newest archives and/or olderThanUtc to delete archives older than an ISO-8601 UTC timestamp.")>]
+    static member PruneSessionOutputArchives
+        (
+            fsiService: FsiMcpService,
+            [<Description("Keep this many newest archives. Use 0 to omit this policy.")>] keepLatest: int,
+            [<Description("ISO-8601 UTC cutoff. Archives older than this are candidates. Use an empty string to omit.")>] olderThanUtc: string,
+            [<Description("When true, only return candidates without deleting artifacts. Use false to execute deletion.")>] dryRun: bool
+        ) : string =
+        let keepLatestOpt = optionalPositiveInt keepLatest
+        let olderThanUtcOpt = optionalUtcDateTime olderThanUtc
+
+        fsiService.PruneSessionOutputArchives(?keepLatest = keepLatestOpt, ?olderThanUtc = olderThanUtcOpt, dryRun = dryRun)
         |> FSharpJson.serialize
 
     [<McpServerTool(Name = "get_archived_session_output_events"); Description("Read archived output events by session id, without requiring the session to still be registered as live.")>]

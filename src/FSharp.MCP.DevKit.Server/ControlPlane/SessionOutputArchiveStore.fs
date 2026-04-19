@@ -220,6 +220,61 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
 
         pendings.TryRemove(sessionId) |> ignore
 
+    let deleteArchiveArtifacts sessionId =
+        let archiveDirectory = sessionArchiveDirectory sessionId
+        let archiveIndexPath = sessionArchiveIndexPath sessionId
+
+        if Directory.Exists(archiveDirectory) then
+            Directory.Delete(archiveDirectory, true)
+
+        if File.Exists(archiveIndexPath) then
+            File.Delete(archiveIndexPath)
+
+        archives.TryRemove(sessionId) |> ignore
+
+    let candidateReason (keepLatest: int option) (olderThanUtc: DateTime option) =
+        [ match keepLatest with
+          | Some value -> $"outside keepLatest={value}"
+          | None -> ()
+
+          match olderThanUtc with
+          | Some value -> $"archivedAt < {value:O}"
+          | None -> () ]
+        |> String.concat "; "
+
+    let pruneCandidates (keepLatest: int option) (olderThanUtc: DateTime option) =
+        let archives =
+            listArchiveIndexSessionIds ()
+            |> List.choose (fun sessionId ->
+                match tryLoadArchive sessionId with
+                | Some (record, _) -> Some record
+                | None ->
+                    match archives.TryGetValue sessionId with
+                    | true, (record, _) -> Some record
+                    | false, _ -> None)
+            |> List.sortByDescending (fun record -> record.ArchivedAt)
+
+        archives
+        |> List.mapi (fun index record -> index, record)
+        |> List.filter (fun (index, record) ->
+            let keepLatestAllows =
+                match keepLatest with
+                | Some value -> index >= value
+                | None -> true
+
+            let olderThanAllows =
+                match olderThanUtc with
+                | Some value -> record.ArchivedAt.ToUniversalTime() < value.ToUniversalTime()
+                | None -> true
+
+            keepLatestAllows && olderThanAllows)
+        |> List.map (fun (index, record) ->
+            { SessionId = record.SessionId
+              ArchivedAt = record.ArchivedAt
+              EventCount = record.EventCount
+              MaxSequenceNo = record.MaxSequenceNo
+              Reason = candidateReason keepLatest olderThanUtc })
+
     member _.ExecutionStoreRoot = executionStoreRoot
 
     interface ISessionOutputArchiveStore with
@@ -349,3 +404,47 @@ type JsonLineSessionOutputArchiveStore(?executionStoreRoot: string) =
                 archives.[sessionId] <- (archiveRecord, events)
                 clearPendingArtifacts sessionId
                 archiveRecord)
+
+        member _.PruneArchives(?keepLatest: int, ?olderThanUtc: DateTime, ?dryRun: bool) =
+            let dryRun = defaultArg dryRun true
+            let keepLatest = keepLatest |> Option.filter (fun value -> value >= 0)
+
+            match keepLatest, olderThanUtc with
+            | None, None ->
+                { DryRun = dryRun
+                  KeepLatest = None
+                  OlderThanUtc = None
+                  CandidateCount = 0
+                  DeletedCount = 0
+                  Candidates = []
+                  Errors = [ "At least one prune policy is required: keepLatest or olderThanUtc." ] }
+            | _ ->
+                let candidates = pruneCandidates keepLatest olderThanUtc
+
+                if dryRun then
+                    { DryRun = true
+                      KeepLatest = keepLatest
+                      OlderThanUtc = olderThanUtc
+                      CandidateCount = candidates.Length
+                      DeletedCount = 0
+                      Candidates = candidates
+                      Errors = [] }
+                else
+                    let deleted, errors =
+                        candidates
+                        |> List.fold
+                            (fun (deleted, errors) candidate ->
+                                try
+                                    deleteArchiveArtifacts candidate.SessionId
+                                    deleted + 1, errors
+                                with ex ->
+                                    deleted, $"{candidate.SessionId}: {ex.Message}" :: errors)
+                            (0, [])
+
+                    { DryRun = false
+                      KeepLatest = keepLatest
+                      OlderThanUtc = olderThanUtc
+                      CandidateCount = candidates.Length
+                      DeletedCount = deleted
+                      Candidates = candidates
+                      Errors = errors |> List.rev }

@@ -42,6 +42,9 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
 
         member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
 
+        member _.PruneArchives(?keepLatest: int, ?olderThanUtc: DateTime, ?dryRun: bool) =
+            inner.PruneArchives(?keepLatest = keepLatest, ?olderThanUtc = olderThanUtc, ?dryRun = dryRun)
+
 type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot, healthFactory: string -> ProcHostSnapshot option) =
     interface IProcSupervisorClient with
         member _.StartProc(procId: string, spec: ProcHostSpec) = Task.FromResult(startFactory (procId, spec))
@@ -940,6 +943,83 @@ let ``McpResultTools archive tool and resource expose archive metadata after exp
         Assert.Single(resourceArchiveList) |> ignore
         Assert.Equal("default-session", archiveList[0].SessionId)
         Assert.Equal("archive-alpha", archivedEvents[0].Payload)
+    }
+
+[<Fact>]
+let ``McpResultTools prune session output archives supports dry run and execute`` () =
+    task {
+        let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.McpResultToolsTests", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempRoot) |> ignore
+        let liveStore = JsonLineSessionOutputLiveStore(tempRoot) :> ISessionOutputLiveStore
+        let archiveStore = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+        let service =
+            new FsiMcpService(
+                NullLogger<FsiMcpService>.Instance,
+                enableRemoteClient = false,
+                sessionOutputLiveStore = liveStore,
+                sessionOutputArchiveStore = archiveStore
+            )
+
+        use _cleanup = service :> IDisposable
+
+        let oldSession = "session-prune-old"
+        let newSession = "session-prune-new"
+
+        let _ =
+            archiveStore.Seal(
+                oldSession,
+                [ { SessionId = oldSession
+                    ExecutionId = Some "exec-prune-old"
+                    SequenceNo = 1L
+                    StreamKind = "stdout"
+                    TimestampUtc = DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc)
+                    Payload = "old"
+                    IsReplay = false } ],
+                DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc)
+            )
+
+        let _ =
+            archiveStore.Seal(
+                newSession,
+                [ { SessionId = newSession
+                    ExecutionId = Some "exec-prune-new"
+                    SequenceNo = 1L
+                    StreamKind = "stdout"
+                    TimestampUtc = DateTime(2026, 4, 19, 0, 0, 0, DateTimeKind.Utc)
+                    Payload = "new"
+                    IsReplay = false } ],
+                DateTime(2026, 4, 19, 0, 0, 0, DateTimeKind.Utc)
+            )
+
+        let dryRunJson =
+            McpResultTools.PruneSessionOutputArchives(
+                service,
+                1,
+                "2026-04-18T00:00:00Z",
+                true
+            )
+
+        let executeJson =
+            McpResultTools.PruneSessionOutputArchives(
+                service,
+                1,
+                "2026-04-18T00:00:00Z",
+                false
+            )
+
+        let dryRun = FSharpJson.deserialize<SessionOutputArchivePruneReport> dryRunJson
+        let executed = FSharpJson.deserialize<SessionOutputArchivePruneReport> executeJson
+        let remaining = service.ListSessionOutputArchives()
+
+        Assert.True(dryRun.DryRun)
+        Assert.Equal(1, dryRun.CandidateCount)
+        Assert.Equal(oldSession, dryRun.Candidates[0].SessionId)
+        Assert.False(executed.DryRun)
+        Assert.Equal(1, executed.DeletedCount)
+        Assert.Empty(executed.Errors)
+        Assert.Single(remaining) |> ignore
+        Assert.Equal(newSession, remaining[0].SessionId)
     }
 
 [<Fact>]

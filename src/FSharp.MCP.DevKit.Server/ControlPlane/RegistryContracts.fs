@@ -66,6 +66,22 @@ type SessionOutputSealPendingRecord =
       MaxSequenceNo: int64 option
       ErrorMessage: string }
 
+type SessionOutputArchivePruneCandidate =
+    { SessionId: string
+      ArchivedAt: DateTime
+      EventCount: int
+      MaxSequenceNo: int64 option
+      Reason: string }
+
+type SessionOutputArchivePruneReport =
+    { DryRun: bool
+      KeepLatest: int option
+      OlderThanUtc: DateTime option
+      CandidateCount: int
+      DeletedCount: int
+      Candidates: SessionOutputArchivePruneCandidate list
+      Errors: string list }
+
 type SessionOutputSealOutcome =
     | Archived of SessionOutputArchiveRecord
     | SealPending of SessionOutputSealPendingRecord
@@ -101,6 +117,8 @@ type ISessionOutputArchiveStore =
     abstract member ListPendingEvents: sessionId: string * ?afterSequenceNo: int64 * ?limit: int -> OutputEventRecord list
     abstract member TryGetSealPending: sessionId: string -> SessionOutputSealPendingRecord option
     abstract member RecoverSealPending: sessionId: string -> SessionOutputArchiveRecord option
+    abstract member PruneArchives:
+        ?keepLatest: int * ?olderThanUtc: DateTime * ?dryRun: bool -> SessionOutputArchivePruneReport
 
 type IAsyncJobRegistry =
     abstract member Create: AsyncFsiJob -> AsyncFsiJob

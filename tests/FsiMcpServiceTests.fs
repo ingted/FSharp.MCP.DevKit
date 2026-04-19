@@ -322,6 +322,9 @@ type private FailOnceArchiveStore(inner: ISessionOutputArchiveStore) =
 
         member _.RecoverSealPending(sessionId: string) = inner.RecoverSealPending(sessionId)
 
+        member _.PruneArchives(?keepLatest: int, ?olderThanUtc: DateTime, ?dryRun: bool) =
+            inner.PruneArchives(?keepLatest = keepLatest, ?olderThanUtc = olderThanUtc, ?dryRun = dryRun)
+
 [<Fact>]
 let ``FsiMcpService output subscriber broker tracks subscribers on default route`` () =
     let service = createIsolatedService ()

@@ -13,6 +13,7 @@ open Microsoft.Extensions.Logging.Abstractions
 open Akka.Proc.Supervisor
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
+open FSharp.MCP.DevKit.Server.ControlPlane
 open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open Xunit
@@ -263,19 +264,38 @@ type RealNet10HostIsolationTests() =
             let mutable procOpt : Process option = None
             let mutable actorSystemOpt : ActorSystem option = None
             let mutable procClientOpt : IProcSupervisorClient option = None
+            let tempExecutionStoreRoot =
+                Path.Combine(
+                    Path.GetTempPath(),
+                    "FSharp.MCP.DevKit.RealNet10HostIsolationTests",
+                    Guid.NewGuid().ToString("N")
+                )
 
             try
+                Directory.CreateDirectory(tempExecutionStoreRoot) |> ignore
                 let! proc, _, _, actorSystem, procClient, fsiClient, systemName, supervisorPort = RealNet10HostIsolationTests.startProcSupervisor()
                 procOpt <- Some proc
                 actorSystemOpt <- Some actorSystem
                 procClientOpt <- Some procClient
+
+                let sessionOutputLiveStore =
+                    JsonLineSessionOutputLiveStore(tempExecutionStoreRoot) :> ISessionOutputLiveStore
+
+                let sessionOutputArchiveStore =
+                    JsonLineSessionOutputArchiveStore(tempExecutionStoreRoot) :> ISessionOutputArchiveStore
+
+                let executionStore =
+                    JsonLineResultRegistry(tempExecutionStoreRoot) :> IExecutionStore
 
                 use service =
                     new FsiMcpService(
                         NullLogger<FsiMcpService>.Instance,
                         enableRemoteClient = false,
                         procSupervisorClient = procClient,
-                        fsiSupervisorClient = fsiClient
+                        fsiSupervisorClient = fsiClient,
+                        sessionOutputLiveStore = sessionOutputLiveStore,
+                        sessionOutputArchiveStore = sessionOutputArchiveStore,
+                        executionStore = executionStore
                     )
 
                 return! testBody service procClient systemName supervisorPort
@@ -308,6 +328,11 @@ type RealNet10HostIsolationTests() =
                     with _ -> ()
                     proc.Dispose()
                 | None -> ()
+
+                try
+                    if Directory.Exists(tempExecutionStoreRoot) then
+                        Directory.Delete(tempExecutionStoreRoot, true)
+                with _ -> ()
         }
 
     static member private waitForHostReady (procClient: IProcSupervisorClient) hostId : Task<ProcHostSnapshot> =

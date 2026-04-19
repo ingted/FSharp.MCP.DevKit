@@ -1062,6 +1062,9 @@ module McpFsiTools =
         member _.TryGetArchivedSessionOutputArchive(sessionId: string) =
             sessionOutputArchiveStore.TryGetArchive(sessionId)
 
+        member _.PruneSessionOutputArchives(?keepLatest: int, ?olderThanUtc: DateTime, ?dryRun: bool) =
+            sessionOutputArchiveStore.PruneArchives(?keepLatest = keepLatest, ?olderThanUtc = olderThanUtc, ?dryRun = dryRun)
+
         member _.UnsubscribeSessionOutput(subscriberId: string, ?requestedRoute: ExecutionRoute) =
             let route = resolveRoute requestedRoute
             outputStore.Unsubscribe(route.SessionId, subscriberId)

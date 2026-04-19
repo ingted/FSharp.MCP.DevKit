@@ -83,3 +83,52 @@ let ``JsonLineSessionOutputArchiveStore persists seal pending index and can reco
     Assert.Equal(2, recovered.Value.EventCount)
     Assert.Equal(2, archiveEvents.Length)
     Assert.True(reloadedStore.TryGetSealPending(sessionId).IsNone)
+
+[<Fact>]
+let ``JsonLineSessionOutputArchiveStore prunes archives by keep latest and cutoff`` () =
+    let tempRoot = Path.Combine(Path.GetTempPath(), "PulseTrade.SessionOutputArchiveStoreTests", Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory(tempRoot) |> ignore
+
+    let store = JsonLineSessionOutputArchiveStore(tempRoot) :> ISessionOutputArchiveStore
+
+    let oldSessionA = "session-old-a"
+    let oldSessionB = "session-old-b"
+    let newSession = "session-new"
+
+    let _ =
+        store.Seal(
+            oldSessionA,
+            [ mkEvent oldSessionA 1L "old-a" ],
+            DateTime(2026, 4, 10, 0, 0, 0, DateTimeKind.Utc)
+        )
+
+    let _ =
+        store.Seal(
+            oldSessionB,
+            [ mkEvent oldSessionB 1L "old-b" ],
+            DateTime(2026, 4, 11, 0, 0, 0, DateTimeKind.Utc)
+        )
+
+    let _ =
+        store.Seal(
+            newSession,
+            [ mkEvent newSession 1L "new" ],
+            DateTime(2026, 4, 19, 0, 0, 0, DateTimeKind.Utc)
+        )
+
+    let cutoff = DateTime(2026, 4, 18, 0, 0, 0, DateTimeKind.Utc)
+    let dryRun = store.PruneArchives(keepLatest = 1, olderThanUtc = cutoff, dryRun = true)
+    let executed = store.PruneArchives(keepLatest = 1, olderThanUtc = cutoff, dryRun = false)
+    let remaining = store.ListArchives()
+
+    Assert.True(dryRun.DryRun)
+    Assert.Equal(2, dryRun.CandidateCount)
+    Assert.Equal(0, dryRun.DeletedCount)
+    Assert.Equal(2, executed.CandidateCount)
+    Assert.Equal(2, executed.DeletedCount)
+    Assert.Empty(executed.Errors)
+    Assert.Single(remaining) |> ignore
+    Assert.Equal(newSession, remaining[0].SessionId)
+    Assert.True(store.TryGetArchive(oldSessionA).IsNone)
+    Assert.True(store.TryGetArchive(oldSessionB).IsNone)
+    Assert.True(store.TryGetArchive(newSession).IsSome)
