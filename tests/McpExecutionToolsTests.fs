@@ -2,12 +2,15 @@ module McpExecutionToolsTests
 
 open System
 open System.IO
+open System.Text.Json
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
 open Xunit
+open Akka.FSI.Contracts
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server
 open FSharp.MCP.DevKit.Server.ControlPlane
+open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 
 let private waitForCompletion (service: FsiMcpService) asyncId =
@@ -63,6 +66,70 @@ type private ScheduledExecutionBatchDto =
     { ProcessedCount: int
       Items: ScheduledExecutionProcessDto list }
 
+type private FakeProcSupervisorClient(startFactory: string * ProcHostSpec -> ProcHostSnapshot, healthFactory: string -> ProcHostSnapshot option) =
+    interface IProcSupervisorClient with
+        member _.StartProc(procId: string, spec: ProcHostSpec) = Task.FromResult(startFactory (procId, spec))
+        member _.StopProc(_, _) = Task.FromException<ProcHostSnapshot>(InvalidOperationException("Not used"))
+        member _.GetProcInfo(procId: string) = Task.FromResult(healthFactory procId)
+        member _.ListProcInfo() = Task.FromResult([])
+        member _.RestartProc(procId: string) =
+            match healthFactory procId with
+            | Some value -> Task.FromResult(value)
+            | None -> Task.FromException<ProcHostSnapshot>(InvalidOperationException("Missing proc"))
+
+type private FakeFsiSupervisorClient() =
+    interface IFsiSupervisorClient with
+        member _.Execute(_host: HostRecord, request: FsiSupervisorExecRequest) =
+            Task.FromResult(
+                { SessionId = request.SessionId
+                  RawErrorType = None
+                  Result =
+                    { Output = "remote supervisor accepted: " + request.Code
+                      Errors = ""
+                      IsSuccess = true
+                      ExecutionTime = Some(TimeSpan.FromMilliseconds 5.0)
+                      Diagnostics = [||]
+                      Value = Some request.Code } }
+            )
+
+        member _.GetSessionInfo(_host: HostRecord, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Status = "ready"
+                  Refs = []
+                  Loads = []
+                  SearchPaths = []
+                  Variables = []
+                  LastCheckpointId = None
+                  RunningSinceUtc = Some DateTime.UtcNow }
+            )
+
+        member _.ListSessions(_) =
+            Task.FromResult(
+                [ { SessionId = "agent-self-session"
+                    Status = "ready"
+                    Refs = []
+                    Loads = []
+                    SearchPaths = []
+                    Variables = []
+                    LastCheckpointId = None
+                    RunningSinceUtc = Some DateTime.UtcNow } ]
+            )
+
+        member _.EnsureSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = false
+                  Status = "created" }
+            )
+
+        member _.ResetSession(_, sessionId: string) =
+            Task.FromResult(
+                { SessionId = sessionId
+                  Existed = true
+                  Status = "reset" }
+            )
+
 let private isolatedService () =
     let root =
         Path.Combine(
@@ -103,6 +170,107 @@ let private isolatedService () =
                     () }
 
     service, cleanup
+
+let private remoteFabricService () =
+    let root =
+        Path.Combine(
+            Path.GetTempPath(),
+            "fsharp-devkit-agent-self-fabric-tests",
+            Guid.NewGuid().ToString("N")
+        )
+
+    Directory.CreateDirectory(root) |> ignore
+
+    let hostSpec =
+        { ExecutablePath = "dotnet"
+          Arguments = [ "fsi-host.dll" ]
+          WorkingDirectory = Some root
+          Role = Some "procnode"
+          ProbeMessage = Some "PING"
+          ProbeCron = None
+          ProbeIntervalMs = Some 1000 }
+
+    let procSnapshot procId spec =
+        { ProcId = procId
+          Status = "running"
+          ProcessId = Some 9911
+          FsiSupervisorPath = Some "akka://agent-self-fabric/user/fsi/supervisor"
+          NodeAddress = Some "akka://agent-self-fabric"
+          LastProbeUtc = Some DateTime.UtcNow
+          LastProbeOk = Some true
+          ProbeFailures = 0
+          Spec = spec
+          LastError = None }
+
+    let procClient =
+        FakeProcSupervisorClient(
+            (fun (procId, spec) -> procSnapshot procId (Some spec)),
+            (fun procId -> Some(procSnapshot procId None))
+        )
+
+    let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+    let sessionOutputLiveStore = JsonLineSessionOutputLiveStore(root) :> ISessionOutputLiveStore
+    let outputStore = SessionOutputStore(outputSubscriberBroker, sessionOutputLiveStore) :> IOutputStore
+    let sessionOutputArchiveStore = JsonLineSessionOutputArchiveStore(root) :> ISessionOutputArchiveStore
+    let executionStore = JsonLineResultRegistry(root) :> IExecutionStore
+    let queue = ScheduledExecutionQueue(root)
+
+    let service =
+        new FsiMcpService(
+            NullLogger<FsiMcpService>.Instance,
+            enableRemoteClient = false,
+            procSupervisorClient = (procClient :> IProcSupervisorClient),
+            fsiSupervisorClient = (FakeFsiSupervisorClient() :> IFsiSupervisorClient),
+            outputSubscriberBroker = outputSubscriberBroker,
+            sessionOutputLiveStore = sessionOutputLiveStore,
+            outputStore = outputStore,
+            sessionOutputArchiveStore = sessionOutputArchiveStore,
+            executionStore = executionStore,
+            scheduledExecutionQueue = queue
+        )
+
+    let cleanup =
+        { new IDisposable with
+            member _.Dispose() =
+                (service :> IDisposable).Dispose()
+
+                try
+                    Directory.Delete(root, true)
+                with _ ->
+                    () }
+
+    service, cleanup, hostSpec
+
+let private createMgmt2DirectEnvelopeJson executionId requestId output =
+    let timestamp = DateTimeOffset.Parse("2026-04-22T15:10:00Z")
+    let envelope: WinAgentEnvelopeImport.WinAgentSharedExecutionEnvelope =
+        { SchemaVersion = 1
+          ExecutionPlane = "mgmt2-direct-proc-supervisor"
+          ExecutionId = executionId
+          RequestId = requestId
+          ToolName = "Mgmt2.RemoteFsi.DirectProcSupervisor"
+          RouteName = "agent-self-procnode/agent-self-session"
+          Status = "succeeded"
+          StartedAtUtc = timestamp
+          CompletedAtUtc = timestamp.AddSeconds(1.0)
+          Output = output
+          Error = None
+          ExceptionType = None
+          Metadata =
+            Map.ofList
+                [ "execution.source", "Mgmt2.DirectProcSupervisor"
+                  "execution.plane", "remote-fsi"
+                  "principal.id", "human-direct"
+                  "principal.kind", "human"
+                  "principal.source", "mgmt2" ]
+          OutputEvents =
+            [ { SequenceNo = 1L
+                StreamKind = "stdout"
+                Text = output
+                IsReplay = false
+                TimestampUtc = timestamp.AddSeconds(1.0) } ] }
+
+    JsonSerializer.Serialize(envelope, WinAgentEnvelopeImport.jsonOptions)
 
 [<Fact>]
 let ``McpExecutionTools browser-aware routed execution records schedule target metadata`` () =
@@ -271,6 +439,113 @@ let ``McpExecutionTools execute evaluate reset and async on explicit default rou
         | None -> Assert.Fail("Expected routed async execution to store a result id.")
         Assert.Equal("FSI session reset successfully", resetOutput)
         Assert.Contains("Expression evaluation failed", postResetEval)
+    }
+
+[<Fact>]
+let ``Agent self fabric colocates agent Mgmt2 editor direct and scheduled executions on one remote session`` () =
+    task {
+        let service, cleanup, hostSpec = remoteFabricService()
+        use _cleanup = cleanup
+
+        let agentId = "PulseTrade.Management2"
+        let hostId = "agent-self-procnode"
+        let sessionId = "agent-self-session"
+
+        service.RegisterAgent(agentId, "Mgmt2/Agent self fabric") |> ignore
+        let! _ = service.CreateHost(agentId, Net10Host, hostSpec, requestedHostId = hostId)
+        let! _ = service.CreateSession(agentId, hostId, sessionId = sessionId)
+
+        let! codexText =
+            McpExecutionTools.ExecuteFSharpCodeRouted(
+                service,
+                agentId,
+                hostId,
+                sessionId,
+                "printfn \"fabric-codex-tool\"; 101",
+                30,
+                "codex-cli",
+                "agent",
+                "mcp"
+            )
+
+        let! editorText =
+            McpExecutionTools.ExecuteFSharpCodeRouted(
+                service,
+                agentId,
+                hostId,
+                sessionId,
+                "printfn \"fabric-mgmt2-editor\"; 202",
+                30,
+                "human-editor",
+                "human",
+                "mgmt2"
+            )
+
+        let directEnvelopeJson =
+            createMgmt2DirectEnvelopeJson
+                "agent-self-direct-1"
+                "agent-self-direct-req-1"
+                "fabric-mgmt2-remote-window"
+
+        let _ =
+            McpResultTools.ImportWinAgentExecutionEnvelope(
+                service,
+                agentId,
+                hostId,
+                sessionId,
+                directEnvelopeJson
+            )
+
+        let! _ =
+            McpExecutionTools.ScheduleFSharpCodeRouted(
+                service,
+                agentId,
+                hostId,
+                sessionId,
+                "printfn \"fabric-scheduled\"; 303",
+                "",
+                30,
+                "codex-scheduler",
+                "agent",
+                "mcp"
+            )
+
+        let! processedJson = McpExecutionTools.ProcessDueScheduledFsiExecutionBatch(service, 10)
+        let! fabricJson = McpResultTools.ListExecutionFabricRecordsByHostSession(service, hostId, sessionId, 20)
+
+        let outputJson =
+            McpResultTools.GetSessionOutputEvents(
+                service,
+                agentId,
+                hostId,
+                sessionId,
+                0L,
+                0
+            )
+
+        let! codexPrincipalJson = McpResultTools.ListExecutionFabricRecordsByPrincipalId(service, "codex-cli", 20)
+        let! humanPrincipalJson = McpResultTools.ListExecutionFabricRecordsByPrincipalId(service, "human-editor", 20)
+
+        let processed = FSharpJson.deserialize<ScheduledExecutionBatchDto> processedJson
+        let records = FSharpJson.deserialize<ExecutionFabricRecord list> fabricJson
+        let events = FSharpJson.deserialize<OutputEventRecord list> outputJson
+
+        Assert.Contains("fabric-codex-tool", codexText)
+        Assert.Contains("fabric-mgmt2-editor", editorText)
+        Assert.Equal(1, processed.ProcessedCount)
+        Assert.True(records |> List.length >= 4)
+        Assert.True(records |> List.forall (fun record -> record.target.hostId = hostId && record.target.sessionId = sessionId))
+        Assert.True(events |> List.forall (fun eventRecord -> eventRecord.SessionId = sessionId))
+        Assert.Contains("fabric-codex-tool", fabricJson)
+        Assert.Contains("fabric-mgmt2-editor", fabricJson)
+        Assert.Contains("fabric-mgmt2-remote-window", fabricJson)
+        Assert.Contains("fabric-scheduled", fabricJson)
+        Assert.Contains("fabric-codex-tool", outputJson)
+        Assert.Contains("fabric-mgmt2-editor", outputJson)
+        Assert.Contains("fabric-mgmt2-remote-window", outputJson)
+        Assert.Contains("fabric-scheduled", outputJson)
+        Assert.Contains("codex-cli", codexPrincipalJson)
+        Assert.Contains("human-editor", humanPrincipalJson)
     }
 
 [<Fact>]
