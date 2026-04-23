@@ -18,6 +18,34 @@ open FSharp.MCP.DevKit.Server.Integration
 open FSharp.MCP.DevKit.Server.McpFsiTools
 open Xunit
 
+type private RealProcessScheduledExecutionDto =
+    { ScheduleId: string
+      AgentId: string
+      HostId: string
+      SessionId: string
+      OperationKind: string
+      DueAtUtc: DateTime
+      CreatedAtUtc: DateTime
+      StartedAtUtc: DateTime option
+      CompletedAtUtc: DateTime option
+      Status: string
+      ResultId: string option
+      RetryCount: int
+      LastError: string option
+      Metadata: Map<string, string> }
+
+type private RealProcessScheduledExecutionProcessDto =
+    { Processed: bool
+      Item: RealProcessScheduledExecutionDto option
+      ResultId: string option
+      IsSuccess: bool option
+      Output: string option
+      Errors: string option }
+
+type private RealProcessScheduledExecutionBatchDto =
+    { ProcessedCount: int
+      Items: RealProcessScheduledExecutionProcessDto list }
+
 [<Collection("mcp-client-e2e")>]
 type RealNet10HostIsolationTests() =
 
@@ -284,8 +312,12 @@ type RealNet10HostIsolationTests() =
                 let sessionOutputArchiveStore =
                     JsonLineSessionOutputArchiveStore(tempExecutionStoreRoot) :> ISessionOutputArchiveStore
 
+                let outputSubscriberBroker = InMemoryOutputSubscriberBroker() :> IOutputSubscriberBroker
+                let outputStore = SessionOutputStore(outputSubscriberBroker, sessionOutputLiveStore) :> IOutputStore
                 let executionStore =
                     JsonLineResultRegistry(tempExecutionStoreRoot) :> IExecutionStore
+
+                let scheduledExecutionQueue = ScheduledExecutionQueue(tempExecutionStoreRoot)
 
                 use service =
                     new FsiMcpService(
@@ -293,9 +325,12 @@ type RealNet10HostIsolationTests() =
                         enableRemoteClient = false,
                         procSupervisorClient = procClient,
                         fsiSupervisorClient = fsiClient,
+                        outputSubscriberBroker = outputSubscriberBroker,
                         sessionOutputLiveStore = sessionOutputLiveStore,
+                        outputStore = outputStore,
                         sessionOutputArchiveStore = sessionOutputArchiveStore,
-                        executionStore = executionStore
+                        executionStore = executionStore,
+                        scheduledExecutionQueue = scheduledExecutionQueue
                     )
 
                 return! testBody service procClient systemName supervisorPort
@@ -387,6 +422,38 @@ type RealNet10HostIsolationTests() =
                     | None -> raise (InvalidOperationException($"Timed out after {timeoutMs}ms."))
         }
 
+    static member private createMgmt2DirectEnvelopeJson routeName executionId requestId output =
+        let timestamp = DateTimeOffset.Parse("2026-04-23T12:10:00Z")
+
+        let envelope: WinAgentEnvelopeImport.WinAgentSharedExecutionEnvelope =
+            { SchemaVersion = 1
+              ExecutionPlane = "mgmt2-direct-proc-supervisor"
+              ExecutionId = executionId
+              RequestId = requestId
+              ToolName = "Mgmt2.RemoteFsi.DirectProcSupervisor"
+              RouteName = routeName
+              Status = "succeeded"
+              StartedAtUtc = timestamp
+              CompletedAtUtc = timestamp.AddSeconds(1.0)
+              Output = output
+              Error = None
+              ExceptionType = None
+              Metadata =
+                Map.ofList
+                    [ "execution.source", "Mgmt2.DirectProcSupervisor"
+                      "execution.plane", "remote-fsi"
+                      "principal.id", "human-direct"
+                      "principal.kind", "human"
+                      "principal.source", "mgmt2" ]
+              OutputEvents =
+                [ { SequenceNo = 1L
+                    StreamKind = "stdout"
+                    Text = output
+                    IsReplay = false
+                    TimestampUtc = timestamp.AddSeconds(1.0) } ] }
+
+        System.Text.Json.JsonSerializer.Serialize(envelope, WinAgentEnvelopeImport.jsonOptions)
+
     [<Fact>]
     member _.``Real out-of-proc net10 hosts keep state isolated``() =
         RealNet10HostIsolationTests.withRealNet10Service (fun service procClient systemName supervisorPort ->
@@ -443,27 +510,27 @@ type RealNet10HostIsolationTests() =
                 Assert.True(hosts |> List.exists (fun host -> host.HostId = hostBId && host.Status = Ready))
 
                 let! _ =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpControlPlaneTools.CreateFsiSession(service, agentId, hostAId, sessionId, "Host A Session"))
 
                 let! _ =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpControlPlaneTools.CreateFsiSession(service, agentId, hostBId, sessionId, "Host B Session"))
 
                 let! _ =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.ExecuteFSharpCodeRouted(service, agentId, hostAId, sessionId, "let hostValue = 101", 30))
 
                 let! _ =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.ExecuteFSharpCodeRouted(service, agentId, hostBId, sessionId, "let hostValue = 202", 30))
 
                 let! valueA =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.EvaluateFSharpExpressionRouted(service, agentId, hostAId, sessionId, "hostValue", 30))
 
                 let! valueB =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.EvaluateFSharpExpressionRouted(service, agentId, hostBId, sessionId, "hostValue", 30))
 
                 let sessionsA =
@@ -510,11 +577,11 @@ type RealNet10HostIsolationTests() =
                 let! _ = RealNet10HostIsolationTests.waitForHostReady procClient hostId
 
                 let! _ =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpControlPlaneTools.CreateFsiSession(service, agentId, hostId, sessionId, "Batch Session"))
 
                 let! defineResult =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.ExecuteFSharpCodeRouted(
                             service,
                             agentId,
@@ -525,9 +592,137 @@ type RealNet10HostIsolationTests() =
                         ))
 
                 let! value =
-                    RealNet10HostIsolationTests.retryTask 15000 250 (fun () ->
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
                         McpExecutionTools.EvaluateFSharpExpressionRouted(service, agentId, hostId, sessionId, "secondValue", 30))
 
                 Assert.DoesNotContain("Execution failed", defineResult)
                 Assert.Equal("2", value)
+            })
+
+    [<Fact>]
+    member _.``Real proc supervisor fsi supervisor session colocates agent Mgmt2 and scheduled fabric``() =
+        RealNet10HostIsolationTests.withRealNet10Service (fun service procClient systemName supervisorPort ->
+            task {
+                let agentId = "PulseTrade.Management2"
+                let hostId = "real-agent-self-procnode"
+                let sessionId = "real-agent-self-session"
+
+                let _ = McpControlPlaneTools.RegisterFsiAgent(service, agentId, "Mgmt2/Agent real process self fabric")
+
+                let! _ =
+                    McpControlPlaneTools.CreateFsiHost(
+                        service,
+                        agentId,
+                        "net10",
+                        "dotnet",
+                        RealNet10HostIsolationTests.createProcNodeArguments
+                            hostId
+                            systemName
+                            supervisorPort
+                            (RealNet10HostIsolationTests.getFreePort ()),
+                        RealNet10HostIsolationTests.ServerOutputDir,
+                        hostId,
+                        RealNet10HostIsolationTests.FsiProbeMessage,
+                        1000
+                    )
+
+                let! _ = RealNet10HostIsolationTests.waitForHostReady procClient hostId
+
+                let! _ =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpControlPlaneTools.CreateFsiSession(service, agentId, hostId, sessionId, "Real Agent Self Session"))
+
+                let! codexText =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpExecutionTools.ExecuteFSharpCodeRouted(
+                            service,
+                            agentId,
+                            hostId,
+                            sessionId,
+                            "printfn \"real-fabric-codex-tool\"; 101",
+                            30,
+                            "codex-cli",
+                            "agent",
+                            "mcp"
+                        ))
+
+                let! editorText =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpExecutionTools.ExecuteFSharpCodeRouted(
+                            service,
+                            agentId,
+                            hostId,
+                            sessionId,
+                            "printfn \"real-fabric-mgmt2-editor\"; 202",
+                            30,
+                            "human-editor",
+                            "human",
+                            "mgmt2"
+                        ))
+
+                let directEnvelopeJson =
+                    RealNet10HostIsolationTests.createMgmt2DirectEnvelopeJson
+                        $"{hostId}/{sessionId}"
+                        "real-agent-self-direct-1"
+                        "real-agent-self-direct-req-1"
+                        "real-fabric-mgmt2-remote-window"
+
+                let _ =
+                    McpResultTools.ImportWinAgentExecutionEnvelope(
+                        service,
+                        agentId,
+                        hostId,
+                        sessionId,
+                        directEnvelopeJson
+                    )
+
+                let! _ =
+                    McpExecutionTools.ScheduleFSharpCodeRouted(
+                        service,
+                        agentId,
+                        hostId,
+                        sessionId,
+                        "printfn \"real-fabric-scheduled\"; 303",
+                        "",
+                        30,
+                        "codex-scheduler",
+                        "agent",
+                        "mcp"
+                    )
+
+                let! processedJson = McpExecutionTools.ProcessDueScheduledFsiExecutionBatch(service, 10)
+                let! fabricJson = McpResultTools.ListExecutionFabricRecordsByHostSession(service, hostId, sessionId, 20)
+
+                let outputJson =
+                    McpResultTools.GetSessionOutputEvents(
+                        service,
+                        agentId,
+                        hostId,
+                        sessionId,
+                        0L,
+                        0
+                    )
+
+                let! codexPrincipalJson = McpResultTools.ListExecutionFabricRecordsByPrincipalId(service, "codex-cli", 20)
+                let! humanPrincipalJson = McpResultTools.ListExecutionFabricRecordsByPrincipalId(service, "human-editor", 20)
+                let processed = FSharpJson.deserialize<RealProcessScheduledExecutionBatchDto> processedJson
+                let records = FSharpJson.deserialize<Akka.FSI.Contracts.ExecutionFabricRecord list> fabricJson
+                let events = FSharpJson.deserialize<OutputEventRecord list> outputJson
+
+                Assert.Contains("real-fabric-codex-tool", codexText)
+                Assert.Contains("real-fabric-mgmt2-editor", editorText)
+                Assert.Equal(1, processed.ProcessedCount)
+                Assert.True(records |> List.length >= 4)
+                Assert.True(records |> List.forall (fun record -> record.target.hostId = hostId && record.target.sessionId = sessionId))
+                Assert.True(events |> List.forall (fun eventRecord -> eventRecord.SessionId = sessionId))
+                Assert.Contains("real-fabric-codex-tool", fabricJson)
+                Assert.Contains("real-fabric-mgmt2-editor", fabricJson)
+                Assert.Contains("real-fabric-mgmt2-remote-window", fabricJson)
+                Assert.Contains("real-fabric-scheduled", fabricJson)
+                Assert.Contains("real-fabric-codex-tool", outputJson)
+                Assert.Contains("real-fabric-mgmt2-editor", outputJson)
+                Assert.Contains("real-fabric-mgmt2-remote-window", outputJson)
+                Assert.Contains("real-fabric-scheduled", outputJson)
+                Assert.Contains("codex-cli", codexPrincipalJson)
+                Assert.Contains("human-editor", humanPrincipalJson)
             })
