@@ -46,6 +46,18 @@ type private RealProcessScheduledExecutionBatchDto =
     { ProcessedCount: int
       Items: RealProcessScheduledExecutionProcessDto list }
 
+type private RealProcessBrowserExecutionResponseDto =
+    { ResultId: string
+      RequestId: string
+      HostId: string
+      SessionId: string
+      BrowserId: string
+      TabId: string option
+      IsSuccess: bool
+      Output: string
+      Errors: string
+      Metadata: Map<string, string> }
+
 [<Collection("mcp-client-e2e")>]
 type RealNet10HostIsolationTests() =
 
@@ -725,4 +737,143 @@ type RealNet10HostIsolationTests() =
                 Assert.Contains("real-fabric-scheduled", outputJson)
                 Assert.Contains("codex-cli", codexPrincipalJson)
                 Assert.Contains("human-editor", humanPrincipalJson)
+            })
+
+    [<Fact>]
+    member _.``Real browser-aware fabric joins multi session html json fragments``() =
+        RealNet10HostIsolationTests.withRealNet10Service (fun service procClient systemName supervisorPort ->
+            task {
+                let agentId = "PulseTrade.Management2"
+                let browserId = "sharpbrowser-fabric-smoke"
+                let hostAId = "real-sb-companion-a"
+                let hostBId = "real-sb-companion-b"
+                let sessionAId = "sb-companion-session-a"
+                let sessionBId = "sb-companion-session-b"
+
+                let _ = McpControlPlaneTools.RegisterFsiAgent(service, agentId, "SharpBrowser fabric smoke")
+
+                let createHost hostId display =
+                    McpControlPlaneTools.CreateFsiHost(
+                        service,
+                        agentId,
+                        "net10",
+                        "dotnet",
+                        RealNet10HostIsolationTests.createProcNodeArguments
+                            hostId
+                            systemName
+                            supervisorPort
+                            (RealNet10HostIsolationTests.getFreePort ()),
+                        RealNet10HostIsolationTests.ServerOutputDir,
+                        hostId,
+                        RealNet10HostIsolationTests.FsiProbeMessage,
+                        1000
+                    )
+
+                let! _ = createHost hostAId "SharpBrowser Companion A"
+                let! _ = createHost hostBId "SharpBrowser Companion B"
+                let! _ = RealNet10HostIsolationTests.waitForHostReady procClient hostAId
+                let! _ = RealNet10HostIsolationTests.waitForHostReady procClient hostBId
+
+                let! _ =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpControlPlaneTools.CreateFsiSession(service, agentId, hostAId, sessionAId, "SharpBrowser tab session A"))
+
+                let! _ =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpControlPlaneTools.CreateFsiSession(service, agentId, hostBId, sessionBId, "SharpBrowser tab session B"))
+
+                let crawlerCode tabId url pageTitle =
+                    let quoted (value: string) =
+                        System.Text.Json.JsonSerializer.Serialize(value)
+
+                    String.Join(
+                        "\n",
+                        [ $"let tabId = {quoted tabId}"
+                          $"let url = {quoted url}"
+                          $"let pageTitle = {quoted pageTitle}"
+                          "let html = \"<html><body><h1>\" + pageTitle + \"</h1><a href='\" + url + \"'>\" + tabId + \"</a></body></html>\""
+                          "let jsonString (value: string) = System.Text.Json.JsonSerializer.Serialize(value)"
+                          "printfn \"crawl %s %s\" tabId url"
+                          "\"{\\\"tabId\\\":\" + jsonString tabId + \",\\\"url\\\":\" + jsonString url + \",\\\"title\\\":\" + jsonString pageTitle + \",\\\"html\\\":\" + jsonString html + \"}\"" ]
+                    )
+
+                let executeCrawler hostId sessionId tabId url title principalId principalKind principalSource =
+                    RealNet10HostIsolationTests.retryTask 60000 500 (fun () ->
+                        McpExecutionTools.ExecuteBrowserFSharpCodeRouted(
+                            service,
+                            agentId,
+                            hostId,
+                            sessionId,
+                            browserId,
+                            crawlerCode tabId url title,
+                            tabId,
+                            "tab",
+                            hostId,
+                            sessionId,
+                            "sharpbrowser-companion-fsi",
+                            30,
+                            principalId,
+                            principalKind,
+                            principalSource
+                        ))
+
+                let! responseJsons =
+                    Task.WhenAll(
+                        [| executeCrawler hostAId sessionAId "tab-news" "https://example.com/news" "News Snapshot" "codex-cli" "agent" "mcp"
+                           executeCrawler hostBId sessionBId "tab-calendar" "https://example.com/calendar" "Calendar Snapshot" "human-mgmt2" "human" "mgmt2" |]
+                    )
+
+                let responses =
+                    responseJsons
+                    |> Array.map FSharpJson.deserialize<RealProcessBrowserExecutionResponseDto>
+
+                let responseIds =
+                    responses |> Array.map (fun response -> response.ResultId) |> Set.ofArray
+
+                let! browserFabricJson = McpResultTools.ListExecutionFabricRecordsByBrowserId(service, browserId, 20)
+                let records = FSharpJson.deserialize<Akka.FSI.Contracts.ExecutionFabricRecord list> browserFabricJson
+
+                let matching =
+                    records
+                    |> List.filter (fun record -> responseIds.Contains record.executionId)
+                    |> List.sortBy (fun record -> record.target.tabId |> Option.defaultValue "")
+
+                let decodeFabricValueText (valueText: string) =
+                    use outerJsonDoc = System.Text.Json.JsonDocument.Parse(valueText)
+
+                    if outerJsonDoc.RootElement.ValueKind = System.Text.Json.JsonValueKind.String then
+                        outerJsonDoc.RootElement.GetString()
+                    else
+                        outerJsonDoc.RootElement.GetRawText()
+
+                let htmlJsonArray =
+                    matching
+                    |> List.choose (fun record -> record.valueText)
+                    |> List.map decodeFabricValueText
+                    |> fun fragments -> "[" + String.Join(",", fragments) + "]"
+
+                use htmlJsonDoc = System.Text.Json.JsonDocument.Parse(htmlJsonArray)
+                let documents = htmlJsonDoc.RootElement.EnumerateArray() |> Seq.toArray
+                let documentTitle (item: System.Text.Json.JsonElement) = item.GetProperty("title").GetString()
+                let documentHtml (item: System.Text.Json.JsonElement) = item.GetProperty("html").GetString()
+
+                Assert.Equal(2, responses.Length)
+                Assert.True(responses |> Array.forall (fun response -> response.IsSuccess))
+                Assert.Equal(2, matching.Length)
+                Assert.True(matching |> List.exists (fun record -> record.target.hostId = hostAId && record.target.sessionId = sessionAId))
+                Assert.True(matching |> List.exists (fun record -> record.target.hostId = hostBId && record.target.sessionId = sessionBId))
+                Assert.True(matching |> List.forall (fun record -> record.target.browserId = Some browserId))
+                Assert.True(matching |> List.exists (fun record -> record.target.tabId = Some "tab-news"))
+                Assert.True(matching |> List.exists (fun record -> record.target.tabId = Some "tab-calendar"))
+                Assert.Contains("crawl tab-news https://example.com/news", browserFabricJson)
+                Assert.Contains("crawl tab-calendar https://example.com/calendar", browserFabricJson)
+                Assert.Contains("codex-cli", browserFabricJson)
+                Assert.Contains("human-mgmt2", browserFabricJson)
+                Assert.Equal(2, documents.Length)
+                Assert.Contains(documents, fun item -> item.GetProperty("tabId").GetString() = "tab-news")
+                Assert.Contains(documents, fun item -> item.GetProperty("tabId").GetString() = "tab-calendar")
+                Assert.Contains(documents, fun item -> documentTitle item = "News Snapshot")
+                Assert.Contains(documents, fun item -> documentTitle item = "Calendar Snapshot")
+                Assert.Contains(documents, fun item -> (documentHtml item).Contains("tab-news"))
+                Assert.Contains(documents, fun item -> (documentHtml item).Contains("tab-calendar"))
             })
