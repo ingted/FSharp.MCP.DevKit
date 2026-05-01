@@ -23,7 +23,13 @@ param(
     [switch]$SkipStart,
 
     [Parameter(Mandatory = $false)]
-    [switch]$RecreateService
+    [switch]$RecreateService,
+
+    [Parameter(Mandatory = $false)]
+    [string]$BuildCacheRoot,
+
+    [Parameter(Mandatory = $false)]
+    [string]$NuGetCacheRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +127,22 @@ function Wait-Health {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $serverProject = Join-Path $repoRoot "src\FSharp.MCP.DevKit.Server\FSharp.MCP.DevKit.Server.fsproj"
+$repoDriveRoot = [System.IO.Path]::GetPathRoot($repoRoot)
+
+if ([string]::IsNullOrWhiteSpace($BuildCacheRoot)) {
+    $BuildCacheRoot = Join-Path $repoDriveRoot "_buildcache\fsharp-devkit"
+}
+
+if ([string]::IsNullOrWhiteSpace($NuGetCacheRoot)) {
+    $NuGetCacheRoot = Join-Path $repoDriveRoot "NuGet"
+}
+
+$buildCachePath = [System.IO.Path]::GetFullPath($BuildCacheRoot)
+$csharpSdkArtifactsDir = Join-Path $buildCachePath "csharp-sdk-artifacts"
+$nugetCachePath = [System.IO.Path]::GetFullPath($NuGetCacheRoot)
+$nugetPackagesDir = Join-Path $nugetCachePath "packages"
+$nugetHttpCacheDir = Join-Path $nugetCachePath "http-cache"
+$nugetScratchDir = Join-Path $nugetCachePath "scratch"
 $deployRootPath = [System.IO.Path]::GetFullPath($DeployRoot)
 $targetServerDir = Join-Path $deployRootPath "fsharp-devkit"
 $healthUrl = "http://localhost:$ServerPort/healthz"
@@ -136,6 +158,11 @@ if (-not $PSCmdlet.ShouldProcess($deployRootPath, "Deploy FSharp.MCP.DevKit.Serv
 }
 
 New-Item -ItemType Directory -Force -Path $deployRootPath, $targetServerDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildCachePath, $csharpSdkArtifactsDir, $nugetPackagesDir, $nugetHttpCacheDir, $nugetScratchDir | Out-Null
+
+$env:NUGET_PACKAGES = $nugetPackagesDir
+$env:NUGET_HTTP_CACHE_PATH = $nugetHttpCacheDir
+$env:NUGET_SCRATCH = $nugetScratchDir
 
 Stop-ServiceIfExists -Name $ServiceName
 
@@ -144,12 +171,21 @@ if ($RecreateService) {
 }
 
 if (-not $SkipPublish) {
+    Write-Step "Stopping persistent dotnet build servers"
+    & dotnet build-server shutdown
+
     $publishArgs = @(
         "publish",
         $serverProject,
         "-c", $Configuration,
         "-f", "net10.0",
         "-p:SelfContained=false",
+        "-p:ArtifactsDir=$csharpSdkArtifactsDir",
+        "-p:UseSharedCompilation=false",
+        "-p:BuildInParallel=false",
+        "-p:GenerateDocumentationFile=false",
+        "-m:1",
+        "--disable-build-servers",
         "-o", $targetServerDir
     )
 
