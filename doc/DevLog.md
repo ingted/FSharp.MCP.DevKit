@@ -1335,3 +1335,14 @@
 - Same `ResultId` + same `agentId/hostId/sessionId`: returns existing record, no duplicate output publish.
 - Same `ResultId` + different route: fails fast to prevent cross-session pollution.
 - Tests: `McpResultToolsTests` 12/12 after isolated store fix.
+
+## 2026-05-03 Supervisor Logging Package Rollout
+
+- Updated `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` to consume final supervisor logging packages:
+  - `FAkka.FSI.Supervisor [1.564.101.203-win5]`
+  - `FAkka.Proc.Supervisor [1.564.101.203-win6]`
+- Updated `Directory.Build.props` `PulseTradeFSharpCoreVersion` from `10.1.201` to `10.1.203` to align with the current SDK `10.0.203` and remove the NU1605 downgrade produced by the new supervisor packages.
+- Validation:
+  - `dotnet build Libs/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -m:1 /p:GeneratePackageOnBuild=false`
+  - Result: 0 errors. Remaining warnings are known FCS/Suave/NuGet advisory/FS3511 warnings.
+  - Root trace: `G:\PulseTrade.fs\log\20260503165300.BuildFSharpMcpDevKitServerFSharpCore203.op_log`.

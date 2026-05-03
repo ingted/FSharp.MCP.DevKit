@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <PulseTradeFSharpCoreVersion>10.1.201</PulseTradeFSharpCoreVersion>
+    <PulseTradeFSharpCoreVersion>10.1.203</PulseTradeFSharpCoreVersion>
     <DisableImplicitFSharpCoreReference>true</DisableImplicitFSharpCoreReference>
   </PropertyGroup>
 
