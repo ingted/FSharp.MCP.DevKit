@@ -90,8 +90,8 @@
     <PackageReference Include="Akka" Version="1.5.64" />
     <PackageReference Include="Akka.Remote" Version="1.5.64" />
     <PackageReference Include="FAkka.Fsi.Contracts" Version="[10.1.201.5-win4]" />
-    <PackageReference Include="FAkka.FSI.Supervisor" Version="[1.564.101.203-win5]" />
-    <PackageReference Include="FAkka.Proc.Supervisor" Version="[1.564.101.203-win8]" />
+    <PackageReference Include="FAkka.FSI.Supervisor" Version="[1.564.101.203-win6]" />
+    <PackageReference Include="FAkka.Proc.Supervisor" Version="[1.564.101.203-win9]" />
     <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />
