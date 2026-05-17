@@ -330,7 +330,7 @@ WP01-WP09 -> WP10
 | O3 | routed execution onboarding | 已完成第一段：新增 `ensure_fsi_route`，並補 tool description、client helper、demo flow | `ensure_fsi_route`、client harness helper、`DEMO.md` onboarding flow、MCP client smoke tests | P1 | done |
 | O4 | `FSharpCode` result query 序列化策略 | 已完成第一段：不可直接 JSON 序列化的 materialized value 會回傳 fallback envelope，保留 type/text/error | `System.Type` materialization regression test、fallback envelope serializer policy | P1 | done |
 | O5 | 真 out-of-proc net10 E2E | 已完成：補上會真起 `Akka.Proc.Supervisor` 並透過 `create_fsi_host` 啟兩個 `net10` procnode host 的 integration test | real proc supervisor / multi-host isolation integration test、`dotnet test -f net10.0` 驗證 | P2 | done |
-| O6 | MCP F# façade 參數規約化 | 本輪已證實真 MCP client 對 F# optional 參數與 F# DU/option JSON 很敏感；目前只修了高流量 control/result tools | audit 全部 MCP tools/resources，將高風險 optional/DU surface 收斂到 transport-safe contract | P1 | todo |
+| O6 | MCP F# façade 參數規約化 | 已完成第一段：Server tool surface 的 F# optional parameter 全部收斂為 CLR optional/default-value 參數，並補 reflection regression 防回歸 | `McpSurfaceTests` no-`FSharpOption` gate、MCP client smoke 驗證 stdio transport | P1 | done |
 4. out-of-proc host 建立流程一律經 `ProcSupervisor`
 5. host/session health 可查
 6. path mapping 可查

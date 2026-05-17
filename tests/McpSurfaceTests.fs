@@ -2,12 +2,15 @@ module McpSurfaceTests
 
 open System
 open System.IO
+open System.Reflection
 open System.Text
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging.Abstractions
+open ModelContextProtocol.Server
 open Xunit
 open FSharp.MCP.DevKit.Core
 open FSharp.MCP.DevKit.Server.McpFsiTools
+open FSharp.MCP.DevKit.Server
 
 let private waitForCompletion (service: FsiMcpService) asyncId =
     task {
@@ -40,6 +43,39 @@ let private createTempFsx (content: string) =
                         () }
 
     filePath, cleanup
+
+let private mcpToolTypes =
+    [ typeof<FSharpInteractiveTools>
+      typeof<CodeInjectionTools>
+      typeof<KillMCPServer>
+      typeof<McpControlPlaneTools>
+      typeof<McpExecutionTools>
+      typeof<McpResultTools>
+      typeof<McpDocumentationTools.DocumentationMcpTools> ]
+
+[<Fact>]
+let ``MCP tool surface does not expose FSharpOption parameters`` () =
+    let fsharpOptionDefinition = typedefof<option<_>>
+
+    let offenders =
+        mcpToolTypes
+        |> List.collect (fun toolType ->
+            toolType.GetMethods(BindingFlags.Public ||| BindingFlags.Static)
+            |> Array.filter (fun methodInfo ->
+                methodInfo.GetCustomAttributes(typeof<McpServerToolAttribute>, true).Length > 0)
+            |> Array.collect (fun methodInfo ->
+                methodInfo.GetParameters()
+                |> Array.choose (fun parameter ->
+                    if
+                        parameter.ParameterType.IsGenericType
+                        && parameter.ParameterType.GetGenericTypeDefinition() = fsharpOptionDefinition
+                    then
+                        Some $"{toolType.FullName}.{methodInfo.Name}:{parameter.Name}:{parameter.ParameterType.FullName}"
+                    else
+                        None))
+            |> Array.toList)
+
+    Assert.True(List.isEmpty offenders, String.concat "\n" offenders)
 
 [<Fact>]
 let ``FSharpInteractiveTools execute evaluate add-path and state use routed service`` () =

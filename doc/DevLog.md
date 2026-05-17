@@ -1356,3 +1356,17 @@
   - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpResultToolsTests" --logger "console;verbosity=normal"`
   - Result: 19/19 passed.
   - Root trace: `G:\PulseTrade.fs\log\20260518044054.devkit_mcp_result_tools_tests2.op_log`.
+
+## 2026-05-18 MCP Tool Surface Optional Parameter Normalization
+
+- Closed WBS `O6` first production slice.
+- Converted remaining `McpFsiTools` and `McpDocumentationTools` tool-boundary F# optional parameters into CLR optional/default-value parameters:
+  - FSI timeout parameters use `timeoutSeconds = 0` to mean service default timeout.
+  - text filters/paths use empty string as the transport-safe omitted value.
+  - boolean flags use explicit CLR defaults.
+  - line/column optional integers use `0` as omitted sentinel.
+- Added `McpSurfaceTests.MCP tool surface does not expose FSharpOption parameters`, scanning every registered server tool type for `FSharpOption<_>` parameter leakage.
+- Validation:
+  - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpSurfaceTests" --logger "console;verbosity=normal"` -> 12/12 passed.
+  - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpClientSmokeTests" --logger "console;verbosity=normal"` -> 9/9 passed through stdio MCP client smoke.
+  - Root traces: `G:\PulseTrade.fs\log\20260518044920.devkit_o6_surface_tests.op_log`, `G:\PulseTrade.fs\log\20260518044920.devkit_o6_client_smoke_tests.op_log`.

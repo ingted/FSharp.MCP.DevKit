@@ -2,6 +2,7 @@ namespace FSharp.MCP.DevKit.Server
 
 open System
 open System.ComponentModel
+open System.Runtime.InteropServices
 open System.Threading.Tasks
 open Microsoft.Extensions.Logging
 open FSharp.MCP.DevKit.Documentation.Tools.DocumentationCommands
@@ -20,13 +21,17 @@ module McpDocumentationTools =
         static member GeneratePackageDocumentation
             (
                 [<Description("Name of the NuGet package (e.g., 'Newtonsoft.Json')")>] packageName: string,
-                [<Description("Output directory (optional, defaults to ./docs)")>] ?outputDir: string,
-                [<Description("Whether to overwrite existing documentation (default: false)")>] ?overwrite: bool
+                [<Optional; DefaultParameterValue("")>]
+                [<Description("Output directory (optional, defaults to ./docs)")>] outputDir: string,
+                [<Optional; DefaultParameterValue(false)>]
+                [<Description("Whether to overwrite existing documentation (default: false)")>] overwrite: bool
             ) : Task<string> =
             task {
                 try
+                    let outputDirOpt = if String.IsNullOrWhiteSpace outputDir then None else Some outputDir
+
                     let result =
-                        generatePackageDocumentation packageName outputDir (defaultArg overwrite false)
+                        generatePackageDocumentation packageName outputDirOpt overwrite
 
                     match result with
                     | Success(message, details) ->
@@ -47,13 +52,17 @@ module McpDocumentationTools =
         static member GenerateProjectDocumentation
             (
                 [<Description("Path to the F# project file (.fsproj)")>] projectPath: string,
-                [<Description("Output directory (optional, defaults to ./docs)")>] ?outputDir: string,
-                [<Description("Whether to overwrite existing documentation (default: false)")>] ?overwrite: bool
+                [<Optional; DefaultParameterValue("")>]
+                [<Description("Output directory (optional, defaults to ./docs)")>] outputDir: string,
+                [<Optional; DefaultParameterValue(false)>]
+                [<Description("Whether to overwrite existing documentation (default: false)")>] overwrite: bool
             ) : Task<string> =
             task {
                 try
+                    let outputDirOpt = if String.IsNullOrWhiteSpace outputDir then None else Some outputDir
+
                     let result =
-                        generateProjectDocumentation projectPath outputDir (defaultArg overwrite false)
+                        generateProjectDocumentation projectPath outputDirOpt overwrite
 
                     match result with
                     | Success(message, details) ->
@@ -71,11 +80,15 @@ module McpDocumentationTools =
         /// List cached NuGet packages available for documentation
         [<McpServerTool; Description("List NuGet packages available in the local cache for documentation generation")>]
         static member ListCachedPackages
-            ([<Description("Optional search term to filter packages")>] ?searchTerm: string)
+            (
+                [<Optional; DefaultParameterValue("")>]
+                [<Description("Optional search term to filter packages")>] searchTerm: string
+            )
             : Task<string> =
             task {
                 try
-                    let result = listCachedPackages searchTerm
+                    let searchTermOpt = if String.IsNullOrWhiteSpace searchTerm then None else Some searchTerm
+                    let result = listCachedPackages searchTermOpt
 
                     match result with
                     | Success(message, details) ->
@@ -115,11 +128,13 @@ module McpDocumentationTools =
         static member SearchDocumentation
             (
                 [<Description("Search term or identifier to find")>] searchTerm: string,
-                [<Description("Documentation directory to search (optional, defaults to ./docs)")>] ?docsDir: string
+                [<Optional; DefaultParameterValue("")>]
+                [<Description("Documentation directory to search (optional, defaults to ./docs)")>] docsDir: string
             ) : Task<string> =
             task {
                 try
-                    let result = searchDocumentation searchTerm docsDir
+                    let docsDirOpt = if String.IsNullOrWhiteSpace docsDir then None else Some docsDir
+                    let result = searchDocumentation searchTerm docsDirOpt
 
                     match result with
                     | Success(message, details) ->

@@ -5,6 +5,7 @@ open System.IO
 open System.Text
 open System.Threading
 open System.ComponentModel
+open System.Runtime.InteropServices
 open System.Threading.Tasks
 open System.Threading.Channels
 open System.Collections.Generic
@@ -119,6 +120,12 @@ module McpFsiTools =
 
             $"{baseError}\n\nDiagnostics:\n{diagnosticMessages}"
         | _ -> baseError
+
+    let private resolveToolTimeout (defaultTimeout: TimeSpan) (timeoutSeconds: int) =
+        if timeoutSeconds > 0 then
+            TimeSpan.FromSeconds(float timeoutSeconds)
+        else
+            defaultTimeout
 
     type private StaticParseCheckResult =
         { Diagnostics: FsiDiagnostic array
@@ -2173,13 +2180,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("F# code to execute")>] code: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout)
                 let result = record.Result
@@ -2208,13 +2213,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("F# code to execute asynchronously. After this tool returns asyncId, poll get_async_status or read resource fsi/async/{asyncId} until isCompleted is true. If the code includes #I/#r paths, they must be visible from the FSI host process, not just from the caller's container.")>] code: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let asyncId = fsiService.EnqueueExecuteCode(code, timeout)
                 return asyncId
@@ -2236,13 +2239,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("F# code to execute")>] code: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(ExecuteCode, code, timeout = timeout)
                 let result = record.Result
@@ -2292,13 +2293,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("F# expression to evaluate")>] expression: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(EvaluateExpression, expression, timeout = timeout)
                 let result = record.Result
@@ -2322,13 +2321,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("Path to the F# script file to load. It must be visible from the FSI host process.")>] scriptPath: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(LoadScript, scriptPath, timeout = timeout)
                 let result = record.Result
@@ -2352,13 +2349,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("Path to the assembly or assembly name to reference. If you pass a path, it must be visible from the FSI host process.")>] assemblyPath: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(ReferenceAssembly, assemblyPath, timeout = timeout)
                 let result = record.Result
@@ -2382,13 +2377,11 @@ module McpFsiTools =
                 fsiService: FsiMcpService,
                 [<Description("NuGet package name (e.g. 'Newtonsoft.Json' or 'FSharp.Data, 4.2.7')")>] packageName:
                     string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(ReferenceNuget, packageName, timeout = timeout)
                 let result = record.Result
@@ -2411,13 +2404,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("Directory path to add to F# search path. It must be visible from the FSI host process.")>] path: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(AddSearchPath, path, timeout = timeout)
                 let result = record.Result
@@ -2440,13 +2431,11 @@ module McpFsiTools =
             (
                 fsiService: FsiMcpService,
                 [<Description("F# code to parse and check")>] code: string,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! response = staticParseAndCheckSource code timeout
 
@@ -2476,13 +2465,11 @@ module McpFsiTools =
         static member ResetFSISession
             (
                 fsiService: FsiMcpService,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(ResetSession, "", timeout = timeout)
                 let result = record.Result
@@ -2504,13 +2491,11 @@ module McpFsiTools =
         static member GetFSIState
             (
                 fsiService: FsiMcpService,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(GetState, "", timeout = timeout)
                 let result = record.Result
@@ -2633,19 +2618,24 @@ module McpFsiTools =
                 fsiService: FsiMcpService,
                 [<Description("F# code to inject")>] newCode: string,
                 [<Description("Path to the target script file")>] filePath: string,
-                [<Description("Line number where to insert the code (1-based, optional)")>] ?insertAtLine: int,
-                [<Description("Column position for indentation (1-based, optional)")>] ?insertAtColumn: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Line number where to insert the code (1-based, optional)")>] insertAtLine: int,
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Column position for indentation (1-based, optional)")>] insertAtColumn: int
             ) : Task<string> =
             task {
                 try
                     match readExistingFSharpFile filePath with
                     | Error errorMsg -> return errorMsg
                     | Ok(fullPath, existingCode) ->
-                        match planCodeInsertion fullPath existingCode newCode insertAtLine insertAtColumn with
+                        let insertAtLineOpt = if insertAtLine > 0 then Some insertAtLine else None
+                        let insertAtColumnOpt = if insertAtColumn > 0 then Some insertAtColumn else None
+
+                        match planCodeInsertion fullPath existingCode newCode insertAtLineOpt insertAtColumnOpt with
                         | Error errorMsg -> return errorMsg
                         | Ok plan ->
                             let previewTitle =
-                                match insertAtLine, insertAtColumn with
+                                match insertAtLineOpt, insertAtColumnOpt with
                                 | Some line, Some col ->
                                     sprintf "Preview of code injection into %s at line %d, column %d:" fullPath line col
                                 | Some line, None ->
@@ -2885,7 +2875,8 @@ module McpFsiTools =
                 [<Description("Path to the target script file")>] filePath: string,
                 [<Description("Text pattern to search for")>] searchPattern: string,
                 [<Description("Replacement text")>] replacement: string,
-                [<Description("Replace all occurrences (default: true)")>] ?replaceAll: bool
+                [<Optional; DefaultParameterValue(true)>]
+                [<Description("Replace all occurrences (default: true)")>] replaceAll: bool
             ) : Task<string> =
             task {
                 try
@@ -2893,7 +2884,7 @@ module McpFsiTools =
                         return sprintf "Error: File not found: %s" filePath
                     else
                         let content = System.IO.File.ReadAllText(filePath)
-                        let shouldReplaceAll = defaultArg replaceAll true
+                        let shouldReplaceAll = replaceAll
 
                         let newContent, replacementCount =
                             if shouldReplaceAll then
@@ -3024,7 +3015,8 @@ module McpFsiTools =
                 fsiService: FsiMcpService,
                 [<Description("Path to the target script file")>] filePath: string,
                 [<Description("Starting line number (1-based)")>] startLine: int,
-                [<Description("Ending line number (1-based, inclusive, optional)")>] ?endLine: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Ending line number (1-based, inclusive, optional)")>] endLine: int
             ) : Task<string> =
             task {
                 try
@@ -3033,7 +3025,7 @@ module McpFsiTools =
                     else
                         let lines = System.IO.File.ReadAllLines(filePath)
                         let totalLines = lines.Length
-                        let actualEndLine = defaultArg endLine startLine
+                        let actualEndLine = if endLine > 0 then endLine else startLine
 
                         if
                             startLine <= 0
@@ -3094,7 +3086,8 @@ module McpFsiTools =
                 fsiService: FsiMcpService,
                 [<Description("Path to the target F# file (.fsx, .fs, .fsi)")>] filePath: string,
                 [<Description("Text pattern to search for")>] searchPattern: string,
-                [<Description("Case sensitive search (default: false)")>] ?caseSensitive: bool
+                [<Optional; DefaultParameterValue(false)>]
+                [<Description("Case sensitive search (default: false)")>] caseSensitive: bool
             ) : Task<string> =
             task {
                 try
@@ -3106,7 +3099,7 @@ module McpFsiTools =
                         | Ok() ->
 
                             let lines = System.IO.File.ReadAllLines(filePath)
-                            let isCaseSensitive = defaultArg caseSensitive false
+                            let isCaseSensitive = caseSensitive
 
                             let comparison =
                                 if isCaseSensitive then
@@ -3164,15 +3157,14 @@ module McpFsiTools =
                 [<Description("Line number where to insert the code (1-based)")>] insertAtLine: int,
                 [<Description("Column position for indentation (1-based, optional - if not provided, preserves existing indentation)")>] insertAtColumn:
                     int,
-                [<Description("Whether to format the code (default: true)")>] ?shouldFormat: bool,
-                [<Description("Whether to validate the code before insertion (default: false, since validation can fail with large code pieces)")>] ?shouldValidate:
+                [<Optional; DefaultParameterValue(true)>]
+                [<Description("Whether to format the code (default: true)")>] shouldFormat: bool,
+                [<Optional; DefaultParameterValue(false)>]
+                [<Description("Whether to validate the code before insertion (default: false, since validation can fail with large code pieces)")>] shouldValidate:
                     bool
             ) : Task<string> =
             task {
                 try
-                    let shouldFormat = defaultArg shouldFormat true
-                    let shouldValidate = defaultArg shouldValidate false
-
                     match readExistingFSharpFile filePath with
                     | Error errorMsg -> return errorMsg
                     | Ok(fullPath, existingCode) ->
@@ -3340,13 +3332,11 @@ module McpFsiTools =
         static member RestartFSISession
             (
                 fsiService: FsiMcpService,
-                [<Description("Timeout in seconds (optional, default: 30)")>] ?timeoutSeconds: int
+                [<Optional; DefaultParameterValue(0)>]
+                [<Description("Timeout in seconds (optional, default: 30)")>] timeoutSeconds: int
             ) : Task<string> =
             task {
-                let timeout =
-                    match timeoutSeconds with
-                    | Some seconds -> TimeSpan.FromSeconds(float seconds)
-                    | None -> fsiService.DefaultTimeout
+                let timeout = resolveToolTimeout fsiService.DefaultTimeout timeoutSeconds
 
                 let! record = fsiService.ExecuteOperation(RestartHost, "", timeout = timeout)
                 let result = record.Result
