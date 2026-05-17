@@ -1346,3 +1346,13 @@
   - `dotnet build Libs/FSharp.MCP.DevKit/src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -m:1 /p:GeneratePackageOnBuild=false`
   - Result: 0 errors. Remaining warnings are known FCS/Suave/NuGet advisory/FS3511 warnings.
   - Root trace: `G:\PulseTrade.fs\log\20260503165300.BuildFSharpMcpDevKitServerFSharpCore203.op_log`.
+
+## 2026-05-18 Result Query FSharpCode Fallback Envelope
+
+- Closed WBS `O4` first production slice.
+- `ResultQueryService` now wraps `FSharpJson.serializeObject` failures for materialized `FSharpCode` values into a fallback envelope containing `serializedKind`, `typeName`, `text`, and `error`.
+- Added regression coverage for materializing `System.Type`, which is intentionally unsupported by `System.Text.Json`.
+- Validation:
+  - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpResultToolsTests" --logger "console;verbosity=normal"`
+  - Result: 19/19 passed.
+  - Root trace: `G:\PulseTrade.fs\log\20260518044054.devkit_mcp_result_tools_tests2.op_log`.

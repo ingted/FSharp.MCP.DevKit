@@ -32,9 +32,28 @@ type private ResultGroupBucket =
     { Key: string
       ResultIds: string list }
 
+type private FSharpCodeMaterializationFallback =
+    { SerializedKind: string
+      TypeName: string
+      Text: string
+      Error: string option }
+
 type ResultQueryService() =
 
     let serialize value = FSharpJson.serialize value
+
+    let safeToString (value: obj) =
+        try
+            string value
+        with ex ->
+            $"<ToString failed: {ex.GetType().FullName}: {ex.Message}>"
+
+    let fallbackSerializedJson (value: obj) (ex: exn) =
+        { SerializedKind = "fallback-text"
+          TypeName = value.GetType().FullName
+          Text = safeToString value
+          Error = Some($"{ex.GetType().FullName}: {ex.Message}") }
+        |> FSharpJson.serialize
 
     let trySerializeObject (value: obj option) =
         value
@@ -42,7 +61,10 @@ type ResultQueryService() =
             if isNull resolved then
                 "null"
             else
-                FSharpJson.serializeObject resolved)
+                try
+                    FSharpJson.serializeObject resolved
+                with ex ->
+                    fallbackSerializedJson resolved ex)
 
     let withQuerySession (work: FsiService -> 'T) =
         let config =

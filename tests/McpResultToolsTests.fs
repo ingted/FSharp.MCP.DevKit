@@ -354,6 +354,40 @@ let ``McpResultTools get list query compare and resources work`` () =
     }
 
 [<Fact>]
+let ``McpResultTools FSharpCode query materializes non JSON values as fallback envelope`` () =
+    task {
+        let service = createIsolatedResultService ()
+        use _cleanup = service :> IDisposable
+
+        let! record = service.ExecuteOperation(ExecuteCode, "123", timeout = TimeSpan.FromSeconds 30.0)
+
+        let responseJson =
+            McpResultTools.QueryFsiResults(
+                service,
+                "default-agent",
+                "map",
+                record.ResultId,
+                "",
+                "box typeof<int>",
+                "fsharpCode",
+                ""
+            )
+
+        let response = FSharpJson.deserialize<ResultQueryResponse> responseJson
+
+        Assert.True(response.IsSuccess, response.Errors)
+        Assert.True(response.MaterializedJson.IsSome)
+
+        use document = JsonDocument.Parse(response.MaterializedJson.Value)
+        let root = document.RootElement
+
+        Assert.Equal("fallback-text", root.GetProperty("serializedKind").GetString())
+        Assert.Contains("RuntimeType", root.GetProperty("typeName").GetString())
+        let mutable errorElement = Unchecked.defaultof<JsonElement>
+        Assert.True(root.TryGetProperty("error", &errorElement))
+    }
+
+[<Fact>]
 let ``McpResultTools import WinAgent execution envelope into result and output fabric`` () =
     task {
         let service = createIsolatedResultService ()
