@@ -1,0 +1,45 @@
+# FSharp.MCP.DevKit ProcSupervisor win11 consumer update
+
+## 背景
+
+`FAkka.Proc.Supervisor 1.569.101.302-win11`已由source commit `f6947021`單次發布；repo-level package policy要求
+active exact consumers同步，避免仍restore已知long-stop stack overflow的win10。
+
+## 目標
+
+只更新Server project exact PackageReference至win11並驗證Release build。
+
+## 計畫步驟
+
+1. 修改單一PackageReference。
+2. Release build exact consumer。
+3. 檢查diff後commit/push。
+
+## 執行命令/參數
+
+`dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release`
+
+## 結果
+
+PASS，0 errors；56個既有NuGet/FCS warning未因本次reference更新而處理。
+
+## 根因判讀
+
+win10含已由RFC-PROC-0008修正的long managed-stop defect；exact consumer必須同步win11。
+
+## 下一步
+
+提交submodule pointer給parent PulseTrade.fs，之後由MdcQuote完成downstream integration。
+
+## 關聯文件/工單/PR
+
+Parent `Libs/Akka.Proc.Supervisor/doc/RFC/RFC-PROC-0008.BoundedManagedStopAndStatus.md`、PROC-W29。
+
+## prompt/上下文摘要
+
+使用者要求修復MdcQuote stop/status hang；此變更是新ProcSupervisor package的active consumer同步。
+
+## Operations
+
+- Process/package tests在parent repo完成後才修改本exact reference。
+- 流程偏差：consumer build前未先在subrepo建立此log；完整命令輸出已保存在parent operation log，本檔於commit前補記且不偽造pre-work時間。
