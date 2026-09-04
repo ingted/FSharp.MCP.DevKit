@@ -1370,3 +1370,10 @@
   - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpSurfaceTests" --logger "console;verbosity=normal"` -> 12/12 passed.
   - `dotnet test .\tests\FSharp.MCP.DevKit.Tests.fsproj -c Debug --no-restore --filter "FullyQualifiedName~McpClientSmokeTests" --logger "console;verbosity=normal"` -> 9/9 passed through stdio MCP client smoke.
   - Root traces: `G:\PulseTrade.fs\log\20260518044920.devkit_o6_surface_tests.op_log`, `G:\PulseTrade.fs\log\20260518044920.devkit_o6_client_smoke_tests.op_log`.
+
+## 2026-09-04 Official MCP SDK 2.2.0 Migration
+
+- Removed active source references to the archived `Libs/csharp-sdk` checkout from CodeEditing and Server.
+- Added exact direct consumption of official `ModelContextProtocol 2.2.0` and `ModelContextProtocol.AspNetCore 2.2.0` packages.
+- Aligned Server direct dependencies with `FAkka.Fsi.Contracts 10.1.400`, `FAkka.FSI.Supervisor 1.571.101.400`, `FAkka.Proc.Supervisor 1.571.101.400`, Akka 1.5.71, FCS 43.12.400, and FSharp.Core 10.1.400.
+- Validation: Server Release build completed with zero errors. Existing FCS/NuGet compatibility and low-severity advisory warnings remain tracked debt outside this migration.

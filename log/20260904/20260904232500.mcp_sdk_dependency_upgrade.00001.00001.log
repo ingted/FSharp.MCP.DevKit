@@ -1,0 +1,29 @@
+# MCP SDK dependency upgrade
+
+- 起始時間：2026-09-04 23:25 +08:00
+- 背景：root dependency upgrade 移除 active `csharp-sdk` source reference，DevKit 必須改用 official MCP 2.2.0 NuGet packages。
+- 目標：修正 CodeEditing/Server dependency graph，驗證 server Release build，commit/push nested repo，再更新 root gitlink。
+- 假設：official packages 保有目前使用的 MCP API surface；既存 NuGet/FCS warnings 不阻擋本輪。
+- prompt/上下文摘要：使用者更新 root dependencies 並要求 backend regression tests 全綠後 commit/push；root 移除 active csharp-sdk checkout，因此 nested DevKit consumer 也須切到 official MCP packages。
+- 關聯文件：`doc/DevLog.md`。
+
+## Planned steps / 計畫步驟
+
+1. 移除 stale ProjectReference 並加入 official MCP package references。
+2. 同步 FAkka/FCS/Akka/FSharp.Core direct dependencies。
+3. 執行 Server Release build、active-reference scan 與 sensitive scan。
+4. 執行 repo check，commit/push nested repo，再由 root 更新 gitlink。
+- 讀寫範圍：`src/FSharp.MCP.DevKit.CodeEditing`、`src/FSharp.MCP.DevKit.Server`、`doc/DevLog.md`、本 log。
+- 驗收：Server Release build 0 error；無 active csharp-sdk ref；repo check 無本輪 blocking finding；push 成功。
+- 風險：舊 Core/Analysis projects 仍有既存 FCS/NuGet warning，本輪不擴張重構。
+- 流程偏差：兩個 fsproj 修改發生於建立 nested-repo log 前；原因是 root build 才辨識此路徑為獨立 gitlink。補記後依 nested repo gate 完整驗證。
+
+## Operations
+
+- 2026-09-04 23:25：確認 nested branch `20260412_005.win`，兩個 fsproj 為本輪 MCP SDK migration 修改。
+- 2026-09-04 23:25：先前 Release build 成功，0 error；尚有既存 FCS/NuGet warnings。
+- 執行命令/參數：`dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -v minimal`。
+- 結果：Release build 0 error；active `src/**/*.fsproj` 已無 `csharp-sdk` reference；sensitive scan high=0、medium=0。
+- 根因判讀：archived source checkout 已離開 active root graph，DevKit 的相對 ProjectReference 成為 invalid dependency；official MCP 2.2.0 packages 是正確 consumer boundary。
+- 下一步：完成 repo check，stage、commit、push，回 root 更新 gitlink。
+- 2026-09-04 23:27：`check.fsx` current checks 其餘通過；唯一 FAIL 為 checker 仍要求新 `.op_log` 晚於 `.log`，與 root AGENTS.md「新任務不再建立 `.op_log`」衝突，判定為非本輪 blocking 的 checker policy debt。既存 invalid historical log-name WARN 同樣不修改。

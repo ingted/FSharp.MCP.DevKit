@@ -80,8 +80,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../csharp-sdk/src/ModelContextProtocol.AspNetCore/ModelContextProtocol.AspNetCore.csproj" />
-    <ProjectReference Include="../../../csharp-sdk/src/ModelContextProtocol/ModelContextProtocol.csproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Core\FSharp.MCP.DevKit.Core.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Analysis\FSharp.MCP.DevKit.Analysis.fsproj" />
     <ProjectReference Include="..\FSharp.MCP.DevKit.Communication\FSharp.MCP.DevKit.Communication.fsproj" />
@@ -91,26 +89,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.5.70" />
-    <PackageReference Include="Akka.Remote" Version="1.5.70" />
-    <PackageReference Include="FAkka.Fsi.Contracts" Version="[10.1.302]" />
-    <PackageReference Include="FAkka.FSI.Supervisor" Version="[1.569.101.302-win4]" />
-    <PackageReference Include="FAkka.Proc.Supervisor" Version="[1.569.101.302-win23]" />
-    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.201" />
+    <PackageReference Include="Akka" Version="1.5.71" />
+    <PackageReference Include="Akka.Remote" Version="1.5.71" />
+    <PackageReference Include="FAkka.Fsi.Contracts" Version="[10.1.400]" />
+    <PackageReference Include="FAkka.FSI.Supervisor" Version="[1.571.101.400]" />
+    <PackageReference Include="FAkka.Proc.Supervisor" Version="[1.571.101.400]" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="43.12.400" />
     <PackageReference Include="Fantomas.Core" Version="7.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.5" />
-    <!--<PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.1" />-->
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageReference Include="System.Text.Json" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="10.1.302" />
+    <PackageReference Update="FSharp.Core" Version="10.1.400" />
   </ItemGroup>
 
   <ItemGroup>
