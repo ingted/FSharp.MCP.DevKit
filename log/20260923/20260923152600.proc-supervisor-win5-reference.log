@@ -1,0 +1,15 @@
+# FAkka.Proc.Supervisor win5 dependency alignment
+
+## Pre-work plan
+
+- Background: ProcSupervisor RFC-PROC-0021 raises the active exact package from win4 to win5.
+- Goal: keep the DevKit Server active consumer on the same exact package and prove Release compilation.
+- Scope: Server package reference, this log and DevLog only; no DevKit behavior or deployment changes.
+- Assumption: win5 is API-compatible with the win4 surface consumed by the Server; Release compilation is the dependency gate.
+- Acceptance: Release build exits 0 with no compiler errors; existing dependency warnings remain out of scope.
+- Risk: consumer restore could resolve an older package cache or expose a compile-time API break; use exact range and no-cache restore.
+
+## Operations
+
+- 2026-09-23: changed `FSharp.MCP.DevKit.Server.fsproj` from exact win4 to exact win5.
+- 2026-09-23: Release build passed with 0 errors; existing NU1510/NU1608/NU1701 and low-severity NU1901 warnings remain unchanged in category.

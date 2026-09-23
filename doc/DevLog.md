@@ -1377,3 +1377,8 @@
 - Added exact direct consumption of official `ModelContextProtocol 2.2.0` and `ModelContextProtocol.AspNetCore 2.2.0` packages.
 - Aligned Server direct dependencies with `FAkka.Fsi.Contracts 10.1.400`, `FAkka.FSI.Supervisor 1.571.101.400`, `FAkka.Proc.Supervisor 1.571.101.400`, Akka 1.5.71, FCS 43.12.400, and FSharp.Core 10.1.400.
 - Validation: Server Release build completed with zero errors. Existing FCS/NuGet compatibility and low-severity advisory warnings remain tracked debt outside this migration.
+
+## 2026-09-23 ProcSupervisor win5 dependency alignment
+
+- Updated the active Server consumer from exact `FAkka.Proc.Supervisor 1.571.101.400-win4` to `1.571.101.400-win5` for RFC-PROC-0021 durable-effect recovery.
+- Release build passed with zero errors. Existing NuGet compatibility and low-severity advisory warnings were not expanded into this dependency-only change.
