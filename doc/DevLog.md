@@ -1387,3 +1387,8 @@
 
 - Updated the active Server exact reference from `FAkka.Proc.Supervisor 1.571.101.400-win10` to `1.571.101.400-win11` for exact receipt retry idempotency.
 - Source pin is committed before the upstream immutable package is produced; Release consumer validation follows official package publication.
+
+## Correction — 2026-10-01 ProcSupervisor win12 runtime capability
+
+- The win11 consumer build passed with zero errors and the official package was repository-signed, but a client pin cannot prove the installed Supervisor behavior.
+- The exact reference is therefore advanced to win12, which adds typed lifecycle contract revision/features. Final Release validation follows the win12 immutable publication.
