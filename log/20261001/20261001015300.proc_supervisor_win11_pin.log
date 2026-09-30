@@ -65,3 +65,8 @@ active consumers必須exact同步自有package版本，避免restore舊版revali
 - win11 local/official package consumer Release build完成，0 errors；既有dependency/analyzer warnings未擴修。
 - runtime owner指出client pin不能證明installed service行為；上游新增schema/revision/feature gate並升win12。
 - 本consumer exact pin同步win12；待immutable package發布後重跑Release build。
+
+### 2026-10-01 02:42 +08:00 — win12 consumer validation
+
+- upstream source commit `94c484bd5543105b4dcf133f1332544dd3bfc3f7`已single pack/push win12。
+- Server Release build通過，0 errors；60個既有NuGet/FCS warnings未擴修。

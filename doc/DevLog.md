@@ -1392,3 +1392,8 @@
 
 - The win11 consumer build passed with zero errors and the official package was repository-signed, but a client pin cannot prove the installed Supervisor behavior.
 - The exact reference is therefore advanced to win12, which adds typed lifecycle contract revision/features. Final Release validation follows the win12 immutable publication.
+
+## 2026-10-01 ProcSupervisor win12 consumer validation
+
+- `FSharp.MCP.DevKit.Server` restored and built against exact `FAkka.Proc.Supervisor 1.571.101.400-win12` with 0 errors.
+- The 60 warnings are the existing NuGet compatibility, low-severity advisory and F# resumable-state-machine warnings; this dependency update introduced no compiler error.
