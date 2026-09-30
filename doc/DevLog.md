@@ -1382,3 +1382,8 @@
 
 - Updated the active Server consumer from exact `FAkka.Proc.Supervisor 1.571.101.400-win4` to `1.571.101.400-win5` for RFC-PROC-0021 durable-effect recovery.
 - Release build passed with zero errors. Existing NuGet compatibility and low-severity advisory warnings were not expanded into this dependency-only change.
+
+## 2026-10-01 ProcSupervisor win11 dependency alignment
+
+- Updated the active Server exact reference from `FAkka.Proc.Supervisor 1.571.101.400-win10` to `1.571.101.400-win11` for exact receipt retry idempotency.
+- Source pin is committed before the upstream immutable package is produced; Release consumer validation follows official package publication.

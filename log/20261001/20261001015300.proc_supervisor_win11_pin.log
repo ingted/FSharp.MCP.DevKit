@@ -1,0 +1,61 @@
+# ProcSupervisor win11 consumer pin
+
+## prompt/上下文摘要
+
+ProcSupervisor exact receipt retry修正準備發布`1.571.101.400-win11`，同步active consumer exact reference。
+
+## 背景
+
+本repo是root checkout中的nested git repo；consumer pin需由本repo獨立commit/push，再由root記錄gitlink。
+
+## 目標
+
+將FSharp.MCP.DevKit.Server exact pin由win10升至win11，package發布後執行Release build。
+
+## 假設
+
+win11只修正同一receipt重送的lifecycle-state idempotency，不改public API。
+
+## 範圍
+
+只改Server project的exact package pin、DevLog與本log，不改DevKit runtime行為。
+
+## 驗收
+
+official win11可restore後，Server Release build 0 errors；root repo記錄本nested repo的新gitlink。
+
+## 風險
+
+package尚未發布前consumer無法restore，因此source pin提交與build evidence分成兩個可追溯階段。
+
+## 計畫步驟
+
+1. 更新exact PackageReference與DevLog。
+2. commit/push consumer revision。
+3. official package發布後跑Release build並回寫驗證結果。
+
+## 執行命令/參數
+
+待package發布後：`dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -v minimal`。
+
+## 結果
+
+reference已更新；package/build gate待上游win11發布。
+
+## 根因判讀
+
+active consumers必須exact同步自有package版本，避免restore舊版revalidation行為。
+
+## 下一步
+
+提交本repo，回root更新gitlink；win11發布後執行Release build。
+
+## 關聯文件/工單/PR
+
+- root `Libs/Akka.Proc.Supervisor/doc/WBS.md`：`PROC-W66`
+
+## Operations
+
+### 2026-10-01 01:53 +08:00
+
+- `FAkka.Proc.Supervisor` exact pin由win10更新為win11。
