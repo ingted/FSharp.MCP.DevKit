@@ -1397,3 +1397,8 @@
 
 - `FSharp.MCP.DevKit.Server` restored and built against exact `FAkka.Proc.Supervisor 1.571.101.400-win12` with 0 errors.
 - The 60 warnings are the existing NuGet compatibility, low-severity advisory and F# resumable-state-machine warnings; this dependency update introduced no compiler error.
+
+## 2026-10-02 ProcSupervisor win13 consumer validation
+
+- Updated the Server exact reference from `FAkka.Proc.Supervisor 1.571.101.400-win12` to `1.571.101.400-win13` for pending native-start convergence.
+- Release restore/build completed with 0 errors. The existing 60 NuGet compatibility, low-severity advisory and F# resumable-state-machine warnings remain unchanged and were not expanded into this dependency-only update.

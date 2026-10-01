@@ -1,0 +1,20 @@
+# ProcSupervisor win13 consumer update
+
+- 背景：FAkka.Proc.Supervisor RFC-PROC-0028修正pending native start convergence，active consumer須exact pin同版。
+- 目標：將FSharp MCP DevKit Server的FAkka.Proc.Supervisor reference由win12升win13，restore/build驗證後commit/push。
+- 假設：public API維持相容；本次只更新package pin，不改DevKit行為。
+- 範圍：`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`。
+- 驗收：win13 official package可restore，Release build 0 errors，repo check通過。
+- 風險：win13尚未push前consumer restore會失敗，因此在owner package publish後驗證。
+
+## Planned Steps / 計畫步驟
+
+1. 等owner source commit與win13 package push完成。
+2. restore/build exact consumer。
+3. 更新DevLog、check、commit/push。
+
+## Operations
+
+- 06:50：流程偏差：root task先更新consumer pin後才辨識此路徑是nested repo；立即補建本repo pre-work log，後續操作依nested repo gate進行。
+- 06:55：official win13已propagate且repository signature/metadata驗證PASS；Server Release restore/build 0 errors。既有60項NuGet compatibility、low-severity advisory與F# resumable-state-machine warnings未擴修。
+- 06:57：nested legacy checker仍要求已淘汰的`.op_log`與舊檔名格式，故保留其FAIL證據、不弱化規則；改以root current checker驗相同nested repo範圍，結果PASS 21/WARN 1/FAIL 0，唯一WARN為commit前dirty。targeted sensitive scan high=0/medium=0，strict UTF-8與targeted diff check通過。
