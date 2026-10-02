@@ -53,3 +53,7 @@ server 端也已實作 `resources/read`。但實際 agent 操作經驗顯示，�
 1. `get_async_status` 與 `fsi/async/{asyncId}` 回傳同一份 `AsyncFsiStatusDto` 語意
 2. tool 可用於 default async 與 routed async
 3. client smoke 至少有一條案例完全不依賴 `resources/read`
+
+## 2026-10-02 ProcSupervisor win15 dependency boundary
+
+Server 消費 generic ProcSupervisor 的 exact `1.571.101.400-win15`，包含 native lease absence convergence 與 uncertain bootstrap。責任仍由 Proc lifecycle authority／Native Agent 擁有；DevKit 不加入 own PID scan、第二份 generation 或 readiness 推論。本 repo 只更新 package reference，服務 runtime、FSI API 與部署不變。Package source checkpoint `d075caa985e7`，current package/release 驗證回鏈 `G:/PulseTrade.fs/Libs/Akka.Proc.Supervisor/doc/Verification.md` PROC-VFY-032-r8。

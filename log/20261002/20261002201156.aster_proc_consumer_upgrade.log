@@ -1,0 +1,26 @@
+# Aster Proc win15 exact consumer upgrade
+- Context: main investigation began2026-10-02 11:49; user approved Aster16checkpoint d075caa98 withhuman220/226parallelWIP preserved. Prodservices untouched. This nestedrepo ownsits.git; rootG:/PulseTrade.fs/Libs/FSharp.MCP.DevKit, branch 20260412_005.win, baseline c4d9ff3cadca413a596307978349aba30e1c0d6e, initiallyclean.
+- Goal: exact FAkka.Proc.Supervisor win14->win15 reference afterlocalpack; buildactualserver withselectedSDK10.0.203; no runtimeMCP/SCM/service/deployment effects.
+- Scope/owner: Aster onlyserverprojectPackageReference/currentaffecteddocs/log; no branches/worktrees/merge/reset/restore.
+- Assumptions/invariants: reuseAPI/namespace/runtime; noSecrets/noconfigNuget/envproductionkey. Packagepublicationawaitsencryptedkeyfile/keypath clarification; localpackPublishProcSupervisorPackage=false only. Mainnotesnotstaged.
+- Plan: metadatareview depth5/batch180000; baselinebuildsafeGeneratePackageOnBuildfalse; exactreference/boundedartifactcopywhenlocalcandidateexists; build/check/scopedscan/commitpushownedpaths; logcurrentconstraints/evidence.
+- Acceptance: oldbaseline+newexactconsumerbuild, correctpackage/SDKmetadata, sourceversionunchangedfornonpackableserver; nofakeproductionclaim. Canonicalroot/branchkept.
+- Risks/stops: missingcriticaldeps ornewconcurrentdirty/secret pausesdependentedit; independentauditcontinues. No guessedpackageversions.
+## Operations
+- 2026-10-02T20:11:56.6927592+08:00 Read-only topologyclean/canonicalbranch verified; preworklogcreatedbefore review/build. ParentAGENTS applies; no childAGENTS found. RootdocSA/SD/WBS/DevLog exist; no Verification.md or local review.fsx, useauthoritativemaintools/ProcVerification.
+- 2026-10-02T20:14:58.1875366+08:00 Review788files/512text/8.6MB/depth5/21batches savedmetadata; selectedserverfsproj+rootSA/checkheaders only, generatedartifacts223files/cache/history skipped. No childAGENTS/Verification found; rootcheckexists(legacyArgu6.2.5), useauthoritativeparentcheckforupdatedscope. SourceglobalSDK10.0.203installed; serverIsPackablefalse/Version1.0.0/PackageVersion1.0.0/GeneratePackageOnBuildfalse evaluatedwithoutbuild. Projectreferences6devkitlibraries only, no customExecTargets found. MissingDirectory.Build.targets isabsentnotreadfailureblocker; servercwdwrongdocreads correctedrootpath. Baselineactualserverbuildnext, no runtime/SCM/DBmutation.
+
+### 2026-10-02T20:22:24.4829507+08:00 Baseline result / upgrade plan
+- SDK10.0.203 Release no-restore baseline0errors/34existingwarnings/42.13s. ServerIsPackablefalse; do notbumpServerversion/publish. ChangeexactFAkka.Proc.Supervisor reference win14→win15 onlyafterlocalProcpackready; source/delivery/FSI/SCM/auth/APIunchanged. Mainsource d075caa985e7; localartifactunsigned isnotofficialpackage. UpdateexistingSA/SD/WBS/E2EScenarioTest/DevLog, parentcheck.fsx scopedtoactualrepo/docs, preservehistoricalnotes. Sameaggregate11:49, ownnestedrepo log20:11 notclockreset.
+
+### 2026-10-02T20:25:35.7052925+08:00 Exact consumer updated
+- Localcandidateverifiedsource d075caa985e7/versionwin15/SHA 2EBBCB75D38CEEA4802BD4884FEC59A8978492A6BD71AB0754DDFE26A99B883B, publicindexnotpublished; samebytesinSDK203library-packs. ServeronlyFAkka.Proc.Supervisor exactref win14→15; nextRelease restore/build. NoServerversionchange/deployment/service/publish.
+
+### 2026-10-02T20:28:57.9017662+08:00 Release compatibility gate actual
+- Restore/build39.628s/0errors/59warnings, parsedassets exactFAkka.Proc.Supervisor/1.571.101.400-win15; source+currentdocs/DevLogsynced. Baseline34no-restore notcomparabletocurrentrestore59; actualNU1510/1608/1701/1901/FS3511 documented, noFsi/serviceversionchange/noE2Eclaim. Next freshsensitive/encoding/scopedparentcheckerthenownclassifiedcommitpush.
+
+### 2026-10-02T20:31:49.2168863+08:00 Scopedcloseout beforeclassifiedcommit
+- Parentcanonicalcheck --repo nestedcanonicalroot/actualSA/SD/WBS/E2EScenarioTest/DevLog returned29PASS1gitdirtyWARN0FAIL; defaultKM resolvesparentMCP.KM.md unchanged(knowledgeboundary). gitdiffcheckPASS, ownscope6tracked+2untrackedlog/review. Prework20:11beforebaseline/sourceedit; aggregate11:49sameoriginaltask. Freshsensitive/encodingbefore8filecommit; no external publication/serviceeffects. W71officialreleasependingindependent Procowner, notMCP E2E.
+
+### 2026-10-02T20:34:58.6638281+08:00 Scanner coverage correction
+- Existingroot scanner7supportedchangedfilesHigh0/Medium0; .fsprojunsupported(notclaim8). Exactexternalfsproj.sensitive-input.txtcopybytehashmatchedfor8thfile. InitialMemoryExtensions genericcomparison overload ambiguous, fixeddeterministicFileHash comparison; no sourcebyteschanged/no gate bypass. Fresh8thscanthenrescanlog/checker, actuallegacycheckerdoesnotexpose structuredsensitive-report CLI(no fictitiousreportvalidationclaim).

@@ -336,3 +336,9 @@ WP01-WP09 -> WP10
 6. path mapping 可查
 7. async queue 有 trace metadata
 8. logs/check/doc 可追溯
+
+## 2026-10-02 Proc dependency consumer slice
+
+| ID | Scope | Verification | Status |
+| --- | --- | --- | --- |
+| DEVKIT-PROC-WIN15 | Server exact win15 reference；不改 API、Server version 或 SCM | Release baseline 0 errors/34 existing warnings；win15 local exact restore/build 0 errors／59 warnings，assets exact identity PASS；official release tracked by Proc W71 | Local candidate compatibility done; official release pending |

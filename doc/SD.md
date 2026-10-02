@@ -43,3 +43,7 @@ async job 本來就是以 `asyncId` 為主鍵，不依賴 caller 再提供 route
    - 驗證 tool surface 能 discover `get_async_status`
 3. `McpClientSmokeTests`
    - async smoke 改走 `get_async_status` 輪詢，證明 client 不依賴 `resources/read`
+
+## 2026-10-02 ProcSupervisor win15 exact consumer
+
+唯一 implementation 改動：`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 的 `FAkka.Proc.Supervisor` `Version="[1.571.101.400-win14]"` → `Version="[1.571.101.400-win15]"`。Server IsPackable=false；不改 Server 版本。SDK global.json 10.0.203 維持；依 root library-packs source 消費同 bytes 本機 candidate。Local unsigned package 尚未 public publish，不稱官方套件或 deployed runtime。Release build 只驗 API/dependency compatibility，不代表 MCP E2E；既有 source/XML/SCM integration evidence 在 Proc repo，production SCM 不操作。

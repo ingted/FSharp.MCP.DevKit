@@ -1402,3 +1402,10 @@
 
 - Updated the Server exact reference from `FAkka.Proc.Supervisor 1.571.101.400-win12` to `1.571.101.400-win13` for pending native-start convergence.
 - Release restore/build completed with 0 errors. The existing 60 NuGet compatibility, low-severity advisory and F# resumable-state-machine warnings remain unchanged and were not expanded into this dependency-only update.
+
+## 2026-10-02 ProcSupervisor win15 exact consumer
+
+- Server exact reference 已由 `1.571.101.400-win14` 同步為 `1.571.101.400-win15`。Source checkpoint `G:/PulseTrade.fs` `d075caa985e7`；local unsigned candidate SHA256 `2EBBCB75D38CEEA4802BD4884FEC59A8978492A6BD71AB0754DDFE26A99B883B`，官方 NuGet 發布等待 encrypted key file/key path。
+- Release restore/build 真實完成 39.628s，0 errors／59 warnings；project.assets.json 解析確認 `FAkka.Proc.Supervisor/1.571.101.400-win15`。Baseline no-restore 為34 warnings，restore/build 多次列同類診斷；本次 observed codes NU1510/NU1608/NU1701/NU1901/FS3511。不把不同 restore 範圍的數字當相同 counts。
+- IsPackable=false／Server version／服務部署／FSI API 不變。驗收僅 dependency compile compatibility，未宣稱 MCP、FSI 或 production E2E。
+- 回鏈 SA/SD、WBS `DEVKIT-PROC-WIN15`、E2EScenarioTest dependency gate、`log/20261002/20261002201156.aster_proc_consumer_upgrade.log`；raw build evidence `G:/PulseTrade.fs.Comm.Log/verification/procNativeAgentRebind/aster-20261002-win15/devkit-server.*`。

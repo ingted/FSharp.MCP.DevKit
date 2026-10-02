@@ -780,3 +780,7 @@ Important:
 - read mcp-session-id case-insensitively
 - do not stop just because async status stays Running for under several minutes
 ```
+
+## 2026-10-02 DEVKIT-PROC-WIN15 dependency gate
+
+本次驗收是 `src/FSharp.MCP.DevKit.Server` Release restore/build consuming exact `FAkka.Proc.Supervisor 1.571.101.400-win15`，檢查 compiled package surface／dependency resolution 與 baseline errors/warnings。執行時 `GeneratePackageOnBuild=false`／`PublishProcSupervisorPackage=false`，不登入、不 spawn/restart SCM、不發布 Server。這不是 MCP transport/FSI/production E2E，也不替代 Proc repository 的真 SQL/SCM tests。Raw stdout/stderr 與 deterministic build-result 在 `G:/PulseTrade.fs.Comm.Log/verification/procNativeAgentRebind/aster-20261002-win15/devkit-server.*`；完成結果再追加 DevLog。
