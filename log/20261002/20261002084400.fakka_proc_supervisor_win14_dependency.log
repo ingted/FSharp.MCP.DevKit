@@ -1,0 +1,13 @@
+# FAkka.Proc.Supervisor win14 dependency sync
+
+- 背景：RFC-PROC-0029改變ProcSupervisor durable cluster startup/recovery行為，active consumer須使用同一exact package版本。
+- 目標：將FSharp MCP DevKit Server的`FAkka.Proc.Supervisor` exact reference由win13升至win14；package發布後執行Release build。
+- 範圍：只改`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`與本log；不部署或重啟DevKit service。
+- 驗收：official win14可restore，Server Release build 0 errors，commit/push。
+- 流程偏差：dependency pin在建立本subrepo log前已由跨repo版本同步patch改動；未執行build/deploy，現補記後續驗證與提交邊界。
+
+## Operations
+
+- 2026-10-02 08:44 +08:00：exact pin已改為`[1.571.101.400-win14]`；等待owner package source commit與NuGet push。
+- 2026-10-02 09:08 +08:00：official `FAkka.Proc.Supervisor 1.571.101.400-win14` 已可restore；`dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release -v minimal`成功，`0 Error(s)`、`52 Warning(s)`。warnings為既有NU1510/NU1608/NU1701/NU1901與FS3511類別；本輪dependency pin未新增編譯錯誤，未部署或重啟DevKit service。
+- 2026-10-02 09:12 +08:00：subrepo `check.fsx`完成，`PASS=13 WARN=5 FAIL=4`；FAIL來自舊checker仍要求`.op_log`與四段式log檔名、未辨識現行plan欄位，以及state誤報clean舊log readonly modification，與現行root AGENTS規範衝突，未改歷史log或弱化gate。changed-path sensitive scan為`high=0 medium=0`。
