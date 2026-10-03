@@ -1409,3 +1409,10 @@
 - Release restore/build 真實完成 39.628s，0 errors／59 warnings；project.assets.json 解析確認 `FAkka.Proc.Supervisor/1.571.101.400-win15`。Baseline no-restore 為34 warnings，restore/build 多次列同類診斷；本次 observed codes NU1510/NU1608/NU1701/NU1901/FS3511。不把不同 restore 範圍的數字當相同 counts。
 - IsPackable=false／Server version／服務部署／FSI API 不變。驗收僅 dependency compile compatibility，未宣稱 MCP、FSI 或 production E2E。
 - 回鏈 SA/SD、WBS `DEVKIT-PROC-WIN15`、E2EScenarioTest dependency gate、`log/20261002/20261002201156.aster_proc_consumer_upgrade.log`；raw build evidence `G:/PulseTrade.fs.Comm.Log/verification/procNativeAgentRebind/aster-20261002-win15/devkit-server.*`。
+## 2026-10-04 DEVKIT-DEP52 FSI／Proc exact consumer
+
+- `FAkka.FSI.Supervisor` `[1.571.101.400-win2]` → `[1.571.101.400-win3]`；`FAkka.Proc.Supervisor` `[1.571.101.400-win15]` → `[1.571.101.400-win16]`。只有 Server fsproj兩refs；PackageVersion1.0.0、API、部署均不變。上游producer357fedeef66535b2daacd8c6c3ff235f88d328b2本機package/feed驗證；本repo不pack/publish。
+- SDK10.0.203 freshC artifacts Release build61.237s，0errors/60warnings；72compileinputs穩定，assets/deps exact2版本和net10 DLL hashes匹配produceractualproof。警告與界線詳見E2EScenarioTest DEVKIT-DEP52 r1；未start服務、未跑unit/MCP/FSI runtime，不宣稱E2E。
+- 時序偏差：接管前兩ref edits只有main prelog，本repo補本地prework後才進build/docs/check；未倒填事前記錄。見 `log/20261004/20261004052552.aster_dep52_infra_refs.log`。SA boundary無變動；SD/WBS/E2EScenarioTest同步。
+- Build evidence `C:/Users/Administrator/AppData/Local/Temp/aster-dep52-devkit-e1e675bacb074179a36fef0174565a63/build-proof.json`；scopedscan/check/commitpush實際結果將留同root `closeout/`，不操作main index/gitlink或prod。
+- Closeout first gate保留：current root checker27P/1W/1F，唯一km_missing為nested原無MCP.KM而本輪explicitwatch。新增compact MCP.KM.md沉澱上述SDK/feed/DLL alias與compile/runtime界線，不指mainKM或改checker冒充nested。重新掃描/check後才commit。

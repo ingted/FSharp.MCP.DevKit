@@ -784,3 +784,10 @@ Important:
 ## 2026-10-02 DEVKIT-PROC-WIN15 dependency gate
 
 本次驗收是 `src/FSharp.MCP.DevKit.Server` Release restore/build consuming exact `FAkka.Proc.Supervisor 1.571.101.400-win15`，檢查 compiled package surface／dependency resolution 與 baseline errors/warnings。執行時 `GeneratePackageOnBuild=false`／`PublishProcSupervisorPackage=false`，不登入、不 spawn/restart SCM、不發布 Server。這不是 MCP transport/FSI/production E2E，也不替代 Proc repository 的真 SQL/SCM tests。Raw stdout/stderr 與 deterministic build-result 在 `G:/PulseTrade.fs.Comm.Log/verification/procNativeAgentRebind/aster-20261002-win15/devkit-server.*`；完成結果再追加 DevLog。
+## DEVKIT-DEP52 r1：infra dependency build／payload identity
+
+Intent（2026-10-04，執行前）：沿既有 dependency-only Release gate；nested HEAD299dce3667ac165baf10386aedcb79fc62a69c54＋Server兩pin差異，fresh C artifacts，不啟Host、不pack/upload、不讀secret。明傳no-publish flags與SDK401library-packs附加來源，實際SDK仍10.0.203。
+核對新FSI win3／Proc win16的project.assets/deps、net10runtime DLL byte hash，與 `C:/Users/Administrator/AppData/Local/Temp/aster-dep52-20261004/infra-preparation/packages/validation.json` actual finalized records逐筆匹配。before/after compile inputs不得改變。既有警告依實际code分類，未跑unit/MCP/FSI runtime不宣稱通過。
+Evidence root：`C:/Users/Administrator/AppData/Local/Temp/aster-dep52-devkit-e1e675bacb074179a36fef0174565a63`；prework見 `log/20261004/20261004052552.aster_dep52_infra_refs.log`。本gate沿現有Runbook/SDK設定，不使用會restart Docker的build.host.sh。
+DEVKIT-DEP52 r1 actual（2026-10-04）：Release build61.237s，SDK10.0.203，0errors/60warnings；72compileinputs rawSHA before/after相同。`project.assets.json` 和 `FSharp.MCP.DevKit.deps.json` 均解析到exactFSIwin3/Procwin16；輸出兩DLL逐byte SHA/ProductVersion match producer357fede proof。FSI hash `D11F0C70B2CD17593E92CAD6231D5A3AE194699DA2C40BF2F678F785D7B68786`；Proc hash `A51173201438F7F1DCC83293C575BAA480AE0AE535F48301A4B4B6DBE1202CC2`。
+警告code為NU1510/NU1608/NU1701/NU1901/FS3511，與歷史dependencygate同類；實際60不能冒稱與舊59同count。包含既有FCS43.12.201→FSharp.Core10.1.203constraint、NuGet7.3.0 netstandard相容與lowseverity advisory；未新增suppress/降低gates。原始重複列印不當uniquewarning總數，MSBuild summary為60。完整證據為前述root下 `build-proof.json`、`build-r1/{stdout,stderr}.log`；unit/MCP/FSI/production runtime均NotRun。

@@ -342,3 +342,10 @@ WP01-WP09 -> WP10
 | ID | Scope | Verification | Status |
 | --- | --- | --- | --- |
 | DEVKIT-PROC-WIN15 | Server exact win15 reference；不改 API、Server version 或 SCM | Release baseline 0 errors/34 existing warnings；win15 local exact restore/build 0 errors／59 warnings，assets exact identity PASS；official release tracked by Proc W71 | Local candidate compatibility done; official release pending |
+## 2026-10-04 DEP52 infra exact consumer
+
+| ID | 範圍／結果 | Progress | 狀態 |
+| --- | --- | --- | --- |
+| DEVKIT-DEP52 | Server FSI win3／Proc win16 exactrefs；SDK10.0.203 freshC Release build0E/60W、72inputs stable、assets/deps與2runtimeDLL producer hash吻合。只compile/payload gate，未啟動runtime／未pack或發布。 | 100%（本slice） | Done（dependency compile only） |
+
+詳見 SD、E2EScenarioTest DEVKIT-DEP52 r1、DevLog與本輪prework；不改 Server1.0.0 或其他feature WBS進度。
