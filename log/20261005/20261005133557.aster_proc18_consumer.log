@@ -1,0 +1,15 @@
+# P0-NATIVE DevKit exact Proc consumer
+## Pre-work plan
+### 背景/上下文
+Root人類授權廢除Native服務並更新Proc package；此nested Git canonical checkout為Libs/FSharp.MCP.DevKit，既有branch20260412_005.win、HEAD0a661466。只一個fsproj dirty，為Aster本次Proc win16→win18；沒有其他WIP。
+### 目標
+配合root win18正式package，同步exact PackageReference並Release build；不修改MCP tools功能或服務部署。
+### 假設
+Legacy DTO保留、新Native actor/mode廢除不影響DevKit的ProcHost client surface。
+### 計畫步驟
+記錄跨repo流程偏差→確認source範圍→官方win18available後no-auto-pack build→sensitive/check→exact commit/push→root gitlink另作已驗integration。
+### 範圍/驗收/風險
+僅src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj一個PackageReference、此log；其餘code/service不動。Release0error、no hiddenpublish；有Breaking compile即修必要interop。不創branch/worktree，COMM不收發。
+## Operations
+- 流程偏差：13:xx最初把DevKit当parent同repo改了一行，未先重查nested Git與建立本repo prework log；Root exact-stage報submodule path才識別。已停止擴工、確認只有自身一行WIP，現在補記真實偏差，不冒稱之前已建log；後續consumer build/commit在本repo追溯。
+- 13:54 官方FAkka.Proc.Supervisor 1.571.101.400-win18已公開、repository signature/source commit e32b3e355吻合。Server Release build PASS60.76s/60warnings/0errors，傳PublishProcSupervisorPackage=false及GeneratePackageOnBuild=false，無publish/service effects。既有warnings為NU1608/NU1901/NU1510/FS3511，不擴修本repo非Proc功能。只同步exact PackageReference，使用現有API；後續敏感掃描/check及兩檔commit/push。
