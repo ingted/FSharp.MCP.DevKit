@@ -1,0 +1,20 @@
+# Aster Proc win19 consumer同步
+
+## Pre-work plan
+- canonical nested Libs/FSharp.MCP.DevKit，branch20260412_005.win，起始clean；root授權修Proc test stop blocker，復用singleauthority/delivery不動服務。
+- 只改Server fsproj Proc exactwin18→win19，先官方release/source/payload proof再restore/build；root新supervisee event不支援win18 downgrade。
+- source/package/consumer/installed分列，不部署Server、不收發COMM，不讀輸出key。
+
+## Operations
+- 2026-10-05T17:13:44.3452120+08:00 child pre-work established; NuGet win19 absent, rootcandidate registered; own two-file scope.
+
+- 2026-10-05T17:55:28.4131954+08:00 officialsignedwin19/source064a8 proofPASS; ServerReleasebuildPASS91.07s/60warnings/0errors,noPublish/noAutoPack. ExistingNU1608(Core201/203inCore/FCS), NU1701/NuGetnetstandard, NU1510pruning, NU1901existinglowseverity, FS3511dynamicstatewarningsretained/not suppressed. Serverpin/assets/signedcache/runtimeDLLmatchesofficial2436A3DB/exactversion; rootexternalproc19-consumers/exact-consumer-proof.json. NoServerdeploy/COMM/SCMmutation. Ownoneversionline plusprelogtwofilecommit pendingcanonicalchecker.
+
+- Correction：初始pre-work已記上下文／scope／gates，但checker要求中文欄位label；追加以下明確欄位，不倒填建立時間、不重寫原plan。
+- 背景/上下文：人類轉交test win18 stop未收斂；root RFC-PROC-0034修正與official win19驗證，nested branch20260412_005.win起始clean。
+- 目標：Server消費exact官方win19，不部署或重啟既有Server。
+- 假設：官方immutable nupkg與producer source064a8一致；已實測signed/cache/DLL確認。
+- 範圍：Server fsproj單一Proc版本line與本輪prelog兩檔；不改API或別人WIP。
+- 驗收：Release build0errors、actual assets/cache/runtimeDLL等official payload；secret不落檔、不用env。
+- 風險：既有NuGet/FSharp約束warnings保留；新event不能win18 downgrade同journal，runtime部署由人類窗口另行處理。
+- Checker實測26PASS/2WARN/2FAIL：兩FAIL僅rootnotes00236/00238的readonlybaseline修改；已由root0ebb/350f070分類commit/push、raw敏感H0/M0，standinguser「notes永遠commitpush不要再問」明確例外適用。保留failed.json、不reset基準或弱化verifier。OwnmissinglabelWARN補上；並行dirtyWARN在精準twofilecommit後處理。
