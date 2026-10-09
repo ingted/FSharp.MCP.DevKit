@@ -1416,3 +1416,7 @@
 - 時序偏差：接管前兩ref edits只有main prelog，本repo補本地prework後才進build/docs/check；未倒填事前記錄。見 `log/20261004/20261004052552.aster_dep52_infra_refs.log`。SA boundary無變動；SD/WBS/E2EScenarioTest同步。
 - Build evidence `C:/Users/Administrator/AppData/Local/Temp/aster-dep52-devkit-e1e675bacb074179a36fef0174565a63/build-proof.json`；scopedscan/check/commitpush實際結果將留同root `closeout/`，不操作main index/gitlink或prod。
 - Closeout first gate保留：current root checker27P/1W/1F，唯一km_missing為nested原無MCP.KM而本輪explicitwatch。新增compact MCP.KM.md沉澱上述SDK/feed/DLL alias與compile/runtime界線，不指mainKM或改checker冒充nested。重新掃描/check後才commit。
+
+## 2026-10-10 Proc win20 exact consumer pin
+
+`FSharp.MCP.DevKit.Server.fsproj` 將 `FAkka.Proc.Supervisor` exact pin `1.571.101.400-win19` 升至 `-win20`；Proc win20 要求 Actor.Registry `0.1.6`，既有 FSI win3 仍要求 `0.1.4`，所以本 consumer 另加 direct exact `PulseTrade.Comm.Actor.Registry [0.1.6]`，保留舊 FSI 的 NU1608。初次本機候選包 Release build 64 warnings／0 errors；NuGet.org 正式包 DLL SHA256 `3169FB23...E0B5` 已核對 package-only Proc Test Host。以新隔離 MSBuild 輸出參數重跑時，子專案 Messages 的 netstandard2.0 編譯失敗，故不宣稱 official-byte 全 graph PASS；未部署服務。證據見 `log/20261010/20261010031900.proc_win20_consumer.log`。

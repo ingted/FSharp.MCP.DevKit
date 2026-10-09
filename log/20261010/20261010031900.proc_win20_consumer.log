@@ -1,0 +1,12 @@
+# Proc win20 exact consumer pin
+Repo: G:/PulseTrade.fs/Libs/FSharp.MCP.DevKit, branch 20260412_005.win; canonical nested Git repository, clean at start.
+Context: parent PulseTrade.fs commit 29945b2e7 contains FAkka.Proc.Supervisor 1.571.101.400-win20 source. Local nupkg hash 840F6A4FC767FB82D8993027E57642CDA510CFD0BB649F329C56FBFD02EA5BAA; Proc Test SQL/SCM exact absent-child rebind PASS.
+Goal: update only Server.fsproj exact Proc package pin win19 to win20, build against local package feed, then exact commit/push; no service or production mutation.
+Plan: inspect pin and consumer source; replace one XML attribute; restore/build using project-owned bin/obj and local feed; scan/check, commit/push separately from parent repo.
+Acceptance: resolved package win20, build 0 errors, no other files changed.
+Risk: package is local and not yet official NuGet; do not call this production-ready.
+
+## Operations
+2026-10-10 03:21 +08:00 Initial win20 restore failed NU1107: Proc win20 requires Actor.Registry 0.1.6, existing FSI win3 requires 0.1.4. Add direct exact Actor.Registry 0.1.6 to this Server consumer; it may produce NU1608 on older FSI but preserves tested Proc runtime contract. Rerun restore/build; no FSI package change.
+2026-10-10 03:31 +08:00 Local win20 candidate build after direct Actor.Registry 0.1.6 pin: 64 existing warnings, 0 errors (Server plus project graph). Official NuGet.org win20 later listed: repository-signed archive SHA F8243214...322A7, DLL SHA3169FB23...E0B5 exact final package-only Test Host. Repeat using fresh custom MSBuild obj/output properties failed in Messages netstandard2.0 project (NETSDK1005/FS0074 due propagated output/RID properties); this repeat is not PASS. Preserve initial successful source consumer build as separate evidence; official-byte full graph remains open. No service mutation.
+2026-10-10 03:32 +08:00 Nested check.fsx exit0 (git_dirty expected before commit); sensitive scanner 2 supported text files High0 Medium0, fsproj unsupported. Nested temp/ contained only this run build diagnostics and was untracked; added exact temp/ ignore in nested .gitignore, no temp content staged. Next exact-path commit/push.

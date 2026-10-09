@@ -433,3 +433,6 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 *.lnk
+
+# Agent scratch and build diagnostics
+temp/
