@@ -360,3 +360,9 @@ WP01-WP09 -> WP10
 | ID | Scope | Verification | Status |
 | --- | --- | --- | --- |
 | DEVKIT-PROC-WIN23 | Server FAkka.Proc.Supervisor exact win22→win23；保留 FSI win4。 | 本地 win23 package restore、Release build 0 errors／26 既有 warnings，assets exact win23、輸出 Proc DLL 與包內 SHA 相同。 | Source consumer pass；public signed package/runtime deployment pending |
+
+## DEVKIT-PROC-WIN24 exact consumer（2026-10-14）
+
+| ID | 變更 | 本地驗證 | 狀態／缺口 |
+|---|---|---|---|
+| DEVKIT-PROC-WIN24 | Server exact FSI win5、Proc win24，消費 IFileSystem cold index 修正 | Debug build exit0，52 項既有跨專案 warning；無編譯錯誤 | Source consumer pass；signed NuGet readback、正式 MCP runtime 部署未驗 |

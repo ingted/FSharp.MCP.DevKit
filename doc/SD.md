@@ -59,3 +59,7 @@ SDK維持global.json10.0.203/patch；Server既有FSharp.Core10.1.400不變。建
 ## DEVKIT-PROC-WIN23（20261014）
 
 Server 的 FAkka.Proc.Supervisor exact reference 從 win22 改 win23，以消費 Proc SQL durable queue 的精確 serializer 修復；FAkka.FSI.Supervisor win4 與本 Server API 均不變。restore 使用 Proc 原專案 bin/Release 內的本地 nupkg，build 固定專案 bin/obj。驗 assets 與輸出 DLL 同包內 hash；source compile 不代表 FSI MCP runtime 或正式 Proc 已部署。
+
+## DEVKIT-PROC-WIN24：FSI PCSL 冷重開 package consumer（2026-10-14）
+
+`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 的 FAkka.FSI.Supervisor exact `[1.571.101.400-win4]`→`[1.571.101.400-win5]`、FAkka.Proc.Supervisor exact `[1.571.101.400-win23]`→`[1.571.101.400-win24]`。僅 package references；MCP tool/API、session logic 與 Host 設定不變。restore/build 先用 root 專案本地 Debug packages 驗閉包，再等正式 signed readback；本地 source 成功不能推論正式 runtime 已更新。依賴意圖：IFileSystem10.1.402 constructor 初始 index＋List persisted index → FSI win5 → Proc win24 → Server。失敗時保留原已部署 Server，正式 Proc/MDCQ 不變。

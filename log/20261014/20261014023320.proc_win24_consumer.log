@@ -1,0 +1,16 @@
+# DEVKIT-PROC-WIN24 exact consumer
+
+## Pre-work plan
+
+- prompt/上下文摘要：Root PROC-W89 的正式 win20 FSI PCSL 冷重開缺陷，需 IFileSystem10.1.402→FSI win5→Proc win24 全鏈；此 nested Server 是 active exact consumer。
+- 目標：Server pin 同步、驗本地依賴 build，文件與 exact commit/push；不部署 MCP/Proc/MDCQ。
+- 假設：三個本地 Debug 包與新 source 一致，正式 signed NuGet 待獨立驗證。
+- 計畫步驟：核已改兩個 pin；補 nested SD/WBS/DevLog；scanner/checker；精確提交推送。
+- 範圍：src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj、doc/SD.md、doc/WBS.md、doc/DevLog.md、本 log。其他 repo WIP/Host/PCSL 不動。
+- 驗收：Debug Server 0 error、assets exact FSI win5／Proc win24；checker 無本輪 FAIL；NuGet signed/runtime 未驗明列。
+- 風險：nested 原有 52 項 warning 未作無關修復；本地 precommit 包來源不等於正式 signed package。
+- Deviation：兩行 pin edit 與 Debug build 在此 nested log 前，因 root slice log 已記 active direct consumers，漏建 nested log；這是時序偏差，不補稱 pre-work，後續 docs/check/commit 從此記錄。
+
+## Operations
+
+- 2026-10-14 02:33 +08:00：Server exact FSI win4→win5、Proc win23→win24；Debug build exit0／52 既有 warning，正式 service 未動。首次 nested checker 錯誤指定 root log/20261014，造成兩份 nested 舊 log 被誤判刪除；實檔均仍在 nested log/20261014，將用正確 scope 重跑。- 2026-10-14 02:34:24 +08:00：nested checker 用獨立 session-id 與 nested log/20261014 scope PASS15/WARN3/FAIL0；先前兩次錯 scope 的 FAIL 僅是 checker state 將不同 log root 當刪檔，實檔未刪。scanner 4檔 High0/Medium0；此批五個精確路徑將分類提交／推送。
