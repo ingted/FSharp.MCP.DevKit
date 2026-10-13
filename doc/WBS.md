@@ -354,3 +354,9 @@ WP01-WP09 -> WP10
 | ID | Scope | Verification | Status |
 | --- | --- | --- | --- |
 | DEVKIT-PROC-WIN21 | Server FAkka.Proc.Supervisor exact win20→win21；不改 API／Service／MDCQ | 本地win21 nupkg restore、Release build0 errors／64既有dependency/F# warnings；assets exact win21、輸出DLL SHA 2CAF4379…A1B5E 與包內一致。官方NuGet尚未發布，正式FSI MCP未部署／實測。 | Source consumer pass；official package/runtime pending |
+
+## 2026-10-14 Proc win23 exact consumer
+
+| ID | Scope | Verification | Status |
+| --- | --- | --- | --- |
+| DEVKIT-PROC-WIN23 | Server FAkka.Proc.Supervisor exact win22→win23；保留 FSI win4。 | 本地 win23 package restore、Release build 0 errors／26 既有 warnings，assets exact win23、輸出 Proc DLL 與包內 SHA 相同。 | Source consumer pass；public signed package/runtime deployment pending |

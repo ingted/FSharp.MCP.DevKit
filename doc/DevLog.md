@@ -1426,3 +1426,7 @@
 2026-10-14 01:05:45 +08:00 DEVKIT-PROC-WIN22：Server exact FAkka.Proc.Supervisor 1.571.101.400-win21→win22、FAkka.FSI.Supervisor win3→win4；Release build 0 errors／26 既有 warnings，原兩項 NU1605 已消失。公開 Proc win22 signed nupkg 637,423 bytes／SHA256 968E198CE0016D550C088264D611AE29DF324A99A8D49700DFAFB2F2F060A637，簽章 exit0 且 8 個非簽章 entry 與本地包逐一相同；Server 未部署。這份 nested log 在 source 改動後才補建，偏差與原因記於 log/20261014/20261014010523.proc_win22_consumer.log。
 
 2026-10-14 01:10:14 +08:00 Checker current-rule correction：nested check.fsx 原要求新 .op_log 並將同一 .log 追加判唯讀修改，與 root AGENTS.md §6 衝突；僅調整 log 命名相容、可選歷史 op_log、以既有 bytes prefix hash 驗 append-only，未放寬 notes 的唯讀規則。待本輪 checker 複驗；詳 log/20261014/20261014010523.proc_win22_consumer.log。
+
+2026-10-14 DEVKIT-PROC-WIN23：Server 的 FAkka.Proc.Supervisor exact pin win22→win23，原因為 Proc SQL durable queue 的 MessageSent/State 精確 Hyperion 綁定；FAkka.FSI.Supervisor win4 未變。本地 win23 nupkg restore／Release build 0 errors、26 項既有 warnings，assets exact win23、輸出 DLL hash 與包內相同。正式 FSI MCP、Proc/MDCQ 均未部署；公開 signed package 待獨立驗收。初次 pin/edit 與 build 早於本 nested log，偏差已於 log/20261014/20261014014600.proc_win23_consumer.log 記錄。
+
+Correction 2026-10-14 01:45:07 +08:00：上一筆 DEVKIT-PROC-WIN23 的 nested log 路徑應為 log/20261014/20261014014440.proc_win23_consumer.log；原新檔名時間早於實際建立時刻，已在本次提交前精確更名並保留內容。

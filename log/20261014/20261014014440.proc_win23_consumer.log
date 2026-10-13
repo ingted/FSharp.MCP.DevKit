@@ -1,0 +1,16 @@
+# DEVKIT-PROC-WIN23 exact consumer
+
+## Pre-work plan
+
+Context: Root PROC-W89 real SQL replay uncovered Akka Delivery JSON journal rejection; source win23 binds only its closed durable event/state to Hyperion. This nested Server is one active exact consumer.
+Goal: Keep Server exact Proc package in sync, prove package restore/compile and payload hash, document that MCP runtime was not redeployed.
+Scope: src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj; nested SD/WBS/DevLog and this log. No service, FSI MCP endpoint or Prod Proc mutation.
+Steps: Verify local win23 package; build Server with fixed project output; inspect assets/runtime DLL; run nested sensitive scan/checker; exact commit/push.
+Acceptance: exact win23 asset, Release 0 errors, output DLL same as Proc package, no new downgrade warnings.
+Risk: local precommit package is not a signed public package and source compile is not runtime E2E.
+Deviation: The one-line pin edit and initial Release build preceded this nested log. Root task log log/20261014/20261014012310.proc_sql_pending_replay.log existed for the Proc SQL slice, but did not name this nested path explicitly. This is a process-order error; the remaining documentation, checks and commit follow this log.
+
+## Operations
+- 2026-10-14 01:44:40 +08:00 Server win23 local package dependency: Release build 0 errors/26 existing warnings; assets exact 1.571.101.400-win23; output Akka.Proc.Supervisor.dll SHA256 52E04117D70BFDEBB5FB70244F8CD52FC03546B088F50195E4C503CE440F13AA matches the local package. No service mutation. Next nested checker, sensitive scan and exact-path commit/push.
+- 2026-10-14 01:45:07 +08:00 Correction: original new log name used 01:46:00, ahead of actual creation 01:44:40. Moved only this uncommitted new file to exact 20261014014440 path; content and operations preserved.
+- 2026-10-14 01:45:47 +08:00 Sensitive scanner files=4 (nested Markdown/log; fsproj excluded by scanner extension), High=0/Medium=0. Nested check.fsx PASS21/WARN5/FAIL0; WARN: log-dir expects root log name, legacy Chinese field labels not present in this English plan, KM/SA unchanged, and expected precommit dirty status. git diff --check passed; source-only package consumer, no service mutation.

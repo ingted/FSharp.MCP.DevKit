@@ -55,3 +55,7 @@ SDK維持global.json10.0.203/patch；Server既有FSharp.Core10.1.400不變。建
 ## DEVKIT-PROC-WIN21（20261013）
 
 只改 src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj 的 FAkka.Proc.Supervisor exact pin [1.571.101.400-win20]→[1.571.101.400-win21]，以 Proc 專案固定bin的本地nupkg source restore/build，核assets與輸出DLL hash。此slice不改FSharp MCP工具協議、版本、Service image或正式Proc；NuGet公開發布與runtime載入需另驗。
+
+## DEVKIT-PROC-WIN23（20261014）
+
+Server 的 FAkka.Proc.Supervisor exact reference 從 win22 改 win23，以消費 Proc SQL durable queue 的精確 serializer 修復；FAkka.FSI.Supervisor win4 與本 Server API 均不變。restore 使用 Proc 原專案 bin/Release 內的本地 nupkg，build 固定專案 bin/obj。驗 assets 與輸出 DLL 同包內 hash；source compile 不代表 FSI MCP runtime 或正式 Proc 已部署。
