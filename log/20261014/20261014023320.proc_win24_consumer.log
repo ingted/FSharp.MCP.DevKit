@@ -14,3 +14,4 @@
 ## Operations
 
 - 2026-10-14 02:33 +08:00：Server exact FSI win4→win5、Proc win23→win24；Debug build exit0／52 既有 warning，正式 service 未動。首次 nested checker 錯誤指定 root log/20261014，造成兩份 nested 舊 log 被誤判刪除；實檔均仍在 nested log/20261014，將用正確 scope 重跑。- 2026-10-14 02:34:24 +08:00：nested checker 用獨立 session-id 與 nested log/20261014 scope PASS15/WARN3/FAIL0；先前兩次錯 scope 的 FAIL 僅是 checker state 將不同 log root 當刪檔，實檔未刪。scanner 4檔 High0/Medium0；此批五個精確路徑將分類提交／推送。
+- 2026-10-14 02:34:41 +08:00：五個精確路徑 commit 8a94c11（Pin DevKit to FSI win5 and Proc win24）並 push origin 20260412_005.win exit0；nested Server source consumer complete，signed package 與 runtime deployment 留 root PROC-W89 gate。本筆 closeout 另行 log-only commit。
