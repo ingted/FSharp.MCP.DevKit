@@ -1420,3 +1420,5 @@
 ## 2026-10-10 Proc win20 exact consumer pin
 
 `FSharp.MCP.DevKit.Server.fsproj` 將 `FAkka.Proc.Supervisor` exact pin `1.571.101.400-win19` 升至 `-win20`；Proc win20 要求 Actor.Registry `0.1.6`，既有 FSI win3 仍要求 `0.1.4`，所以本 consumer 另加 direct exact `PulseTrade.Comm.Actor.Registry [0.1.6]`，保留舊 FSI 的 NU1608。初次本機候選包 Release build 64 warnings／0 errors；NuGet.org 正式包 DLL SHA256 `3169FB23...E0B5` 已核對 package-only Proc Test Host。以新隔離 MSBuild 輸出參數重跑時，子專案 Messages 的 netstandard2.0 編譯失敗，故不宣稱 official-byte 全 graph PASS；未部署服務。證據見 `log/20261010/20261010031900.proc_win20_consumer.log`。
+
+2026-10-13 19:52 +08:00 DEVKIT-PROC-WIN21：Server exact FAkka.Proc.Supervisor pin 1.571.101.400-win20→1.571.101.400-win21，本地Proc nupkg source的Release build0 errors／64既有warnings；assets win21、輸出Akka.Proc.Supervisor.dll SHA 2CAF4379…A1B5E 與包內一致。正式NuGet未發布、正式FSI MCP／Proc／MDCQ均未切；詳doc/WBS.md、doc/SD.md與log/20261013/20261013195000.proc_win21_consumer.log。

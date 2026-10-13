@@ -52,3 +52,6 @@ async job 本來就是以 `asyncId` 為主鍵，不依賴 caller 再提供 route
 只同步 `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 兩個 active exact references：`FAkka.FSI.Supervisor [1.571.101.400-win2]` → `[1.571.101.400-win3]`、`FAkka.Proc.Supervisor [1.571.101.400-win15]` → `[1.571.101.400-win16]`。消費本機已驗 archive/SDK feed，producer source `357fedeef66535b2daacd8c6c3ff235f88d328b2`；不變更 Server PackageVersion1.0.0、API或部署。
 SDK維持global.json10.0.203/patch；Server既有FSharp.Core10.1.400不變。建置明傳401 library-packs作AdditionalProjectSources、新C artifacts path、GeneratePackageOnBuild=false/PublishNuGetAfterPack=false/IsPackable=false/DeployOnBuild=false；不執行Server/Proc/FSI或pack。驗實際deps兩版本與輸出DLL對producer proof，不把compile升為runtime/E2E。
 時序偏差與操作證據：`log/20261004/20261004052552.aster_dep52_infra_refs.log`。既有兩筆edit先由main prelog覆蓋，本地prelog補於接管後、build前；不倒填已完成操作的事前授權。
+## DEVKIT-PROC-WIN21（20261013）
+
+只改 src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj 的 FAkka.Proc.Supervisor exact pin [1.571.101.400-win20]→[1.571.101.400-win21]，以 Proc 專案固定bin的本地nupkg source restore/build，核assets與輸出DLL hash。此slice不改FSharp MCP工具協議、版本、Service image或正式Proc；NuGet公開發布與runtime載入需另驗。

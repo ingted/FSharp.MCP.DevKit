@@ -1,0 +1,20 @@
+# Proc win21 FSI MCP consumer（2026-10-13 19:50 +08:00）
+
+背景：FAkka.Proc.Supervisor 的 authority/rebind 修復已在隔離SQL與Test SCM通過；本地win21包已pack，DevKit Server仍exact win20。
+目標：只把本subrepo的Server package pin改win21，用本地包source build確認；不啟停正式FSI MCP/Proc/MDCQ。
+範圍：src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj、doc current與本log；root repo gitlink後續另分類。
+步驟：先核pin與副作用target；改單行、build固定專案bin、核assets/deps；敏感/check與exact commit/push。
+風險：本repo為獨立.git，勿以root staging混入別人WIP；僅source，不稱正式Host已載入。
+驗收：source build0 error、assets exact win21、無service mutation。停止條件：本地包無法restore或subrepo owner衝突則記blocker，保留root pin未同步。
+
+## Operations
+
+- 19:50–19:52：Server fsproj exact pin win20→win21；Release build使用Proc專案固定bin本地nupkg，exit0/64既有warnings，assets exact win21、輸出DLL SHA2CAF4379…A1B5E與包內一致。無pack/push/正式Service mutation；下步敏感/check及subrepo exact commit/push，再回root gitlink。
+
+- 19:54 Correction：pre-work plan 漏列假設；本片假設FAkka.Proc.Supervisor win21相對win20維持Server所用公開API，驗法為本地nupkg restore及Release compile。這只證source compatibility，不代替官方NuGet或已部署FSI MCP的實機驗收。
+
+## Plan Correction
+假設：win21 保持 FSharp.MCP.DevKit.Server 所使用的 Proc 公開 API；本地 package restore/build 是此假設的 compile gate，正式 runtime 載入另驗。先前 Operation 中的 Correction 為事後說明，這裡依既有 log checker 的 Plan Correction 格式保留原 plan 不重寫。
+
+## Operations（continued）
+- 19:55：補記假設格式；subrepo checker前次 PASS29/WARN9/FAIL0，重跑後判讀。

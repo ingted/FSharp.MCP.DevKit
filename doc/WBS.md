@@ -349,3 +349,8 @@ WP01-WP09 -> WP10
 | DEVKIT-DEP52 | Server FSI win3／Proc win16 exactrefs；SDK10.0.203 freshC Release build0E/60W、72inputs stable、assets/deps與2runtimeDLL producer hash吻合。只compile/payload gate，未啟動runtime／未pack或發布。 | 100%（本slice） | Done（dependency compile only） |
 
 詳見 SD、E2EScenarioTest DEVKIT-DEP52 r1、DevLog與本輪prework；不改 Server1.0.0 或其他feature WBS進度。
+## 2026-10-13 Proc win21 exact consumer
+
+| ID | Scope | Verification | Status |
+| --- | --- | --- | --- |
+| DEVKIT-PROC-WIN21 | Server FAkka.Proc.Supervisor exact win20→win21；不改 API／Service／MDCQ | 本地win21 nupkg restore、Release build0 errors／64既有dependency/F# warnings；assets exact win21、輸出DLL SHA 2CAF4379…A1B5E 與包內一致。官方NuGet尚未發布，正式FSI MCP未部署／實測。 | Source consumer pass；official package/runtime pending |
