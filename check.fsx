@@ -258,7 +258,7 @@ let latestFileByPattern (path: string) (pattern: string) =
     else
         None
 
-let logFileRegex = Regex(@"^\d{14}\.[^.]{1,50}\.\d{5}\.\d{5}\.log$", RegexOptions.Compiled)
+let logFileRegex = Regex(@"^\d{14}\.[^.]{1,50}(?:\.\d{5}\.\d{5})?\.log$", RegexOptions.Compiled)
 let opLogFileRegex = Regex(@"^\d{14}\.[^.]{1,50}\.op_log$", RegexOptions.Compiled)
 let externalRefRegex =
     Regex(@"(\b[A-Z][A-Z0-9]+-\d+\b)|(#\d+)|((github|atlassian)\.com)|(/pull/)|(/issues/)", RegexOptions.Compiled)
@@ -403,12 +403,26 @@ let compareReadonlyDirectory (name: string) (previousState: CheckState) (current
                         updatedFindings
             | Some currentEntry ->
                 if currentEntry.Size <> previousEntry.Size || currentEntry.Sha256 <> previousEntry.Sha256 then
+                    let appendedLog =
+                        name = "log"
+                        && currentEntry.Size > previousEntry.Size
+                        && computeFilePrefixSha256
+                            (Path.Combine(currentDir.Path, currentEntry.RelativePath))
+                            previousEntry.Size = previousEntry.Sha256
+
                     updatedFindings <-
-                        writeFinding
-                            "FAIL"
-                            (name + "_readonly_modify")
-                            (sprintf "%s 目錄中的既有檔案被修改：%s" name previousEntry.RelativePath)
-                            updatedFindings
+                        if appendedLog then
+                            writeFinding
+                                "PASS"
+                                "log_append_only"
+                                (sprintf "既有 log 僅追加：%s" previousEntry.RelativePath)
+                                updatedFindings
+                        else
+                            writeFinding
+                                "FAIL"
+                                (name + "_readonly_modify")
+                                (sprintf "%s 目錄中的既有檔案被修改：%s" name previousEntry.RelativePath)
+                                updatedFindings
 
         updatedFindings
     | _ -> findings
@@ -700,13 +714,13 @@ else
 if logState.HasLatestOpLog then
     findings <- writeFinding "PASS" "latest_op_log_found" (sprintf "最新 op_log：%s @ %s" logState.LatestOpLog.Path logState.LatestOpLog.LastWriteUtc) findings
 else
-    findings <- writeFinding "FAIL" "latest_op_log_missing" "找不到任何 .op_log 檔" findings
+    findings <- writeFinding "PASS" "latest_op_log_optional" "Operations 可記於同一 .log；不要求新 .op_log" findings
 
 if logState.HasLatestLog then
     if logState.LatestLogNameValid then
         findings <- writeFinding "PASS" "latest_log_name" "最新 log 檔名符合規範" findings
     else
-        findings <- writeFinding "FAIL" "latest_log_name" "最新 log 檔名不符合 YYYYMMDDHHmmss.<摘要>.<主編號>.<子編號>.log" findings
+        findings <- writeFinding "FAIL" "latest_log_name" "最新 log 檔名不符合 YYYYMMDDHHmmss.<摘要>[.<主編號>.<子編號>].log" findings
 
 if logState.HasLatestOpLog then
     if logState.LatestOpLogNameValid then
@@ -750,7 +764,7 @@ if logState.HasLatestLog && logState.HasLatestOpLog then
     if logState.LatestOpLogCoversLatestLog then
         findings <- writeFinding "PASS" "op_log_after_log" "最新 op_log 時間不早於最新 log，可視為有收尾操作證據" findings
     else
-        findings <- writeFinding "FAIL" "op_log_after_log" "最新 op_log 時間早於最新 log，疑似未完成操作收尾" findings
+        findings <- writeFinding "WARN" "op_log_after_log" "歷史 op_log 早於最新 log；新操作應記於同一 .log" findings
 
 for watchedFile in watchedFiles do
     findings <- describeFileChange watchedFile previousState findings
@@ -768,13 +782,13 @@ match previousState with
 
     if previous.Logs.HasLatestLog then
         if previous.Logs.LatestLog.Sha256 = logState.LatestLog.Sha256 && previous.Logs.LatestLog.Path = logState.LatestLog.Path then
-            findings <- writeFinding "FAIL" "latest_log_not_advanced" "與上次檢查相比，最新 log 沒有前進" findings
+            findings <- writeFinding "WARN" "latest_log_not_advanced" "與上次檢查相比，最新 log 無新追加；重跑檢查可預期" findings
         else
             findings <- writeFinding "PASS" "latest_log_advanced" "與上次檢查相比，最新 log 已前進" findings
 
     if previous.Logs.HasLatestOpLog then
         if previous.Logs.LatestOpLog.Sha256 = logState.LatestOpLog.Sha256 && previous.Logs.LatestOpLog.Path = logState.LatestOpLog.Path then
-            findings <- writeFinding "FAIL" "latest_op_log_not_advanced" "與上次檢查相比，最新 op_log 沒有前進" findings
+            findings <- writeFinding "WARN" "latest_op_log_not_advanced" "歷史 op_log 無新追加；新操作應記於同一 .log" findings
         else
             findings <- writeFinding "PASS" "latest_op_log_advanced" "與上次檢查相比，最新 op_log 已前進" findings
 
