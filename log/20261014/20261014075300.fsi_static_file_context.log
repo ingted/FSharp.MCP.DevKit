@@ -1,0 +1,15 @@
+## Pre-work plan
+
+- 背景：此為獨立 repo `G:/PulseTrade.fs/Libs/FSharp.MCP.DevKit`，branch `20260412_005.win`、HEAD `f54cd25`；相關 source/test 路徑 clean。root goal FSMCP-R2-01 已在 `G:/PulseTrade.fs/log/20261014/20261014075010.fsi_static_file_context.log` 記起點與假設。
+- 目標：隔離重現 `AnalyzeCodeStructure` 對相對 `#load` 的真檔案路徑錯誤；只修該路徑，維持 static／bounded 診斷，絕不啟正式 Proc/MDCQ。
+- 步驟：target restore/build 修正既有 assets 解析後，repo temp 建相對 `#load` RED；最小 source patch；Expecto GREEN 與受影響 build/test；記錄 coverage。
+- 範圍：`src/FSharp.MCP.DevKit.Server/McpFsiTools.fs` 與必要聚焦 Expecto regression；fixtures 在 `G:/PulseTrade.fs/temp/agent.aster/fsi-static-file-context`。原 source UTF-8 no BOM／CRLF。
+- 停止條件：若需跨 project compiler framework 或正式服務變更，僅記設計缺口，不擴張。失敗先保留短證據並辨別既有／本輪。
+
+## Operations
+
+- 07:51 +08 baseline `dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release --no-restore -p:GeneratePackageOnBuild=false -v:q` exit1，SDK 10.0.203 的 `ResolvePackageAssets` MSB4018 NullReference；source 尚未改。target assets 原有 `net10.0` 與 `net10.0/win-x64`，將先 targeted restore，禁止手清 obj。
+- 07:52 +08 target "dotnet restore" 成功（既有 warning）；相同 Release build 0 error／34 warnings，約42秒。source 未改，尚未建立 "#load" RED，原假設未確認。
+- 08:05 +08 依使用者對 Proc 時程的追問暫停此 P2 slice；不宣稱實作或測試通過，恢復時從 repo temp RED 開始。此次只關閉 baseline 記錄，不影響正式 Proc/MDCQ。
+- 08:09 +08 nested checker 首跑沿用 root session ID，誤將同名三個已追蹤且存在的 log 判為 deleted（共享 state key 衝突）；改用 repo-specific session ID 建獨立 baseline 後 PASS12/WARN5/FAIL0。既有舊 log 命名與本輪 log 欄位等 WARN 已判讀；未修改 checker 或歷史檔。
+- 08:10 +08 敏感掃描本 log High0/Medium0；只提交此 log 作暫停交接，DevKit source/test 無變更。
