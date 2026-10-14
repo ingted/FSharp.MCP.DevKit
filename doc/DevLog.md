@@ -1432,3 +1432,7 @@
 Correction 2026-10-14 01:45:07 +08:00：上一筆 DEVKIT-PROC-WIN23 的 nested log 路徑應為 log/20261014/20261014014440.proc_win23_consumer.log；原新檔名時間早於實際建立時刻，已在本次提交前精確更名並保留內容。
 
 - 2026-10-14 02:33:46 +08:00 DEVKIT-PROC-WIN24：FAkka.FSI.Supervisor 1.571.101.400-win4 -> 1.571.101.400-win5、FAkka.Proc.Supervisor 1.571.101.400-win23 -> 1.571.101.400-win24；因 root PROC-W89 發現已發布 IFileSystem10.1.401 冷重開失敗，改為精確消費新 IFileSystem10.1.402 傳遞鏈。Server Debug build exit0／52既有 warning，本地 package source gate；NuGet signed 與實際 MCP runtime 未驗，正式 Proc/MDCQ 不動。初次 edit/build 早於 nested log，時序偏差及 scope 見 log/20261014/20261014023320.proc_win24_consumer.log。
+
+## 2026-10-14 19:00 +08:00 Proc dependency win25
+
+FSharp.MCP.DevKit.Server的FAkka.Proc.Supervisor exact pin由win24升為win25，以消費RFC-PROC-0040 cooperative endpoint current package。Release build 0 error；只使用本機package，未發布、未部署、未操作MDCQ。

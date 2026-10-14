@@ -1,0 +1,32 @@
+# FSharp.MCP.DevKit Server Proc dependency alignment
+
+## Pre-work plan
+- 背景：RFC-PROC-0040 W93將active Proc package升為1.571.101.400-win25；Server是active consumer。
+- 目標：exact pin win24→win25，保留其他dependency與行為。
+- 範圍：單一fsproj、此log與append-only DevLog。
+- 驗收：Server Release build 0 error；exact diff／敏感掃描／checker／commit push。
+- 風險：只使用本機win25 package，不發布、不啟停service或MDCQ。
+
+## Operations
+- 流程偏差：dependency edit與Release build先於本subrepo log建立；root aggregate log已有事前計畫。此處補記subrepo traceability，不改寫歷史。
+- Server Release build已通過：0 error，既有warnings保留。
+- 只修改FAkka.Proc.Supervisor exact range為[1.571.101.400-win25]。
+## prompt/上下文摘要
+RFC-PROC-0040 W93 active consumer exact dependency alignment；不得發布、部署或操作MDCQ。
+
+## 計畫步驟
+1. 核對單一dependency diff。2. 使用已完成的Release build證據。3. 敏感掃描與checker。4. exact-path commit/push。
+
+## 執行命令/參數
+- dotnet build src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj -c Release --no-restore --no-dependencies
+- root misc/checkSensitiveText.fsx只掃本輪三個exact paths。
+- dotnet fsi --exec check.fsx使用本repo log/SA/SD/WBS/DevLog/notes authoritative paths。
+
+## 結果
+Release build 0 error；敏感掃描High=0／Medium=0；checker FAIL=0，歷史log命名／op_log與dirty為既有WARN。
+
+## 根因判讀
+Server仍pin win24，無法編譯消費W93新增的win25 current endpoint API；exact pin升版即可，無須改Server行為。
+
+## 下一步
+提交並推送本subrepo三個exact paths，再由root更新gitlink；不執行package publication或服務操作。
