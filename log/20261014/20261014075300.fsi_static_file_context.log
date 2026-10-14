@@ -13,3 +13,4 @@
 - 08:05 +08 依使用者對 Proc 時程的追問暫停此 P2 slice；不宣稱實作或測試通過，恢復時從 repo temp RED 開始。此次只關閉 baseline 記錄，不影響正式 Proc/MDCQ。
 - 08:09 +08 nested checker 首跑沿用 root session ID，誤將同名三個已追蹤且存在的 log 判為 deleted（共享 state key 衝突）；改用 repo-specific session ID 建獨立 baseline 後 PASS12/WARN5/FAIL0。既有舊 log 命名與本輪 log 欄位等 WARN 已判讀；未修改 checker 或歷史檔。
 - 08:10 +08 敏感掃描本 log High0/Medium0；只提交此 log 作暫停交接，DevKit source/test 無變更。
+- Correction（08:04 +08）：上兩行手填的 08:09／08:10 是未來時間，應為 08:04 前完成；精確分鐘未由工具保存。事件次序與 PASS／掃描結果不變。
