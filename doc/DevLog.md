@@ -1436,3 +1436,7 @@ Correction 2026-10-14 01:45:07 +08:00：上一筆 DEVKIT-PROC-WIN23 的 nested l
 ## 2026-10-14 19:00 +08:00 Proc dependency win25
 
 FSharp.MCP.DevKit.Server的FAkka.Proc.Supervisor exact pin由win24升為win25，以消費RFC-PROC-0040 cooperative endpoint current package。Release build 0 error；只使用本機package，未發布、未部署、未操作MDCQ。
+
+## 2026-10-14 21:22 +08:00 Proc dependency win27
+
+W93 source review解除後，FSharp.MCP.DevKit.Server的FAkka.Proc.Supervisor exact pin由win25升win27；FSI win5與Server行為不變。package restore、Release build、assets與DLL hash尚待；未部署或操作Proc／MDCQ。

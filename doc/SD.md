@@ -63,3 +63,7 @@ Server 的 FAkka.Proc.Supervisor exact reference 從 win22 改 win23，以消費
 ## DEVKIT-PROC-WIN24：FSI PCSL 冷重開 package consumer（2026-10-14）
 
 `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 的 FAkka.FSI.Supervisor exact `[1.571.101.400-win4]`→`[1.571.101.400-win5]`、FAkka.Proc.Supervisor exact `[1.571.101.400-win23]`→`[1.571.101.400-win24]`。僅 package references；MCP tool/API、session logic 與 Host 設定不變。restore/build 先用 root 專案本地 Debug packages 驗閉包，再等正式 signed readback；本地 source 成功不能推論正式 runtime 已更新。依賴意圖：IFileSystem10.1.402 constructor 初始 index＋List persisted index → FSI win5 → Proc win24 → Server。失敗時保留原已部署 Server，正式 Proc/MDCQ 不變。
+
+## 2026-10-14 Proc win27 exact consumer
+
+只將 `src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj` 的 `FAkka.Proc.Supervisor` exact pin由win25升win27，以消費已通過source review的合作式supervisee與lifecycle revision6；FSI win5、MCP tool/API、session與Host設定不變。使用上游固定bin的win27 package restore/build，核assets exact version及輸出DLL同包；不部署runtime，不操作Proc／MDCQ。

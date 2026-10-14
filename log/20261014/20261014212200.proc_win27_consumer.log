@@ -1,0 +1,16 @@
+# FSharp.MCP.DevKit Proc win27 consumer closure
+
+## Pre-work plan
+
+背景：上游 `FAkka.Proc.Supervisor` 的合作式 supervisee 與 public lifecycle revision 6 已通過 source review；DevKit Server 仍 exact pin win25，屬最終九 consumer closure 之一。
+目標：只將 `FSharp.MCP.DevKit.Server` exact pin 升至 win27，驗 Release build 與 resolved assets；不調整 MCP tool 行為。
+假設：win27 維持既有 public consumer surface，若 restore/build 反證則停止並回報上游相容缺口。
+步驟：patch exact pin；待本機 win27 package 可用後 restore/build；核 `project.assets.json` exact version；敏感掃描；commit/push。
+範圍：`src/FSharp.MCP.DevKit.Server/FSharp.MCP.DevKit.Server.fsproj`、本 log。
+驗收：Release build 0 error，resolved `FAkka.Proc.Supervisor/1.571.101.400-win27`，不操作任何服務或 MCP runtime。
+風險：nested repo 獨立 commit/push；上游套件未發布前只能使用經驗證的本機 package。
+
+## Operations
+
+- 2026-10-14 21:22 +08:00 開始；nested repo clean，branch `20260412_005.win`。
+- 2026-10-14 21:23 +08:00 source exact pin win25→win27；同步current SD／WBS／DevLog。尚未restore/build；不操作runtime。

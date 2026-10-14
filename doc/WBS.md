@@ -366,3 +366,9 @@ WP01-WP09 -> WP10
 | ID | 變更 | 本地驗證 | 狀態／缺口 |
 |---|---|---|---|
 | DEVKIT-PROC-WIN24 | Server exact FSI win5、Proc win24，消費 IFileSystem cold index 修正 | Debug build exit0，52 項既有跨專案 warning；無編譯錯誤 | Source consumer pass；signed NuGet readback、正式 MCP runtime 部署未驗 |
+
+## 2026-10-14 Proc win27 exact consumer
+
+| ID | Scope | Verification | Status |
+| --- | --- | --- | --- |
+| DEVKIT-PROC-WIN27 | Server FAkka.Proc.Supervisor exact win25→win27；FSI win5與runtime不變 | source pin已備；待本機／官方win27 restore、Release build與assets/DLL hash | In progress；不部署、不操作Proc/MDCQ |
