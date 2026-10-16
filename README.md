@@ -1,5 +1,11 @@
 # FSharp.MCP.DevKit
 
+> [!CAUTION]
+> **DEPRECATED — ARCHIVAL ONLY.**
+>
+> 禁止將此專案用於 build、deployment、runtime、package reference 或新功能開發。此目錄只保留作唯讀程式碼參考；目前正式且唯一 canonical 專案是 `G:\PulseTrade.fs\AkkaFsiMcpServer`。
+
+
 `FSharp.MCP.DevKit` is an MCP server for running **remote out-of-process F# Interactive hosts and sessions**.  
 The practical focus of this fork is:
 
